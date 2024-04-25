@@ -1,5 +1,5 @@
 add_mlir_library(MLIRCOMPIGRA
-ScfFixIndexWidth.cpp
+CfFixIndexWidth.cpp
 
 ADDITIONAL_HEADER_DIRS
 ${PROJECT_SOURCE_DIR}/include/compigra
@@ -10,6 +10,7 @@ CompigraPassIncGen
 LINK_LIBS PUBLIC
 MLIRIR
 MLIRMemRefDialect
+MLIRArithDialect
 MLIRLLVMDialect
 MLIROpenMPDialect
 MLIRAffineDialect

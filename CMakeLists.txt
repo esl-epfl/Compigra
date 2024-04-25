@@ -2,13 +2,6 @@ cmake_minimum_required(VERSION 3.13.4)
 
 include(CheckCXXSourceCompiles)
 
-# set(COMPIGRA_ENABLE_CUDA 0 CACHE BOOL "Enable CUDA frontend and backend")
-# set(COMPIGRA_ENABLE_ROCM 0 CACHE BOOL "Enable ROCM backend")
-
-# set(COMPIGRA_ENABLE_POLYMER 0 CACHE BOOL "Enable Polymer")
-
-# set(POLYMER_DEP_DIR "" CACHE STRING "Pluto build root directory")
-
 if ("${COMPIGRA_DEP_DIR}" STREQUAL "")
     set(COMPIGRA_PLUTO_DIR ${CMAKE_CURRENT_BINARY_DIR})
 else()
@@ -37,11 +30,6 @@ set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
 set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
 
 find_program(XXD_BIN xxd)
-
-# TODO should depend on OS
-# set(COMPIGRA_PGO_DEFAULT_DATA_DIR "/var/tmp/polygeist/pgo/" CACHE STRING "Directory for PGO data")
-# set(COMPIGRA_PGO_ALTERNATIVE_ENV_VAR "COMPIGRA_PGO_ALTERNATIVE" CACHE STRING "Env var name to specify alternative to profile")
-# set(COMPIGRA_PGO_DATA_DIR_ENV_VAR "COMPIGRA_PGO_DATA_DIR" CACHE STRING "Env var name to specify PGO data dir")
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(compigra LANGUAGES CXX C)
@@ -123,7 +111,6 @@ set(COMPIGRA_UTILS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utils)
 
 set(LLVM_LIT_ARGS "-sv" CACHE STRING "lit default options")
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
-# include(sanitizers)
 
 add_subdirectory(include)
 add_subdirectory(lib)

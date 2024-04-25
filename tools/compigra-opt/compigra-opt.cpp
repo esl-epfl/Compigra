@@ -1,4 +1,4 @@
-//===- compigra-opt.cpp - The polygeist-opt driver ------------------------===//
+//===- compigra-opt.cpp - The compigra-opt driver -------------------------===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,11 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the 'compigra-opt' tool, which is the polygeist analog
+// This file implements the 'compigra-opt' tool, which is the compigra analog
 // of mlir-opt, used to drive compiler passes, e.g. for testing.
 //
 //===----------------------------------------------------------------------===//
 
+#include "compigra/Passes.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -19,14 +20,16 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Dialect.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Pass/PassRegistry.h"
-#include "mlir/IR/Dialect.h"
-// #include "polygeist/PolygeistOpsDialect.h.inc"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
-#include "compigra/Passes.h"
 
 using namespace mlir;
+using namespace compigra;
+
+#define GEN_PASS_REGISTRATION
+#include "compigra/Passes.h.inc"
 
 int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
@@ -36,8 +39,8 @@ int main(int argc, char **argv) {
                   mlir::func::FuncDialect, mlir::arith::ArithDialect,
                   mlir::cf::ControlFlowDialect, mlir::scf::SCFDialect>();
 
-  // mlir::registerAllDialects(registry);
-  mlir::registerAllPasses();
+  mlir::registerCSEPass();
+  registerPasses();
 
   return failed(
       mlir::MlirOptMain(argc, argv, "Compigra optimizer driver\n", registry));
