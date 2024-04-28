@@ -24,4 +24,10 @@ def CfFixIndexWidth : Pass<"fix-index-width"> {
   let constructor = "mlir::compigra::createCfFixIndexWidth()";
 }
 
+def CfMapToFullPredict : Pass<"map-to-full-predict"> {
+  let summary = "Reduce the number of bbs by applying full predict";
+  let constructor = "mlir::compigra::createCfMapToFullPredict()";
+}
+
+
 #endif // COMPIGRA_PASSES_TD

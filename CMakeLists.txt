@@ -95,6 +95,9 @@ include(HandleLLVMOptions)
 
 set(COMPIGRA_TOOLS_DIR ${CMAKE_BINARY_DIR})
 
+add_custom_target(compigra-headers)
+set_target_properties(compigra-headers PROPERTIES FOLDER "Misc")
+
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${CLANG_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})

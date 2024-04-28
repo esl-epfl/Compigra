@@ -22,9 +22,12 @@ namespace mlir {
 namespace compigra {
 
 #define GEN_PASS_DEF_CFFIXINDEXWIDTH
-#include "compigra/Passes.h.inc"
+#define GEN_PASS_DEF_CFMAPTOFULLPREDICT
+#include "compigra/Passes/Passes.h.inc"
 
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
+std::unique_ptr<mlir::Pass> createCfMapToFullPredict();
+
 } // end namespace compigra
 } // end namespace mlir
 

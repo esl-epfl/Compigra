@@ -11,7 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/Passes.h"
+#include "compigra/Passes/Passes.h"
+#include "InitAllPasses.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -25,11 +26,10 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 
-using namespace mlir;
-using namespace compigra;
+// using namespace mlir;
+// using namespace compigra;
 
-#define GEN_PASS_REGISTRATION
-#include "compigra/Passes.h.inc"
+
 
 int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
                   mlir::cf::ControlFlowDialect, mlir::scf::SCFDialect>();
 
   mlir::registerCSEPass();
-  registerPasses();
+  mlir::compigra::registerAllPasses();
 
   return failed(
       mlir::MlirOptMain(argc, argv, "Compigra optimizer driver\n", registry));

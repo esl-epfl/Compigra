@@ -9,21 +9,19 @@
 // This file declares the --fix-index-width pass.
 //
 //===----------------------------------------------------------------------===//
-#ifndef COMPIGRA_SCFFIXINDEXWIDTH_H
-#define COMPIGRA_SCFFIXINDEXWIDTH_H
+#ifndef COMPIGRA_CFFIXINDEXWIDTH_H
+#define COMPIGRA_CFFIXINDEXWIDTH_H
 
-#include "compigra/Passes.h"
+#include "compigra/Passes/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
 
 namespace mlir {
 namespace compigra {
 
-
-
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
 
 } // namespace compigra
 } // namespace mlir
 
-#endif // COMPIGRA_SCFFIXINDEXWIDTH_H
+#endif // COMPIGRA_CFFIXINDEXWIDTH_H

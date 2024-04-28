@@ -1,21 +1,20 @@
-add_mlir_dialect_library(MLIRCgra
-CgraDialect.cpp
-# Ops.cpp
+add_mlir_library(MLIRCompigraTransforms
+CfFixIndexWidth.cpp
+CfMapToFullPredict.cpp
 
 ADDITIONAL_HEADER_DIRS
 ${PROJECT_SOURCE_DIR}/include/compigra
 
 DEPENDS
-MLIRCgraOpsIncGen
-MLIRCgraEnumsIncGen
+CompigraPassIncGen
 
 LINK_LIBS PUBLIC
 MLIRIR
 MLIRMemRefDialect
+MLIRArithDialect
 MLIRLLVMDialect
 MLIROpenMPDialect
 MLIRAffineDialect
 MLIRSupport
 MLIRSCFTransforms
 )
-add_subdirectory(Passes)
