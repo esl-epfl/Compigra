@@ -19,7 +19,7 @@
 namespace mlir {
 namespace compigra {
 #define GEN_PASS_REGISTRATION
-#include "compigra/Passes.h.inc"
+#include "compigra/Passes/Passes.h.inc"
 
 inline void registerAllPasses() {
   registerPasses();

@@ -11,15 +11,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/CgraDialect.h"
-// #include "compigra/Ops.h"
-// #include "circt/Dialect/Seq/SeqDialect.h"
+#include "compigra/CgraOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-using namespace compigra;
-using namespace compigra::cgra;
+using namespace cgra;
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.
@@ -29,13 +27,16 @@ void CgraDialect::initialize() {
   // Register operations.
   addOperations<
 #define GET_OP_LIST
-#include "compigra/CompigraOps.cpp.inc"
+#include "compigra/Cgra.cpp.inc"
       >();
 }
 
 // Provide implementations for the enums, attributes and interfaces that we use.
+
+#include "compigra/CgraDialect.cpp.inc"
+#include "compigra/CgraEnums.cpp.inc"
 #define GET_ATTRDEF_CLASSES
-// #include "circt/Dialect/Handshake/HandshakeAttributes.cpp.inc"
-// #include "circt/Dialect/Handshake/HandshakeDialect.cpp.inc"
-// #include "circt/Dialect/Handshake/HandshakeEnums.cpp.inc"
-// #include "circt/Dialect/Handshake/HandshakeInterfaces.cpp.inc"
+#include "compigra/CgraAttributes.cpp.inc"
+#define GET_TYPEDEF_CLASSES
+#include "compigra/CgraTypes.cpp.inc"
+// #include "compigra/CgraInterfaces.cpp.inc"

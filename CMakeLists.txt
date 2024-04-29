@@ -36,7 +36,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
-  set(MLIR_DIR "./Polygeist/llvm-project/build/lib/cmake/mlir")
+  set(MLIR_DIR "./circt/llvm/build/lib/cmake/mlir")
   message(STATUS "Searching for MLIRConfig.cmake in: ${MLIR_DIR}")
   find_package(MLIR REQUIRED CONFIG)
 
@@ -48,7 +48,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # building against an install area, then assume we're using the
   # submodule.
   if(NOT LLVM_BUILD_MAIN_SRC_DIR)
-    set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/Polygeist/llvm-project/llvm)
+    set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/circt/llvm/llvm)
   endif()
   set(LLVM_SOURCE_DIR ${LLVM_BUILD_MAIN_SRC_DIR} CACHE STRING "Location of LLVM source")
 
@@ -97,6 +97,32 @@ set(COMPIGRA_TOOLS_DIR ${CMAKE_BINARY_DIR})
 
 add_custom_target(compigra-headers)
 set_target_properties(compigra-headers PROPERTIES FOLDER "Misc")
+
+function(add_compigra_library name)
+  add_mlir_library(${ARGV})
+  add_compigra_library_install(${name})
+endfunction()
+
+function(add_compigra_library_install name)
+  install(TARGETS ${name} COMPONENT ${name} EXPORT compigraTargets)
+  set_property(GLOBAL APPEND PROPERTY compigra_ALL_LIBS ${name})
+  set_property(GLOBAL APPEND PROPERTY compigra_EXPORTS ${name})
+endfunction()
+
+function(add_compigra_dialect_library name)
+  set_property(GLOBAL APPEND PROPERTY compigra_DIALECT_LIBS ${name})
+  add_compigra_library(${ARGV} DEPENDS compigra-headers)
+endfunction()
+
+function(add_compigra_dialect dialect dialect_namespace)
+  add_mlir_dialect(${ARGV})
+  add_dependencies(compigra-headers MLIR${dialect}IncGen)
+endfunction()
+
+function(add_compigra_interface interface)
+  add_mlir_interface(${ARGV})
+  add_dependencies(compigra-headers MLIR${interface}IncGen)
+endfunction()
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${CLANG_INCLUDE_DIRS})

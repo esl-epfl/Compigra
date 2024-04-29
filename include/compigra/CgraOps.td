@@ -15,7 +15,6 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/BuiltinTypes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
-include "compigra/CgraDialect.td"
 
 
 /// Base class for Cgra dialect operations.

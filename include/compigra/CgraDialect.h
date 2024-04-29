@@ -16,7 +16,7 @@
 #include "mlir/IR/Dialect.h"
 
 // Pull in the Dialect definition.
-#include "compigra/CgraOpsDialect.h.inc"
+#include "compigra/CgraDialect.h.inc"
 
 // Pull in all enum type definitions, attributes,
 // and utility function declarations.

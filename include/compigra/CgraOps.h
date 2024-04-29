@@ -14,8 +14,7 @@
 #define CGRA_OPS_H
 
 #include "compigra/CgraDialect.h"
-// #include "circt/Dialect/Handshake/HandshakeInterfaces.h"
-// #include "circt/Support/LLVM.h"
+#include "compigra/CgraInterfaces.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -39,22 +38,23 @@ namespace OpTrait {
 // template <typename ConcreteType>
 // class HasClock : public TraitBase<ConcreteType, HasClock> {};
 
-template <typename InterfaceType>
-class HasParentInterface {
+template <typename InterfaceType> class HasParentInterface {
 public:
   template <typename ConcreteType>
   class Impl : public TraitBase<ConcreteType,
                                 HasParentInterface<InterfaceType>::Impl> {
   public:
     static LogicalResult verifyTrait(Operation *op) {
-      if (llvm::isa_and_nonnull<InterfaceType>(op->getParentOp()))
-        return success();
+      // TODO: Implement verification logic.
+      // if (llvm::isa_and_nonnull<InterfaceType>(op->getParentOp()))
+      return success();
 
       // @mortbopet: What a horrible error message - however, there's no way to
       // report the interface name without going in and adjusting the tablegen
       // backend to also emit string literal names for interfaces.
-      return op->emitOpError() << "expects parent op to be of the interface "
-                                  "parent type required by the given op type";
+      // return op->emitOpError() << "expects parent op to be of the interface "
+      //                             "parent type required by the given op
+      //                             type";
     }
   };
 };
@@ -66,6 +66,6 @@ public:
 // #include "compigra/HandshakeAttributes.h.inc"
 
 #define GET_OP_CLASSES
-#include "compigra/CompigraOps.h.inc"
+#include "compigra/Cgra.h.inc"
 
 #endif // CGRA_OPS_H

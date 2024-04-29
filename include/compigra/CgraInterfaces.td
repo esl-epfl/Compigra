@@ -16,7 +16,7 @@
 include "mlir/IR/OpBase.td"
 
 def SOSTInterface : OpInterface<"SOSTInterface"> {
-  let cppNamespace = "::compigra::cgra";
+  let cppNamespace = "::cgra";
   let description = [{
       Sized Operation with Single Type (SOST).
       
@@ -48,20 +48,20 @@ def SOSTInterface : OpInterface<"SOSTInterface"> {
         return concreteOp->getNumOperands();
       }]
     >,
-    InterfaceMethod<[{
-        Determine whether the operation is a control operation.
-        The default implementation of this method assumes that the operation
-        is a control operation if and only if its associated data type is a
-        NoneType.
-      }],
-      "bool", "sostIsControl", (ins), "",
-      [{
-        auto concreteOp = mlir::cast<ConcreteOp>($_op);
-        // The operation is a control operation if its single data type is a 
-        // NoneType.
-        return concreteOp.getDataType().template isa<mlir::NoneType>();
-      }]
-    >,
+    // InterfaceMethod<[{
+    //     Determine whether the operation is a control operation.
+    //     The default implementation of this method assumes that the operation
+    //     is a control operation if and only if its associated data type is a
+    //     NoneType.
+    //   }],
+    //   "bool", "sostIsControl", (ins), "",
+    //   [{
+    //     auto concreteOp = mlir::cast<ConcreteOp>($_op);
+    //     // The operation is a control operation if its single data type is a 
+    //     // NoneType.
+    //     return concreteOp.getDataType().template isa<mlir::NoneType>();
+    //   }]
+    // >,
     InterfaceMethod<[{
         Print the "SOST characteristics" of an operation.
         If the `explicitSize` parameter is set to true, then the method prints
@@ -106,7 +106,7 @@ def SOSTInterface : OpInterface<"SOSTInterface"> {
 }
 
 def MergeLikeOpInterface : OpInterface<"MergeLikeOpInterface"> {
-  let cppNamespace = "::compigra::cgra";
+  let cppNamespace = "::cgra";
   let description = [{
      Some handshake operations can have predecessors in other
      blocks. This is primarily useful for verification purposes during
@@ -141,7 +141,7 @@ def MergeLikeOpInterface : OpInterface<"MergeLikeOpInterface"> {
 }
 
 def GeneralOpInterface : OpInterface<"GeneralOpInterface"> {
-  let cppNamespace = "::compigra::cgra";
+  let cppNamespace = "::cgra";
   let description =
       [{"Simulate the Execution of ops. The op takes a set of input values and "
         "returns the corresponding outputs assuming the precondition to "

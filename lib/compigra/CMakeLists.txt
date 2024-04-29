@@ -1,12 +1,13 @@
-add_mlir_dialect_library(MLIRCgra
+add_compigra_dialect_library(MLIRCgra
 CgraDialect.cpp
-# Ops.cpp
+CgraOps.cpp
 
 ADDITIONAL_HEADER_DIRS
 ${PROJECT_SOURCE_DIR}/include/compigra
+${PROJECT_BINARY_DIR}/include/compigra
 
 DEPENDS
-MLIRCgraOpsIncGen
+MLIRCgraIncGen
 MLIRCgraEnumsIncGen
 
 LINK_LIBS PUBLIC

@@ -31,7 +31,7 @@ include "compigra/CgraInterfaces.td"
 
 def Cgra_Dialect : Dialect {
   let name = "cgra";
-  let cppNamespace = "::compigra::cgra";
+  let cppNamespace = "::cgra";
 
   let summary = "Types and operations for the Cgra dialect";
   let description = [{This dialect defined the `cgra` dialect, providing branch,
@@ -44,5 +44,5 @@ def Cgra_Dialect : Dialect {
   let usePropertiesForAttributes = 0;
 }
 
-// include "compigra/CgraOps.td"
+include "compigra/CgraOps.td"
 #endif // CGRA_DIALECT_TD
