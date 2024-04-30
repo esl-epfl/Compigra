@@ -40,21 +40,16 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   message(STATUS "Searching for MLIRConfig.cmake in: ${MLIR_DIR}")
   find_package(MLIR REQUIRED CONFIG)
 
-  set(Clang_DIR "./Polygeist/llvm-project/build/lib/cmake/clang")
-  message(STATUS "Searching for ClangConfig.cmake in: ${Clang_DIR}")
-  find_package(Clang REQUIRED CONFIG)
-
   # This is exported if we are building against a build area.  If
   # building against an install area, then assume we're using the
   # submodule.
-  if(NOT LLVM_BUILD_MAIN_SRC_DIR)
-    set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/circt/llvm/llvm)
-  endif()
+  # if(NOT LLVM_BUILD_MAIN_SRC_DIR)
+  set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/circt/llvm/llvm)
+  # endif()
   set(LLVM_SOURCE_DIR ${LLVM_BUILD_MAIN_SRC_DIR} CACHE STRING "Location of LLVM source")
 
   message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
   message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-  message(STATUS "Using ClangConfig.cmake in: ${Clang_DIR}")
 else ()
   set(LLVM_SOURCE_DIR ${LLVM_MAIN_SRC_DIR})
   set(MLIR_MAIN_SRC_DIR ${LLVM_MAIN_SRC_DIR}/../mlir)
@@ -85,12 +80,10 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
-list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
-include(AddClang)
 include(HandleLLVMOptions)
 
 set(COMPIGRA_TOOLS_DIR ${CMAKE_BINARY_DIR})
@@ -125,7 +118,6 @@ function(add_compigra_interface interface)
 endfunction()
 
 include_directories(${LLVM_INCLUDE_DIRS})
-include_directories(${CLANG_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)
@@ -134,14 +126,14 @@ add_definitions(${LLVM_DEFINITIONS})
 
 set(COMPIGRA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(COMPIGRA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
-set(COMPIGRA_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include )
+set(COMPIGRA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include )
 set(COMPIGRA_TOOLS_DIR ${CMAKE_BINARY_DIR}/bin)
 set(COMPIGRA_UTILS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utils)
 
 set(LLVM_LIT_ARGS "-sv" CACHE STRING "lit default options")
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 
-add_subdirectory(include)
+add_subdirectory(${COMPIGRA_INCLUDE_DIR}/compigra)
 add_subdirectory(lib)
 add_subdirectory(tools)
 # add_subdirectory(test)

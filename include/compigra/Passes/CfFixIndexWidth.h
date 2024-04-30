@@ -12,12 +12,20 @@
 #ifndef COMPIGRA_CFFIXINDEXWIDTH_H
 #define COMPIGRA_CFFIXINDEXWIDTH_H
 
-#include "compigra/Passes/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 namespace mlir {
 namespace compigra {
+
+#define GEN_PASS_DEF_CFFIXINDEXWIDTH
+#define GEN_PASS_DECL_CFFIXINDEXWIDTH
+#include "compigra/Passes/Passes.h.inc"
+// #define GEN_PASS_DEF_CFMAPTOFULLPREDICT
 
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
 

@@ -14,16 +14,12 @@
 #ifndef INIT_ALL_PASSES_H
 #define INIT_ALL_PASSES_H
 
-// #include "compigra/Passes.h"
+#include "compigra/Passes/Passes.h"
 
 namespace mlir {
 namespace compigra {
-#define GEN_PASS_REGISTRATION
-#include "compigra/Passes/Passes.h.inc"
 
-inline void registerAllPasses() {
-  registerPasses();
-}
+inline void registerAllPasses() { registerPasses(); }
 } // namespace compigra
 } // namespace mlir
 

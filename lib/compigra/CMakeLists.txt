@@ -7,11 +7,14 @@ ${PROJECT_SOURCE_DIR}/include/compigra
 ${PROJECT_BINARY_DIR}/include/compigra
 
 DEPENDS
-MLIRCgraIncGen
+# MLIRCgraIncGen
 MLIRCgraEnumsIncGen
+MLIRCgraAttributesIncGen
+MLIRCgraInterfacesIncGen
 
 LINK_LIBS PUBLIC
 MLIRIR
+MLIRFuncDialect
 MLIRMemRefDialect
 MLIRLLVMDialect
 MLIROpenMPDialect

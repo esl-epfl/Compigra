@@ -1,4 +1,4 @@
-add_mlir_library(MLIRCompigraTransforms
+add_compigra_library(MLIRCompigraTransforms
 CfFixIndexWidth.cpp
 CfMapToFullPredict.cpp
 

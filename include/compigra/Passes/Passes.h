@@ -13,6 +13,8 @@
 #ifndef COMPIGRA_PASSES_H
 #define COMPIGRA_PASSES_H
 
+#include "compigra/Passes/CfFixIndexWidth.h"
+#include "compigra/Passes/CfMapToFullPredict.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
@@ -21,8 +23,7 @@
 namespace mlir {
 namespace compigra {
 
-#define GEN_PASS_DEF_CFFIXINDEXWIDTH
-#define GEN_PASS_DEF_CFMAPTOFULLPREDICT
+#define GEN_PASS_REGISTRATION
 #include "compigra/Passes/Passes.h.inc"
 
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth();

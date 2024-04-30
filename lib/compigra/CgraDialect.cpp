@@ -12,8 +12,8 @@
 
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinTypes.h"
+// #include "mlir/IR/Builders.h"
+// #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -29,6 +29,10 @@ void CgraDialect::initialize() {
 #define GET_OP_LIST
 #include "compigra/Cgra.cpp.inc"
       >();
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "compigra/CgraAttributes.cpp.inc"
+      >();
 }
 
 // Provide implementations for the enums, attributes and interfaces that we use.
@@ -39,4 +43,3 @@ void CgraDialect::initialize() {
 #include "compigra/CgraAttributes.cpp.inc"
 #define GET_TYPEDEF_CLASSES
 #include "compigra/CgraTypes.cpp.inc"
-// #include "compigra/CgraInterfaces.cpp.inc"

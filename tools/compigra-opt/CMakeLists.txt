@@ -3,12 +3,30 @@ get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
         ${dialect_libs}
         ${conversion_libs}
-        MLIROptLib
+        MLIRCgra
         MLIRCompigraTransforms
+        
+        MLIRIR
+        MLIROptLib
+        MLIRAffineTransforms
+        MLIRArithTransforms
+        MLIRSCFTransforms
+        MLIRMemRefTransforms
+        MLIRLLVMDialect
+        MLIRMemRefDialect
+        MLIRParser
+        MLIRFuncDialect
+        MLIRSupport
+        MLIRTransforms
+        MLIRSCFDialect
         # MLIRCOMPIGRA
 		# MLIRPolygeistTransforms
 		# MLIRFuncAllExtensions
-        )
+)
+
+set(LLVM_LINK_COMPONENTS
+  Support
+)
 
 add_llvm_tool(compigra-opt
     compigra-opt.cpp

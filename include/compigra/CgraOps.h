@@ -62,8 +62,8 @@ public:
 } // namespace OpTrait
 } // namespace mlir
 
-// #define GET_ATTRDEF_CLASSES
-// #include "compigra/HandshakeAttributes.h.inc"
+#define GET_ATTRDEF_CLASSES
+#include "compigra/CgraAttributes.h.inc"
 
 #define GET_OP_CLASSES
 #include "compigra/Cgra.h.inc"

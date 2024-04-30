@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Passes/CfFixIndexWidth.h"
-
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"

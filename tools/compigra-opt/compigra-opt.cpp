@@ -11,8 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/Passes/Passes.h"
+#include "InitAllDialects.h"
 #include "InitAllPasses.h"
+#include "compigra/CgraDialect.h"
+#include "compigra/CgraOps.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -21,7 +23,6 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/IR/Dialect.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
@@ -29,18 +30,17 @@
 // using namespace mlir;
 // using namespace compigra;
 
-
-
 int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
 
-  registry.insert<mlir::LLVM::LLVMDialect, mlir::affine::AffineDialect,
-                  mlir::math::MathDialect, mlir::memref::MemRefDialect,
-                  mlir::func::FuncDialect, mlir::arith::ArithDialect,
-                  mlir::cf::ControlFlowDialect, mlir::scf::SCFDialect>();
+  // registry.insert<mlir::LLVM::LLVMDialect, mlir::affine::AffineDialect,
+  //                 mlir::math::MathDialect, mlir::memref::MemRefDialect,
+  //                 mlir::func::FuncDialect, mlir::arith::ArithDialect,
+  //                 mlir::cf::ControlFlowDialect, mlir::scf::SCFDialect>();
 
   mlir::registerCSEPass();
   mlir::compigra::registerAllPasses();
+  mlir::compigra::registerAllDialects(registry);
 
   return failed(
       mlir::MlirOptMain(argc, argv, "Compigra optimizer driver\n", registry));

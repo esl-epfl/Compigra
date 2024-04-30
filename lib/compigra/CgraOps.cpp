@@ -77,3 +77,5 @@ ParseResult MergeOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 void MergeOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
+
+#include "compigra/CgraInterfaces.cpp.inc"
