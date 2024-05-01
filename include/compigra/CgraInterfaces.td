@@ -84,25 +84,25 @@ def SOSTInterface : OpInterface<"SOSTInterface"> {
     >
   ];
 
-  let verify = [{
-    auto concreteOp = mlir::cast<ConcreteOp>($_op);
+  // let verify = [{
+  //   auto concreteOp = mlir::cast<ConcreteOp>($_op);
 
-    // SOST operation's size must be at least one
-    if (concreteOp.getSize() < 1) {
-      return concreteOp.emitOpError(
-        "SOST operation's size must be at least 1, but has size ") 
-        << concreteOp.getSize();
-    }
+  //   // SOST operation's size must be at least one
+  //   if (concreteOp.getSize() < 1) {
+  //     return concreteOp.emitOpError(
+  //       "SOST operation's size must be at least 1, but has size ") 
+  //       << concreteOp.getSize();
+  //   }
 
-    // SOST operation's operands must all have the same type
-    auto dataType = concreteOp.getDataType();
-    for (auto operand : concreteOp->getOperands())
-      if (operand.getType() != dataType) 
-        return concreteOp.emitOpError("SOST operation reports having data type ")
-          << dataType << ", but one operand has type " << operand.getType();
+  //   // SOST operation's operands must all have the same type
+  //   auto dataType = concreteOp.getDataType();
+  //   for (auto operand : concreteOp->getOperands())
+  //     if (operand.getType() != dataType) 
+  //       return concreteOp.emitOpError("SOST operation reports having data type ")
+  //         << dataType << ", but one operand has type " << operand.getType();
     
-    return mlir::success();
-  }];
+  //   return mlir::success();
+  // }];
 }
 
 def MergeLikeOpInterface : OpInterface<"MergeLikeOpInterface"> {
@@ -140,20 +140,20 @@ def MergeLikeOpInterface : OpInterface<"MergeLikeOpInterface"> {
   }];
 }
 
-def GeneralOpInterface : OpInterface<"GeneralOpInterface"> {
-  let cppNamespace = "::cgra";
-  let description =
-      [{"Simulate the Execution of ops. The op takes a set of input values and "
-        "returns the corresponding outputs assuming the precondition to "
-        "execute holds."}];
+// def GeneralOpInterface : OpInterface<"GeneralOpInterface"> {
+//   let cppNamespace = "::cgra";
+//   let description =
+//       [{"Simulate the Execution of ops. The op takes a set of input values and "
+//         "returns the corresponding outputs assuming the precondition to "
+//         "execute holds."}];
 
-  let methods = [
-    InterfaceMethod<
-        "Simulate the Execution of the general op with given inputs", "void",
-        "execute",
-        (ins "std::vector<llvm::Any> &" : $ins,
-           "std::vector<llvm::Any> &" : $outs)>,
-  ];
-}
+//   let methods = [
+//     InterfaceMethod<
+//         "Simulate the Execution of the general op with given inputs", "void",
+//         "execute",
+//         (ins "std::vector<llvm::Any> &" : $ins,
+//            "std::vector<llvm::Any> &" : $outs)>,
+//   ];
+// }
 
 #endif // CGRA_OP_INTERFACES

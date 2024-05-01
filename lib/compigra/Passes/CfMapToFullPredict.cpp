@@ -25,6 +25,7 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Value.h"
+#include "llvm/ADT/ilist.h"
 #include <stack>
 
 // for printing debug informations
@@ -69,73 +70,140 @@ BlockStage getBlockStage(Block *block, std::vector<bbInfo> &bbs) {
   return BlockStage::Fini;
 }
 
-// validate whether the control flow graph can be scheduled by SAT-MapIt
-LogicalResult validateSatMapCtrlGraph(Block *block) { return failure(); }
+// Need to be optimized
+bool isBackEdge(Block *block, std::vector<bbInfo> &bbs) {
+  for (auto succ : block->getSuccessors()) {
+    if (getBlockIndex(bbs, succ) < getBlockIndex(bbs, block))
+      return true;
+  }
+  return false;
+}
 
-LogicalResult mapToFullPredict(std::vector<bbInfo> &bbs, OpBuilder &builder) {
+Operation *getDefOperation(Value val) {
+  Operation *defOp = val.getDefiningOp();
+  if (defOp == nullptr)
+    return nullptr;
+  if (isa<cf::BranchOp, cf::CondBranchOp>(defOp))
+    return nullptr;
+  return defOp;
+}
+
+// validate whether the control flow graph can be scheduled by SAT-MapIt
+LogicalResult validateSatMapCtrlGraph(std::vector<bbInfo> &bbs,
+                                      int &outLoopBB) {
+  int initBB = -1;
+  int finiBB = -1;
+
+  // check whether there is only one init block and one fini block
+  for (auto &bb : bbs) {
+    if (bb.stage == BlockStage::Init) {
+      if (initBB != -1)
+        return failure();
+      initBB = bb.index;
+    }
+    if (bb.stage == BlockStage::Fini) {
+      if (finiBB != -1)
+        return failure();
+      finiBB = bb.index;
+    }
+  }
+  // verify init=0 and fini=bbs.size() block
+  if (initBB != 0 || finiBB != static_cast<int>(bbs.size() - 1))
+    return failure();
+
+  // check whether init block has only one successor
+  if (bbs[initBB].block->getSuccessors().size() != 1)
+    return failure();
+
+  // check whether fini block has only one predecessor
+  outLoopBB = -1;
+  for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
+    auto &bb = bbs[i];
+    if (bb.stage != BlockStage::Loop)
+      return failure();
+    for (auto suc : bb.block->getSuccessors())
+      if (bbs[getBlockIndex(bbs, suc)].stage == BlockStage::Fini) {
+        if (outLoopBB != -1)
+          return failure();
+        outLoopBB = getBlockIndex(bbs, bb.block);
+      }
+  }
+
+  return success();
+}
+
+LogicalResult mapToFullPredict(std::vector<bbInfo> &bbs, OpBuilder &builder,
+                               int outLoopBB) {
   // determine whether the block
-  int outLoopBB = -1;
   Location loc = builder.getUnknownLoc();
   SmallVector<Operation *, 8> replaceOps;
+  SmallVector<Operation *, 8> removeBranchOps;
 
-  for (auto &bb : bbs) {
-    if (bb.stage == BlockStage::Init || bb.stage == BlockStage::Fini)
-      continue;
+  for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
+    auto &bb = bbs[i];
 
-    auto beginOp = bb.block->getOperations().begin();
-    auto endOp = bb.block->getOperations().rbegin();
-
-    llvm::errs() << "\nbeginOp: " << *beginOp << "\n";
-
-    if (isa<cf::CondBranchOp>(*endOp))
-      for (auto suc : bb.block->getSuccessors()) {
-        if (bbs[getBlockIndex(bbs, suc)].stage == BlockStage::Fini) {
-          // CHECK
-          outLoopBB = getBlockIndex(bbs, bb.block);
-        }
-      }
-
-    if (outLoopBB == -1)
-      continue;
+    if (getBlockIndex(bbs, bb.block) <= outLoopBB)
+      loc = bbs[1].block->getTerminator()->getLoc();
 
     // move the operations to the end of the block
-    auto cntBlock = bbs[outLoopBB + 1].block;
-
-    if (bb.index == getBlockIndex(bbs, cntBlock) || bb.index == outLoopBB)
-      continue;
+    Block *cntBlock;
+    if (i <= outLoopBB)
+      cntBlock = bbs[1].block;
+    else
+      cntBlock = bbs[outLoopBB + 1].block;
+    // auto cntBlock = bbs[outLoopBB + 1].block;
 
     loc = cntBlock->getTerminator()->getLoc();
 
-    // if block has arguments, insert mergeOp to merge the arguments
-    for (size_t i = 0; i < bb.block->getNumArguments(); i++) {
-      std::vector<Value> operands;
-      // get the operands from its successors
-      for (auto pred : bb.block->getPredecessors()) {
-        auto defOp = pred->getTerminator();
-        operands.push_back(defOp->getOperand(i));
+    // allow the loop block to have arguments
+    if (getBlockIndex(bbs, bb.block) != 1 &&
+        getBlockIndex(bbs, bb.block) != outLoopBB + 1)
+      for (size_t i = 0; i < bb.block->getNumArguments(); i++) {
+        std::vector<Value> operands;
+        // get the operands from its successors
+        for (auto pred : bb.block->getPredecessors()) {
+          auto defOp = pred->getTerminator();
+          operands.push_back(defOp->getOperand(i));
+        }
+        if (operands.size() == 1)
+          continue;
+        builder.setInsertionPoint(cntBlock->getTerminator());
+        auto mergeOp = builder.create<cgra::MergeOp>(loc, operands);
+        loc = mergeOp.getLoc();
+        // replace the argument with the result of mergeOp
+        bb.block->getArgument(i).replaceAllUsesWith(mergeOp.getResult());
       }
-      builder.setInsertionPoint(cntBlock->getTerminator());
-      // auto mergeOp = builder.create<cgra::MergeOp>(loc, operands);
-      // llvm::errs() << "new created MergeOp: " << mergeOp << "\n";
-      // loc = mergeOp.getLoc(); // update insert point
-    }
 
-    // move all the operations before the loc
     for (auto &op : bb.block->getOperations()) {
-      if (isa<cf::BranchOp, cf::CondBranchOp>(op))
-        continue;
-      replaceOps.push_back(&op);
+      // remove unnecessary branchOp and condBranchOp
+      if (isa<cf::BranchOp, cf::CondBranchOp>(op) &&
+          !isBackEdge(bb.block, bbs) &&
+          getBlockIndex(bbs, bb.block) != outLoopBB)
+        removeBranchOps.push_back(&op);
+      else {
+        if (getBlockIndex(bbs, bb.block) == 1 ||
+            getBlockIndex(bbs, bb.block) == outLoopBB + 1)
+          continue;
+        // move the operations to first successor of the outLoopBB
+        builder.setInsertionPoint(cntBlock->getTerminator());
+        auto newOp = builder.clone(op);
+        newOp->setLoc(loc);
+        op.replaceAllUsesWith(newOp);
+        loc = newOp->getLoc();
+      }
     }
-    // if (getBlockIndex(bbs, bb.block) == 5)
-    //   break;
   }
 
   // delte unnecessary branchOp and condBranchOp
-  for (auto op : replaceOps) {
-    auto newOp = builder.clone(*op);
-    newOp->setLoc(loc);
-    op->replaceAllUsesWith(newOp);
-    loc = newOp->getLoc();
+  for (auto op : removeBranchOps)
+    op->erase();
+
+  // remove the unnecessary blocks
+  for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
+    auto &bb = bbs[i];
+    if (getBlockIndex(bbs, bb.block) != 1 &&
+        getBlockIndex(bbs, bb.block) != outLoopBB + 1)
+      bb.block->erase();
   }
 
   return success();
@@ -158,7 +226,6 @@ void CfMapToFullPredictPass::runOnOperation() {
 
   func::FuncOp funcOp;
   getOperation()->walk([&](Operation *op) {
-    // auto funcOp
     if (isa<func::FuncOp>(op))
       funcOp = cast<func::FuncOp>(op);
   });
@@ -177,12 +244,12 @@ void CfMapToFullPredictPass::runOnOperation() {
   for (auto &bb : bbs)
     bb.stage = getBlockStage(bb.block, bbs);
 
-  if (failed(mapToFullPredict(bbs, builder)))
+  int outLoopBB = -1;
+  if (failed(validateSatMapCtrlGraph(bbs, outLoopBB)))
     return signalPassFailure();
 
-  llvm::errs() << "After mapToFullPredict\n";
-
-  getOperation()->walk([&](Operation *op) { llvm::errs() << *op << "\n"; });
+  if (failed(mapToFullPredict(bbs, builder, outLoopBB)))
+    return signalPassFailure();
 }
 
 } // namespace

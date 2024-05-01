@@ -27,6 +27,7 @@ def CfFixIndexWidth : Pass<"fix-index-width"> {
 def CfMapToFullPredict : Pass<"map-to-full-predict"> {
   let summary = "Reduce the number of bbs by applying full predict";
   let constructor = "mlir::compigra::createCfMapToFullPredict()";
+  let dependentDialects = ["cgra::CgraDialect"];
 }
 
 

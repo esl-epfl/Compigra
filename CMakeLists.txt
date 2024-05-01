@@ -23,6 +23,17 @@ if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW)
 endif()
 
+
+# CMP0116: Ninja generators transform `DEPFILE`s from `add_custom_command()`
+# New in CMake 3.20. https://cmake.org/cmake/help/latest/policy/CMP0116.html
+if(POLICY CMP0116)
+  cmake_policy(SET CMP0116 OLD)
+endif()
+
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 option(LLVM_INCLUDE_TOOLS "Generate build targets for the LLVM tools." ON)
 option(LLVM_BUILD_TOOLS "Build the LLVM tools. If OFF, just generate build targets." ON)
 
@@ -36,7 +47,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
-  set(MLIR_DIR "./circt/llvm/build/lib/cmake/mlir")
+  set(MLIR_DIR "./Polygeist/llvm-project/build/lib/cmake/mlir")
   message(STATUS "Searching for MLIRConfig.cmake in: ${MLIR_DIR}")
   find_package(MLIR REQUIRED CONFIG)
 
@@ -44,7 +55,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # building against an install area, then assume we're using the
   # submodule.
   # if(NOT LLVM_BUILD_MAIN_SRC_DIR)
-  set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/circt/llvm/llvm)
+  set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/Polygeist/llvm-project/llvm)
   # endif()
   set(LLVM_SOURCE_DIR ${LLVM_BUILD_MAIN_SRC_DIR} CACHE STRING "Location of LLVM source")
 

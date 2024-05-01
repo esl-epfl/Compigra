@@ -78,4 +78,8 @@ ParseResult MergeOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void MergeOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
+#define GET_ATTRDEF_CLASSES
 #include "compigra/CgraInterfaces.cpp.inc"
+
+#define GET_OP_CLASSES
+#include "compigra/Cgra.cpp.inc"
