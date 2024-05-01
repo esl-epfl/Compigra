@@ -19,7 +19,6 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
-namespace mlir {
 namespace compigra {
 
 #define GEN_PASS_DEF_CFFIXINDEXWIDTH
@@ -30,6 +29,5 @@ namespace compigra {
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
 
 } // namespace compigra
-} // namespace mlir
 
 #endif // COMPIGRA_CFFIXINDEXWIDTH_H

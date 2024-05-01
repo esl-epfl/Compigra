@@ -22,11 +22,11 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+using namespace mlir;
+
 enum class BlockStage { Init = 0, Loop = 1, Fini = 2 };
 
-namespace mlir {
 namespace compigra {
-
 struct bbInfo {
   int index = -1;
   BlockStage stage;
@@ -40,6 +40,5 @@ struct bbInfo {
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict();
 
 } // namespace compigra
-} // namespace mlir
 
 #endif // COMPIGRA_CFMAPTOFULLPREDICT_H

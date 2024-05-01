@@ -254,10 +254,9 @@ void CfMapToFullPredictPass::runOnOperation() {
 
 } // namespace
 
-namespace mlir {
+
 namespace compigra {
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict() {
   return std::make_unique<CfMapToFullPredictPass>();
 }
 } // namespace compigra
-} // namespace mlir

@@ -21,12 +21,12 @@ include "mlir/Pass/PassBase.td"
 
 def CfFixIndexWidth : Pass<"fix-index-width"> {
   let summary = "Fix the index width to CGRA processing element width";
-  let constructor = "mlir::compigra::createCfFixIndexWidth()";
+  let constructor = "compigra::createCfFixIndexWidth()";
 }
 
 def CfMapToFullPredict : Pass<"map-to-full-predict"> {
   let summary = "Reduce the number of bbs by applying full predict";
-  let constructor = "mlir::compigra::createCfMapToFullPredict()";
+  let constructor = "compigra::createCfMapToFullPredict()";
   let dependentDialects = ["cgra::CgraDialect"];
 }
 

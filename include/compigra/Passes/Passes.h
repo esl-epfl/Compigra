@@ -20,7 +20,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
-namespace mlir {
+
 namespace compigra {
 
 #define GEN_PASS_REGISTRATION
@@ -30,6 +30,4 @@ std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict();
 
 } // end namespace compigra
-} // end namespace mlir
-
 #endif // COMPIGRA_PASSES_H

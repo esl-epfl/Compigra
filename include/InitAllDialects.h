@@ -24,7 +24,6 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
-namespace mlir {
 namespace compigra {
 
 inline void registerAllDialects(mlir::DialectRegistry &registry) {
@@ -36,6 +35,5 @@ inline void registerAllDialects(mlir::DialectRegistry &registry) {
 }
 
 } // namespace compigra
-} // namespace mlir
 
 #endif // COMPIGRA_INITALLDIALECTS_H

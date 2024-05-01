@@ -16,11 +16,9 @@
 
 #include "compigra/Passes/Passes.h"
 
-namespace mlir {
 namespace compigra {
 
 inline void registerAllPasses() { registerPasses(); }
 } // namespace compigra
-} // namespace mlir
 
 #endif // INIT_ALL_PASSES_H

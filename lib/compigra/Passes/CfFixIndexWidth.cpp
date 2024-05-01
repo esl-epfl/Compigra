@@ -101,10 +101,8 @@ struct CfFixIndexWidthPass
 
 } // namespace
 
-namespace mlir {
 namespace compigra {
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth() {
   return std::make_unique<CfFixIndexWidthPass>();
 }
 } // namespace compigra
-} // namespace mlir

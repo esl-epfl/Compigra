@@ -27,20 +27,12 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 
-// using namespace mlir;
-// using namespace compigra;
-
 int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
 
-  // registry.insert<mlir::LLVM::LLVMDialect, mlir::affine::AffineDialect,
-  //                 mlir::math::MathDialect, mlir::memref::MemRefDialect,
-  //                 mlir::func::FuncDialect, mlir::arith::ArithDialect,
-  //                 mlir::cf::ControlFlowDialect, mlir::scf::SCFDialect>();
-
   mlir::registerCSEPass();
-  mlir::compigra::registerAllPasses();
-  mlir::compigra::registerAllDialects(registry);
+  compigra::registerAllPasses();
+  compigra::registerAllDialects(registry);
 
   return failed(
       mlir::MlirOptMain(argc, argv, "Compigra optimizer driver\n", registry));

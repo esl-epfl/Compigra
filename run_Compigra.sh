@@ -41,7 +41,8 @@ compile() {
     $MLIR_OPT --convert-scf-to-cf "$f_scf" > "$f_cf"
 
     # rewrite the cf
-    $COMPIGRA_OPT --allow-unregistered-dialect --fix-index-width "$f_cf" > "$f_cf_opt"
+    $COMPIGRA_OPT --allow-unregistered-dialect --fix-index-width \
+        --map-to-full-predict "$f_cf" > "$f_cf_opt"
 
     # lower down to standard dialect
     $MLIR_OPT --convert-complex-to-standard "$f_cf_opt" > "$f_std"
