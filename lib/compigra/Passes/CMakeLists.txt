@@ -1,0 +1,21 @@
+add_compigra_library(MLIRCompigraTransforms
+CfFixIndexWidth.cpp
+CfMapToFullPredict.cpp
+CfReduceBranches.cpp
+
+ADDITIONAL_HEADER_DIRS
+${PROJECT_SOURCE_DIR}/include/compigra
+
+DEPENDS
+CompigraPassIncGen
+
+LINK_LIBS PUBLIC
+MLIRIR
+MLIRMemRefDialect
+MLIRArithDialect
+MLIRLLVMDialect
+MLIROpenMPDialect
+MLIRAffineDialect
+MLIRSupport
+MLIRSCFTransforms
+)

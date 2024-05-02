@@ -1,0 +1,152 @@
+cmake_minimum_required(VERSION 3.13.4)
+
+include(CheckCXXSourceCompiles)
+
+if ("${COMPIGRA_DEP_DIR}" STREQUAL "")
+    set(COMPIGRA_PLUTO_DIR ${CMAKE_CURRENT_BINARY_DIR})
+else()
+    set(COMPIGRA_PLUTO_DIR ${POLYMER_DEP_DIR})
+endif()
+  
+message(STATUS "compigra_pluto_dir '${COMPIGRA_PLUTO_DIR}'")
+
+if(POLICY CMP0068)
+  cmake_policy(SET CMP0068 NEW)
+  set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
+endif()
+
+if(POLICY CMP0075)
+  cmake_policy(SET CMP0075 NEW)
+endif()
+
+if(POLICY CMP0077)
+  cmake_policy(SET CMP0077 NEW)
+endif()
+
+
+# CMP0116: Ninja generators transform `DEPFILE`s from `add_custom_command()`
+# New in CMake 3.20. https://cmake.org/cmake/help/latest/policy/CMP0116.html
+if(POLICY CMP0116)
+  cmake_policy(SET CMP0116 OLD)
+endif()
+
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
+option(LLVM_INCLUDE_TOOLS "Generate build targets for the LLVM tools." ON)
+option(LLVM_BUILD_TOOLS "Build the LLVM tools. If OFF, just generate build targets." ON)
+
+set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
+set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
+
+find_program(XXD_BIN xxd)
+
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(compigra LANGUAGES CXX C)
+
+  set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
+
+  set(MLIR_DIR "./Polygeist/llvm-project/build/lib/cmake/mlir")
+  message(STATUS "Searching for MLIRConfig.cmake in: ${MLIR_DIR}")
+  find_package(MLIR REQUIRED CONFIG)
+
+  # This is exported if we are building against a build area.  If
+  # building against an install area, then assume we're using the
+  # submodule.
+  # if(NOT LLVM_BUILD_MAIN_SRC_DIR)
+  set(LLVM_BUILD_MAIN_SRC_DIR ${CMAKE_SOURCE_DIR}/Polygeist/llvm-project/llvm)
+  # endif()
+  set(LLVM_SOURCE_DIR ${LLVM_BUILD_MAIN_SRC_DIR} CACHE STRING "Location of LLVM source")
+
+  message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
+  message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+else ()
+  set(LLVM_SOURCE_DIR ${LLVM_MAIN_SRC_DIR})
+  set(MLIR_MAIN_SRC_DIR ${LLVM_MAIN_SRC_DIR}/../mlir)
+  set(MLIR_INCLUDE_DIRS ${MLIR_MAIN_SRC_DIR}/include)
+  set(MLIR_CMAKE_DIR ${MLIR_MAIN_SRC_DIR}/cmake/modules)
+  set(MLIR_TABLEGEN_EXE $<TARGET_FILE:mlir-tblgen>)
+  set(MLIR_TABLEGEN_OUTPUT_DIR ${LLVM_BINARY_DIR}/tools/mlir/include)
+  set(PROJECT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+  set(COMPIGRA_TABLEGEN_OUTPUT_DIR ${LLVM_BINARY_DIR}/tools/compigra/include)
+  include_directories(${MLIR_TABLEGEN_OUTPUT_DIR})
+  include_directories(${COMPIGRA_TABLEGEN_OUTPUT_DIR})
+endif()
+
+function(append value)
+  foreach(variable ${ARGN})
+    set(${variable} "${${variable}} ${value}" PARENT_SCOPE)
+  endforeach(variable)
+endfunction()
+
+if( COMPIGRA_USE_LINKER )
+  append("-fuse-ld=${COMPIGRA_USE_LINKER}"
+    CMAKE_EXE_LINKER_FLAGS CMAKE_MODULE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
+  check_cxx_source_compiles("int main() { return 0; }" CXX_SUPPORTS_CUSTOM_LINKER)
+  if ( NOT CXX_SUPPORTS_CUSTOM_LINKER )
+    message(FATAL_ERROR "Host compiler does not support '-fuse-ld=${LLVM_USE_LINKER}'")
+  endif()
+endif()
+
+list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+include(TableGen)
+include(AddLLVM)
+include(AddMLIR)
+include(HandleLLVMOptions)
+
+set(COMPIGRA_TOOLS_DIR ${CMAKE_BINARY_DIR})
+
+add_custom_target(compigra-headers)
+set_target_properties(compigra-headers PROPERTIES FOLDER "Misc")
+
+function(add_compigra_library name)
+  add_mlir_library(${ARGV})
+  add_compigra_library_install(${name})
+endfunction()
+
+function(add_compigra_library_install name)
+  install(TARGETS ${name} COMPONENT ${name} EXPORT compigraTargets)
+  set_property(GLOBAL APPEND PROPERTY compigra_ALL_LIBS ${name})
+  set_property(GLOBAL APPEND PROPERTY compigra_EXPORTS ${name})
+endfunction()
+
+function(add_compigra_dialect_library name)
+  set_property(GLOBAL APPEND PROPERTY compigra_DIALECT_LIBS ${name})
+  add_compigra_library(${ARGV} DEPENDS compigra-headers)
+endfunction()
+
+function(add_compigra_dialect dialect dialect_namespace)
+  add_mlir_dialect(${ARGV})
+  add_dependencies(compigra-headers MLIR${dialect}IncGen)
+endfunction()
+
+function(add_compigra_interface interface)
+  add_mlir_interface(${ARGV})
+  add_dependencies(compigra-headers MLIR${interface}IncGen)
+endfunction()
+
+include_directories(${LLVM_INCLUDE_DIRS})
+include_directories(${MLIR_INCLUDE_DIRS})
+include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_BINARY_DIR}/include)
+link_directories(${LLVM_BUILD_LIBRARY_DIR})
+add_definitions(${LLVM_DEFINITIONS})
+
+set(COMPIGRA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(COMPIGRA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(COMPIGRA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include )
+set(COMPIGRA_TOOLS_DIR ${CMAKE_BINARY_DIR}/bin)
+set(COMPIGRA_UTILS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utils)
+
+set(LLVM_LIT_ARGS "-sv" CACHE STRING "lit default options")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
+
+add_subdirectory(${COMPIGRA_INCLUDE_DIR}/compigra)
+add_subdirectory(lib)
+add_subdirectory(tools)
+# add_subdirectory(test)
+
+add_definitions(-DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
