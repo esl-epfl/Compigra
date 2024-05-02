@@ -1,13 +1,13 @@
-//===- Cgra.td - Cgra dialect definition ---------*- tablegen -*-===//
+//===- Cgra.td - Cgra dialect definition -------------------*- tablegen -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// Compigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
 // This file originates from the CIRCT project (https://github.com/llvm/circt).
-// It includes modifications made as part of Dynamatic.
+// It includes modifications made as part of Compigra.
 //
 //===----------------------------------------------------------------------===//
 //

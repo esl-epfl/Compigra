@@ -282,13 +282,6 @@ struct FuncOpRewriteDAG : public OpRewritePattern<func::FuncOp> {
     for (auto op : removeBranchOps)
       rewriter.eraseOp(op);
 
-    // remove the unnecessary blocks
-    // for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
-    //   auto &bb = bbs[i];
-    //   if (getBlockIndex(bbs, bb.block) != 1 &&
-    //       getBlockIndex(bbs, bb.block) != outLoopBB + 1)
-    //     rewriter.eraseBlock(bb.block);
-    // }
 
     return success();
   }

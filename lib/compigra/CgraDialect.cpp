@@ -1,4 +1,4 @@
-//===- Dialect.cpp - Implement the Handshake dialect ----------------------===//
+//===- Dialect.cpp - Implement the Cgra dialect --------------------------===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,14 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the Handshake dialect.
+// This file implements the Cgra dialect.
 //
 //===----------------------------------------------------------------------===//
 
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
-// #include "mlir/IR/Builders.h"
-// #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 

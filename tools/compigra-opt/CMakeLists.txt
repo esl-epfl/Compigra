@@ -19,9 +19,6 @@ set(LIBS
         MLIRSupport
         MLIRTransforms
         MLIRSCFDialect
-        # MLIRCOMPIGRA
-		# MLIRPolygeistTransforms
-		# MLIRFuncAllExtensions
 )
 
 set(LLVM_LINK_COMPONENTS

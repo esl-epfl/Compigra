@@ -38,7 +38,9 @@ LogicalResult irrelavantBlock(Block *block1, Block *block2) {
 }
 
 namespace {
-//
+// Remove the conditional branch operation if it branches to the same block with
+// different arguments, merge the successor block with the current block and use
+// select operation to merge the two branches
 struct CondBranchOpRewrite : public RewritePattern {
   CondBranchOpRewrite(MLIRContext *context)
       : RewritePattern(cf::CondBranchOp::getOperationName(), 1, context){};
@@ -72,6 +74,9 @@ struct CondBranchOpRewrite : public RewritePattern {
   }
 };
 
+// Merge a basic block with its predecessor if the predecessor unconditionally
+// branches to it, or the merge not affect the other basic block the predecessor
+// block branches to.
 struct BranchOpRewrite : public RewritePattern {
   BranchOpRewrite(MLIRContext *context)
       : RewritePattern(cf::BranchOp::getOperationName(), 1, context) {}

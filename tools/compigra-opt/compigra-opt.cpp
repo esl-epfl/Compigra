@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements the 'compigra-opt' tool, which is the compigra analog
-// of mlir-opt, used to drive compiler passes, e.g. for testing.
+// of mlir-opt, used to drive compiler passes.
 //
 //===----------------------------------------------------------------------===//
 

@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines a helper to trigger the registration of all passes defined
-// in the Dynamatic tutorials.
+// This file defines a helper to trigger the registration of all passes
 //
 //===----------------------------------------------------------------------===//
 
