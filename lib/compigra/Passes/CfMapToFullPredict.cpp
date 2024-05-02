@@ -17,7 +17,7 @@
 #include "compigra/CgraOps.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
@@ -136,7 +136,6 @@ LogicalResult mapToFullPredict(std::vector<bbInfo> &bbs, OpBuilder &builder,
                                int outLoopBB) {
   // determine whether the block
   Location loc = builder.getUnknownLoc();
-  SmallVector<Operation *, 8> replaceOps;
   SmallVector<Operation *, 8> removeBranchOps;
 
   for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
@@ -210,50 +209,148 @@ LogicalResult mapToFullPredict(std::vector<bbInfo> &bbs, OpBuilder &builder,
 }
 
 namespace {
-/// Driver for the index bitwidth fix pass.
-struct CfMapToFullPredictPass
-    : public compigra::impl::CfMapToFullPredictBase<CfMapToFullPredictPass> {
-  void runOnOperation() override;
-};
 
-void CfMapToFullPredictPass::runOnOperation() {
-  auto *ctx = &getContext();
-  OpBuilder builder(ctx);
-  // PatternRewriter rewriter(ctx);
+struct FuncOpRewriteDAG : public OpRewritePattern<func::FuncOp> {
+  using OpRewritePattern<func::FuncOp>::OpRewritePattern;
 
-  std::vector<Operation *> ops;
-  std::vector<bbInfo> bbs;
+  FuncOpRewriteDAG(MLIRContext *ctx, int outLoopBB, std::vector<bbInfo> &bbs)
+      : OpRewritePattern<func::FuncOp>(ctx), outLoopBB(outLoopBB), bbs(bbs){};
 
-  func::FuncOp funcOp;
-  getOperation()->walk([&](Operation *op) {
-    if (isa<func::FuncOp>(op))
-      funcOp = cast<func::FuncOp>(op);
-  });
+  LogicalResult matchAndRewrite(func::FuncOp funcOp,
+                                PatternRewriter &rewriter) const override {
+    Location loc = rewriter.getUnknownLoc();
+    SmallVector<Operation *, 8> removeBranchOps;
+    llvm::errs() << "matched\n\n";
+    for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
+      auto &bb = bbs[i];
 
-  funcOp->walk([&](Operation *op) {
-    if (!isa<func::FuncOp>(op)) {
-      auto curBlock = op->getBlock();
-      if (getBlockIndex(bbs, curBlock) == -1) {
-        bbs.push_back(
-            bbInfo{static_cast<int>(bbs.size()), BlockStage::Init, curBlock});
+      if (getBlockIndex(bbs, bb.block) <= outLoopBB)
+        loc = bbs[1].block->getTerminator()->getLoc();
+
+      // move the operations to the end of the block
+      Block *cntBlock;
+      if (i <= outLoopBB)
+        cntBlock = bbs[1].block;
+      else
+        cntBlock = bbs[outLoopBB + 1].block;
+
+      loc = cntBlock->getTerminator()->getLoc();
+
+      // allow the loop block to have arguments
+      if (getBlockIndex(bbs, bb.block) != 1 &&
+          getBlockIndex(bbs, bb.block) != outLoopBB + 1)
+        for (size_t i = 0; i < bb.block->getNumArguments(); i++) {
+          std::vector<Value> operands;
+          // get the operands from its successors
+          for (auto pred : bb.block->getPredecessors()) {
+            auto defOp = pred->getTerminator();
+            operands.push_back(defOp->getOperand(i));
+          }
+          if (operands.size() == 1)
+            // TODO: replace the argument with the result of defOp
+            continue;
+
+          rewriter.setInsertionPoint(cntBlock->getTerminator());
+          auto mergeOp = rewriter.create<cgra::MergeOp>(loc, operands);
+          loc = mergeOp.getLoc();
+          llvm::errs() << "insert: " << mergeOp << "\n";
+          // replace the argument with the result of mergeOp
+          bb.block->getArgument(i).replaceAllUsesWith(mergeOp.getResult());
+        }
+
+      for (auto &op : bb.block->getOperations()) {
+        // remove unnecessary branchOp and condBranchOp
+        if (isa<cf::BranchOp, cf::CondBranchOp>(op) &&
+            !isBackEdge(bb.block, bbs) &&
+            getBlockIndex(bbs, bb.block) != outLoopBB)
+          removeBranchOps.push_back(&op);
+        else {
+          if (getBlockIndex(bbs, bb.block) == 1 ||
+              getBlockIndex(bbs, bb.block) == outLoopBB + 1)
+            continue;
+          // move the operations to first successor of the outLoopBB
+          rewriter.setInsertionPoint(cntBlock->getTerminator());
+          auto newOp = rewriter.clone(op);
+          newOp->setLoc(loc);
+          op.replaceAllUsesWith(newOp);
+          loc = newOp->getLoc();
+          llvm::errs() << "moving: " << *newOp << "\n";
+        }
       }
     }
-  });
 
-  // track the stage of the block
-  for (auto &bb : bbs)
-    bb.stage = getBlockStage(bb.block, bbs);
+    for (auto op : removeBranchOps)
+      rewriter.eraseOp(op);
 
-  int outLoopBB = -1;
-  if (failed(validateSatMapCtrlGraph(bbs, outLoopBB)))
-    return signalPassFailure();
+    // remove the unnecessary blocks
+    // for (int i = 1; i < static_cast<int>(bbs.size()) - 1; i++) {
+    //   auto &bb = bbs[i];
+    //   if (getBlockIndex(bbs, bb.block) != 1 &&
+    //       getBlockIndex(bbs, bb.block) != outLoopBB + 1)
+    //     rewriter.eraseBlock(bb.block);
+    // }
 
-  if (failed(mapToFullPredict(bbs, builder, outLoopBB)))
-    return signalPassFailure();
-}
+    return success();
+  }
+
+private:
+  int outLoopBB;
+  std::vector<bbInfo> &bbs;
+};
+
+/// Driver for the cf DAG rewrite pass.
+struct CfMapToFullPredictPass
+    : public compigra::impl::CfMapToFullPredictBase<CfMapToFullPredictPass> {
+
+  void runOnOperation() override {
+    MLIRContext *ctx = &getContext();
+
+    std::vector<bbInfo> bbs;
+
+    func::FuncOp funcOp;
+    getOperation()->walk([&](Operation *op) {
+      if (isa<func::FuncOp>(op))
+        funcOp = cast<func::FuncOp>(op);
+    });
+
+    funcOp->walk([&](Operation *op) {
+      if (!isa<func::FuncOp>(op)) {
+        auto curBlock = op->getBlock();
+        if (getBlockIndex(bbs, curBlock) == -1) {
+          bbs.push_back(
+              bbInfo{static_cast<int>(bbs.size()), BlockStage::Init, curBlock});
+        }
+      }
+    });
+
+    // track the stage of the block
+    for (auto &bb : bbs)
+      bb.stage = getBlockStage(bb.block, bbs);
+
+    int outLoopBB = -1;
+    if (failed(validateSatMapCtrlGraph(bbs, outLoopBB))) {
+      llvm::errs() << "The control flow graph failed to satisfy SAT-MapIt "
+                      "requirements\n";
+      return signalPassFailure();
+    }
+
+    // RewritePatternSet patterns{ctx};
+    // mlir::GreedyRewriteConfig config;
+    // patterns.add<FuncOpRewriteDAG>(ctx, outLoopBB, bbs);
+    // auto res = applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
+    //                                         config);
+    // if (failed(applyPatternsAndFoldGreedily(getOperation(),
+    // std::move(patterns),
+    //                                         config)))
+    //   return signalPassFailure();
+
+    OpBuilder builder(ctx);
+     if (failed(mapToFullPredict(bbs, builder, outLoopBB)))
+       return signalPassFailure();
+  }
+};
 
 } // namespace
-
 
 namespace compigra {
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict() {

@@ -42,11 +42,10 @@ compile() {
 
     # rewrite the cf
     $COMPIGRA_OPT --allow-unregistered-dialect --fix-index-width \
-        --map-to-full-predict "$f_cf" > "$f_cf_opt"
+        --reduce-branches "$f_cf" > "$f_cf_opt"
 
     # lower down to standard dialect
-    $MLIR_OPT --convert-complex-to-standard "$f_cf_opt" > "$f_std"
-
+    # $MLIR_OPT --convert-complex-to-standard "$f_cf_opt" > "$f_std"
     $MLIR_OPT --test-lower-to-llvm "$f_cf" > "$f_llvm"
 
     # Check if the compilation was successful

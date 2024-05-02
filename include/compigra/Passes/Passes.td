@@ -30,5 +30,10 @@ def CfMapToFullPredict : Pass<"map-to-full-predict"> {
   let dependentDialects = ["cgra::CgraDialect"];
 }
 
+def CfReduceBranches : Pass<"reduce-branches"> {
+  let summary = "Reduce the number of branches by applying full predict";
+  let constructor = "compigra::createCfReduceBranches()";
+}
+
 
 #endif // COMPIGRA_PASSES_TD

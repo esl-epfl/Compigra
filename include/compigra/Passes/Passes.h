@@ -15,6 +15,7 @@
 
 #include "compigra/Passes/CfFixIndexWidth.h"
 #include "compigra/Passes/CfMapToFullPredict.h"
+#include "compigra/Passes/CfReduceBranches.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
