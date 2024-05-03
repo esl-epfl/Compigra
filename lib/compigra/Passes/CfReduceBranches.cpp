@@ -56,21 +56,21 @@ struct CondBranchOpRewrite : public RewritePattern {
     // use select operation to merge the two branches
     auto condBranchOp = cast<cf::CondBranchOp>(op);
     Value flag = op->getOperand(0);
+    SmallVector<Value, 4> brArgs;
 
     Block *sucBlock = op->getBlock()->getSuccessors()[0];
     for (size_t i = 0; i < condBranchOp.getTrueDestOperands().size(); i++) {
       rewriter.setInsertionPoint(op);
+      // create select operation to select the the argument
       auto selecOp = rewriter.create<arith::SelectOp>(
           op->getLoc(), flag, condBranchOp.getTrueOperand(i),
           condBranchOp.getFalseOperand(i));
-      rewriter.replaceAllUsesWith(sucBlock->getArgument(i), selecOp);
+      brArgs.push_back(selecOp.getResult());
     }
-
-    sucBlock->walk([&](Operation *sucOp) {
-      sucOp->moveBefore(op->getBlock()->getTerminator());
-    });
-    rewriter.eraseOp(op);
-    rewriter.eraseBlock(sucBlock);
+    // replace cond_br with branch
+    auto branchOp =
+        rewriter.create<cf::BranchOp>(op->getLoc(), sucBlock, brArgs);
+    rewriter.replaceOp(op, branchOp);
   }
 };
 
@@ -91,9 +91,13 @@ struct BranchOpRewrite : public RewritePattern {
       }
 
       Block *curBlock = op->getBlock();
-      if (curBlock->isEntryBlock() || curBlock->getArguments().size() > 0) {
+      if (curBlock->isEntryBlock()) {
         return failure();
       }
+
+      if (curBlock->getArguments().size() > 0 &&
+          !(curBlock->getSinglePredecessor()))
+        return failure();
 
       Block *prevBlock = *curBlock->getPredecessors().begin();
       if (isa<cf::CondBranchOp>(prevBlock->getTerminator()) &&
@@ -105,7 +109,6 @@ struct BranchOpRewrite : public RewritePattern {
 
   // merge current block with the successor block
   void rewrite(Operation *branchOp, PatternRewriter &rewriter) const override {
-
     // Get the predecessor block of the branch operation
     Block *curBlock = branchOp->getBlock();
     Block *prevBlock = *curBlock->getPredecessors().begin();
@@ -118,6 +121,12 @@ struct BranchOpRewrite : public RewritePattern {
     auto loc = prevTerminator->getLoc();
 
     if (isa<cf::BranchOp>(prevTerminator)) {
+      // if the block has arguments, it must be the only successor of its
+      // predessor block, replace the use of the block arguments with the
+      // operands of the branch operation
+      for (auto arg : curBlock->getArguments()) {
+        arg.replaceAllUsesWith(prevTerminator->getOperand(arg.getArgNumber()));
+      }
       for (auto op : opsToMove) {
         if (op == branchOp) {
           // rewrite its successor's branch and cond_branch
@@ -128,11 +137,10 @@ struct BranchOpRewrite : public RewritePattern {
             for (auto arg : op->getOperands())
               operands.push_back(arg);
             // update the succcessor of block
-            auto sucBranchOp = cast<cf::BranchOp>(prevTerminator);
-            sucBranchOp.setDest(curBlock->getSuccessors()[0]);
-            //   update the branch arguments
-            sucBranchOp->insertOperands(sucBranchOp->getNumOperands(),
-                                        operands);
+            auto prevBranchOp = cast<cf::BranchOp>(prevTerminator);
+            prevBranchOp.setDest(curBlock->getSuccessors()[0]);
+            // update the branch arguments
+            prevBranchOp->setOperands(operands);
             prevTerminator->setLoc(loc);
             continue;
           }
@@ -154,12 +162,20 @@ struct BranchOpRewrite : public RewritePattern {
           //   update the partial conditional branch operation in the
           //   successor
           if (curBlock == prevCondBranchOp.getTrueDest()) {
+            for (auto arg : curBlock->getArguments()) {
+              arg.replaceAllUsesWith(
+                  prevCondBranchOp.getTrueOperand(arg.getArgNumber()));
+            }
             newOp = rewriter.create<cf::CondBranchOp>(
                 loc, prevTerminator->getOperand(0),
                 curBlock->getSuccessors()[0], operands,
                 prevBlock->getSuccessors()[1],
                 prevCondBranchOp.getFalseOperands());
           } else {
+            for (auto arg : curBlock->getArguments()) {
+              arg.replaceAllUsesWith(
+                  prevCondBranchOp.getFalseOperand(arg.getArgNumber()));
+            }
             newOp = rewriter.create<cf::CondBranchOp>(
                 loc, prevTerminator->getOperand(0),
                 prevBlock->getSuccessors()[0],
