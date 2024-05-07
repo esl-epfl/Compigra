@@ -95,8 +95,7 @@ struct BranchOpRewrite : public RewritePattern {
         return failure();
       }
 
-      if (curBlock->getArguments().size() > 0 &&
-          !(curBlock->getSinglePredecessor()))
+      if (!(curBlock->getSinglePredecessor()))
         return failure();
 
       Block *prevBlock = *curBlock->getPredecessors().begin();
