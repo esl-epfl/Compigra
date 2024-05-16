@@ -244,20 +244,20 @@ def BneOp : Cgra_Op<"bne", [
   let hasCustomAssemblyFormat = 1;
 }
 
-def BsfzOp : Cgra_Op<"bsfz", [
+def BzfaOp : Cgra_Op<"bzfa", [
   Pure
   // SameOperandsAndResultType,
   // DeclareOpInterfaceMethods<ExecutableOpInterface>,
   // DeclareOpInterfaceMethods<GeneralOpInterface>,
 ]> {
-  let summary = "bsfz operation";
+  let summary = "bzfa operation";
   let description = [{
-    The bsfz operation represents a select operation based on the flag input
+    The bzfa operation represents a select operation based on the flag input
         .The data input is propagated to the single output based on the flag
             input.
 
     Example:
-      ``` mlir % 1 = bsfz % flag,
+      ``` mlir % 1 = bzfa % flag,
     [% trueOperand, % falseOperand]: i32
       ```
   }];

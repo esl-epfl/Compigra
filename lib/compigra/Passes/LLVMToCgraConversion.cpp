@@ -269,14 +269,14 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           cmpOp.getLoc(), resType, APInt(resType.getIntOrFloatBitWidth(), -1));
 
-      // create bsfz operation to include the equal case
-      cgra::BsfzOp bsfzOp = rewriter.create<cgra::BsfzOp>(
+      // create bzfa operation to include the equal case
+      cgra::BzfaOp bzfaOp = rewriter.create<cgra::BzfaOp>(
           cmpOp.getLoc(), subOp.getResult().getType(), subOp.getResult(),
           SmallVector<Value>({constOp.getResult(), subOp.getResult()}));
-      selectFlag = bsfzOp.getResult();
+      selectFlag = bzfaOp.getResult();
     }
 
-    // Replace the select operation with bsfa/bsfz operation.
+    // Replace the select operation with bsfa/bzfa operation.
     if (!selOps.empty()) {
       // replace the bsfa with select operation
       for (auto selOp : selOps) {
@@ -660,26 +660,67 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
   return success();
 };
 
-namespace {
+static bool isBackEdge(Value edge, Operation *dstOp) {
+  // If the destination operation is not used by any operation, it is not a
+  // backedge
+  if (dstOp->getResults().use_empty())
+    return false;
+  Operation *srcOp = edge.getDefiningOp();
 
-struct LLVMToCgraConversionPass
-    : public compigra::impl::LLVMToCgraConversionBase<
-          LLVMToCgraConversionPass> {
-  void runOnOperation() override {
-    ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+  // check whether a propagation path exists from dstOp to srcOp, if yes, it
+  // is a backedge.
+  SmallVector<Operation *> opVec = {dstOp};
+  SmallVector<Operation *> visited = {dstOp};
+  while (!opVec.empty()) {
+    Operation *op = opVec.back();
+    opVec.pop_back();
+    if (op == srcOp)
+      return true;
+    for (Value operand : op->getOperands())
+      for (Operation *sucOp : operand.getUsers()) {
+        if (llvm::is_contained(visited, sucOp))
+          continue;
+        visited.push_back(sucOp);
+        opVec.push_back(sucOp);
+      }
+  }
+  return false;
+}
 
-    // rewrite funcOp
-    for (auto funcOp :
-         llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
-      if (failed(lowerFuncOp(funcOp, &getContext())))
-        return signalPassFailure();
-    }
-  };
+void LLVMToCgraConversionPass::runOnOperation() {
+  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+
+  // rewrite funcOp
+  for (auto funcOp :
+       llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
+    if (failed(lowerFuncOp(funcOp, &getContext())))
+      return signalPassFailure();
+  }
+
+  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
+    if (outputDAG == funcOp.getName() && failed(outputDATE2023DAG(funcOp)))
+      return signalPassFailure();
 };
-} // namespace
+
+LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
+  SmallVector<Operation *> nodes;
+  // define the edge by the srcOp and dstOp
+  using Edge = std::pair<Operation *, Operation *>;
+
+  std::vector<Edge> edges;
+  for (Operation &op : funcOp.getOps()) {
+    StringRef stage = dyn_cast<StringAttr>(op.getAttr("stage")).getValue();
+    if (stage != StringRef("loop"))
+      continue;
+
+    nodes.push_back(&op);
+
+  }
+  return success();
+}
 
 namespace compigra {
-std::unique_ptr<mlir::Pass> createLLVMToCgraConversion() {
-  return std::make_unique<LLVMToCgraConversionPass>();
+std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG) {
+  return std::make_unique<LLVMToCgraConversionPass>(outputDAG);
 }
 } // namespace compigra
