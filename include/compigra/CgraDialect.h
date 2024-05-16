@@ -14,6 +14,7 @@
 #define CGRA_DIALECT_H
 
 #include "mlir/IR/Dialect.h"
+#include "mlir/Support/LLVM.h"
 
 // Pull in the Dialect definition.
 #include "compigra/CgraDialect.h.inc"

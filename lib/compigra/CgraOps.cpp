@@ -29,6 +29,10 @@
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+namespace mlir {
+class AsmParser;
+} // namespace mlir
+
 using namespace mlir;
 using namespace cgra;
 
@@ -38,6 +42,7 @@ static ParseResult parseIntInSquareBrackets(OpAsmParser &parser, int &v) {
   return success();
 }
 
+/// Parse the sized operation with single type 
 static ParseResult
 parseSostOperation(OpAsmParser &parser,
                    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
@@ -55,6 +60,220 @@ parseSostOperation(OpAsmParser &parser,
   if (!explicitSize)
     size = operands.size();
   return success();
+}
+
+/// Generates names for a cgra.func input and output arguments, based on
+/// the number of args as well as a prefix.
+static SmallVector<Attribute> getFuncOpNames(Builder &builder, unsigned cnt,
+                                             StringRef prefix) {
+  SmallVector<Attribute> resNames;
+  for (unsigned i = 0; i < cnt; ++i)
+    resNames.push_back(builder.getStringAttr(prefix + std::to_string(i)));
+  return resNames;
+}
+
+/// Helper function for appending input/output attributes for cgra FuncOp.
+void FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name,
+                   FunctionType type, ArrayRef<NamedAttribute> attrs) {
+  state.addAttribute(SymbolTable::getSymbolAttrName(),
+                     builder.getStringAttr(name));
+  state.addAttribute(FuncOp::getFunctionTypeAttrName(state.name),
+                     TypeAttr::get(type));
+  state.attributes.append(attrs.begin(), attrs.end());
+
+  if (const auto *argNamesAttrIt = llvm::find_if(
+          attrs, [&](auto attr) { return attr.getName() == "argNames"; });
+      argNamesAttrIt == attrs.end())
+    state.addAttribute("argNames", builder.getArrayAttr({}));
+
+  if (llvm::find_if(attrs, [&](auto attr) {
+        return attr.getName() == "resNames";
+      }) == attrs.end())
+    state.addAttribute("resNames", builder.getArrayAttr({}));
+
+  state.addRegion();
+}
+
+/// Helper function for appending a string to an array attribute, and
+/// rewriting the attribute back to the operation.
+static void addStringToStringArrayAttr(Builder &builder, Operation *op,
+                                       StringRef attrName, StringAttr str) {
+  llvm::SmallVector<Attribute> attrs;
+  llvm::copy(op->getAttrOfType<ArrayAttr>(attrName).getValue(),
+             std::back_inserter(attrs));
+  attrs.push_back(str);
+  op->setAttr(attrName, builder.getArrayAttr(attrs));
+}
+
+void FuncOp::resolveArgAndResNames() {
+  Builder builder(getContext());
+
+  /// Generate a set of fallback names. These are used in case names are
+  /// missing from the currently set arg- and res name attributes.
+  auto fallbackArgNames = getFuncOpNames(builder, getNumArguments(), "in");
+  auto fallbackResNames = getFuncOpNames(builder, getNumResults(), "out");
+  auto argNames = getArgNames().getValue();
+  auto resNames = getResNames().getValue();
+
+  /// Use fallback names where actual names are missing.
+  auto resolveNames = [&](auto &fallbackNames, auto &actualNames,
+                          StringRef attrName) {
+    for (auto fallbackName : llvm::enumerate(fallbackNames)) {
+      if (actualNames.size() <= fallbackName.index())
+        addStringToStringArrayAttr(
+            builder, this->getOperation(), attrName,
+            fallbackName.value().template cast<StringAttr>());
+    }
+  };
+  resolveNames(fallbackArgNames, argNames, "argNames");
+  resolveNames(fallbackResNames, resNames, "resNames");
+}
+
+LogicalResult FuncOp::verify() {
+  // If this function is external there is nothing to do.
+  if (isExternal())
+    return success();
+
+  // Verify that the argument list of the function and the arg list of the
+  // entry block line up.  The trait already verified that the number of
+  // arguments is the same between the signature and the block.
+  auto fnInputTypes = getArgumentTypes();
+  Block &entryBlock = front();
+
+  for (unsigned i = 0, e = entryBlock.getNumArguments(); i != e; ++i)
+    if (fnInputTypes[i] != entryBlock.getArgument(i).getType())
+      return emitOpError("type of entry block argument #")
+             << i << '(' << entryBlock.getArgument(i).getType()
+             << ") must match the type of the corresponding argument in "
+             << "function signature(" << fnInputTypes[i] << ')';
+
+  // Verify that we have a name for each argument and result of this
+  // function.
+  auto verifyPortNameAttr = [&](StringRef attrName,
+                                unsigned numIOs) -> LogicalResult {
+    auto portNamesAttr = (*this)->getAttrOfType<ArrayAttr>(attrName);
+
+    if (!portNamesAttr)
+      return emitOpError() << "expected attribute '" << attrName << "'.";
+
+    auto portNames = portNamesAttr.getValue();
+    if (portNames.size() != numIOs)
+      return emitOpError() << "attribute '" << attrName << "' has "
+                           << portNames.size()
+                           << " entries but is expected to have " << numIOs
+                           << ".";
+
+    if (llvm::any_of(portNames,
+                     [&](Attribute attr) { return !attr.isa<StringAttr>(); }))
+      return emitOpError() << "expected all entries in attribute '" << attrName
+                           << "' to be strings.";
+
+    return success();
+  };
+  if (failed(verifyPortNameAttr("argNames", getNumArguments())))
+    return failure();
+  if (failed(verifyPortNameAttr("resNames", getNumResults())))
+    return failure();
+
+  return success();
+}
+
+/// Parses a FuncOp signature using
+/// mlir::function_interface_impl::parseFunctionSignature while getting access
+/// to the parsed SSA names to store as attributes.
+static ParseResult
+parseFuncOpArgs(OpAsmParser &parser,
+                SmallVectorImpl<OpAsmParser::Argument> &entryArgs,
+                SmallVectorImpl<Type> &resTypes,
+                SmallVectorImpl<DictionaryAttr> &resAttrs) {
+  bool isVariadic;
+  if (mlir::function_interface_impl::parseFunctionSignature(
+          parser, /*allowVariadic=*/true, entryArgs, isVariadic, resTypes,
+          resAttrs)
+          .failed())
+    return failure();
+
+  return success();
+}
+
+ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
+  auto &builder = parser.getBuilder();
+  StringAttr nameAttr;
+  SmallVector<OpAsmParser::Argument> args;
+  SmallVector<Type> resTypes;
+  SmallVector<DictionaryAttr> resAttributes;
+  SmallVector<Attribute> argNames;
+
+  // Parse visibility.
+  (void)mlir::impl::parseOptionalVisibilityKeyword(parser, result.attributes);
+
+  // Parse signature
+  if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
+                             result.attributes) ||
+      parseFuncOpArgs(parser, args, resTypes, resAttributes))
+    return failure();
+  mlir::function_interface_impl::addArgAndResultAttrs(
+      builder, result, args, resAttributes,
+      cgra::FuncOp::getArgAttrsAttrName(result.name),
+      cgra::FuncOp::getResAttrsAttrName(result.name));
+
+  // Set function type
+  SmallVector<Type> argTypes;
+  for (auto arg : args)
+    argTypes.push_back(arg.type);
+
+  result.addAttribute(
+      cgra::FuncOp::getFunctionTypeAttrName(result.name),
+      TypeAttr::get(builder.getFunctionType(argTypes, resTypes)));
+
+  // Determine the names of the arguments. If no SSA values are present, use
+  // fallback names.
+  bool noSSANames =
+      llvm::any_of(args, [](auto arg) { return arg.ssaName.name.empty(); });
+  if (noSSANames) {
+    argNames = getFuncOpNames(builder, args.size(), "in");
+  } else {
+    llvm::transform(args, std::back_inserter(argNames), [&](auto arg) {
+      return builder.getStringAttr(arg.ssaName.name.drop_front());
+    });
+  }
+
+  // Parse attributes
+  if (failed(parser.parseOptionalAttrDictWithKeyword(result.attributes)))
+    return failure();
+
+  // If argNames and resNames wasn't provided manually, infer argNames attribute
+  // from the parsed SSA names and resNames from our naming convention.
+  if (!result.attributes.get("argNames"))
+    result.addAttribute("argNames", builder.getArrayAttr(argNames));
+  if (!result.attributes.get("resNames")) {
+    auto resNames = getFuncOpNames(builder, resTypes.size(), "out");
+    result.addAttribute("resNames", builder.getArrayAttr(resNames));
+  }
+
+  // Parse the optional function body. The printer will not print the body if
+  // its empty, so disallow parsing of empty body in the parser.
+  auto *body = result.addRegion();
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  auto parseResult = parser.parseOptionalRegion(*body, args,
+                                                /*enableNameShadowing=*/false);
+  if (!parseResult.has_value())
+    return success();
+
+  if (failed(*parseResult))
+    return failure();
+  // Function body was parsed, make sure its not empty.
+  if (body->empty())
+    return parser.emitError(loc, "expected non-empty function body");
+
+  // If a body was parsed, the arg and res names need to be resolved
+  return success();
+}
+
+void FuncOp::print(OpAsmPrinter &p) {
+  mlir::function_interface_impl::printFunctionOp(
+      p, *this, /*isVariadic=*/true, getFunctionTypeAttrName(),
+      getArgAttrsAttrName(), getResAttrsAttrName());
 }
 
 ParseResult MergeOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -77,6 +296,273 @@ ParseResult MergeOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 void MergeOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
+
+LogicalResult MergeOp::verify() {
+  auto operands = getOperands();
+  if (operands.empty())
+    return emitOpError("operation must have at least one operand");
+  return success();
+}
+
+ParseResult BranchOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  Type type;
+  ArrayRef<Type> operandTypes(type);
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  int size;
+  if (parseSostOperation(parser, allOperands, result, size, type, false))
+    return failure();
+
+  dataOperandsTypes.assign(size, type);
+  result.addTypes({type});
+  if (parser.resolveOperands(allOperands, dataOperandsTypes, allOperandLoc,
+                             result.operands))
+    return failure();
+  return success();
+}
+
+void BranchOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
+
+ParseResult ConditionalBranchOp::parse(OpAsmParser &parser,
+                                       OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  Type dataType;
+  SmallVector<Type> operandTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (parser.parseOperandList(allOperands) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(dataType))
+    return failure();
+
+  if (allOperands.size() != 2)
+    return parser.emitError(parser.getCurrentLocation(),
+                            "Expected exactly 2 operands");
+
+  result.addTypes({dataType, dataType});
+  operandTypes.push_back(IntegerType::get(parser.getContext(), 1));
+  operandTypes.push_back(dataType);
+  if (parser.resolveOperands(allOperands, operandTypes, allOperandLoc,
+                             result.operands))
+    return failure();
+
+  return success();
+}
+
+bool ConditionalBranchOp::isControl() { return true; }
+
+void ConditionalBranchOp::print(OpAsmPrinter &p) {
+  Type type = getDataOperand().getType();
+  p << " " << getOperands();
+  p.printOptionalAttrDict((*this)->getAttrs());
+  p << " : " << type;
+}
+
+bool BeqOp::isControl() { return true; }
+
+/// Parse the cgra branch-like operation such as beq, bne., blt, and bge. 
+static ParseResult
+parseBranchLikeOp(OpAsmParser &parser,
+                  OpAsmParser::UnresolvedOperand jumpOperand,
+                  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands,
+                  Type dataType, OperationState &result) {
+  if (parser.parseLSquare() || parser.parseOperandList(allOperands) ||
+      parser.parseRSquare() || parser.parseOperand(jumpOperand) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(dataType))
+    return failure();
+  return success();
+}
+
+ParseResult BeqOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand jumpOperand;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  Type dataType;
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
+                               result)))
+    return failure();
+
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  result.addTypes(dataType);
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
+    return failure();
+  return success();
+}
+
+bool BneOp::isControl() { return true; }
+
+ParseResult BneOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand jumpOperand;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  Type dataType;
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
+                               result)))
+    return failure();
+
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  result.addTypes(dataType);
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
+    return failure();
+  return success();
+}
+
+/// Print the cgra branch-like operation such as beq, bne., blt, and bge. 
+static void printBranchLikeOp(OpAsmPrinter &p, Operation *op) {
+  auto ops = op->getOperands();
+  p << " [";
+  for (size_t i = 0; i < ops.size() - 1; i++) {
+    p.printOperand(ops[i]);
+    if (i == 0)
+      p << ", ";
+  }
+  p << "] ";
+  p.printOperand(ops[ops.size() - 1]);
+  p.printOptionalAttrDict(op->getAttrs());
+  p << " : " << op->getResult(0).getType();
+}
+
+void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
+
+void BneOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
+
+/// Parse the cgra select-like operation such as bsfz and bsfa. 
+static ParseResult
+parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand jumpOperand,
+               Type selectType, Type dataType,
+               SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+               OperationState &result) {
+  if (parser.parseOperandList(operands) || parser.parseRSquare() ||
+      parser.parseOperand(jumpOperand) || parser.parseLSquare() ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(selectType) || parser.parseComma() ||
+      parser.parseType(dataType))
+    return failure();
+
+  return success();
+}
+
+ParseResult BsfzOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand jumpOperand;
+  Type selectType, dataType;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  if (failed(parseSelLikeOp(parser, jumpOperand, selectType, dataType,
+                            allOperands, result)))
+    return failure();
+
+  SmallVector<Type, 1> dataOperandsTypes;
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  result.addTypes(dataType);
+  allOperands.push_back(jumpOperand);
+  if (parser.resolveOperands(
+          allOperands,
+          llvm::concat<const Type>(ArrayRef<Type>(selectType),
+                                   ArrayRef<Type>(dataOperandsTypes)),
+          allOperandLoc, result.operands))
+    return failure();
+
+  return success();
+}
+
+void BsfzOp::print(OpAsmPrinter &p) {
+  auto ops = getOperands();
+  Type type = getFlagOperand().getType();
+  p << " " << ops.front();
+  p << " [";
+  for (size_t i = 1; i < ops.size(); i++) {
+    p.printOperand(ops[i]);
+    if (i == 1)
+      p << ", ";
+  }
+  p << "] ";
+  p.printOptionalAttrDict((*this)->getAttrs());
+  p << " : " << type;
+}
+
+ParseResult BsfaOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand jumpOperand;
+  Type selectType, dataType;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  if (failed(parseSelLikeOp(parser, jumpOperand, selectType, dataType,
+                            allOperands, result)))
+    return failure();
+
+  SmallVector<Type, 1> dataOperandsTypes;
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  result.addTypes(dataType);
+  allOperands.push_back(jumpOperand);
+  if (parser.resolveOperands(
+          allOperands,
+          llvm::concat<const Type>(ArrayRef<Type>(selectType),
+                                   ArrayRef<Type>(dataOperandsTypes)),
+          allOperandLoc, result.operands))
+    return failure();
+
+  return success();
+}
+
+void BsfaOp::print(OpAsmPrinter &p) {
+  auto ops = getOperands();
+  Type type = getFlagOperand().getType();
+  p << " " << ops.front();
+  p << " [";
+  for (size_t i = 1; i < ops.size(); i++) {
+    p.printOperand(ops[i]);
+    if (i == 1)
+      p << ", ";
+  }
+  p << "] ";
+  p.printOptionalAttrDict((*this)->getAttrs());
+  p << " : " << type;
+}
+
+ParseResult LwiOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  OpAsmParser::UnresolvedOperand addressOperand;
+  Type dataType;
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (parser.parseOperand(addressOperand) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(dataType))
+    return failure();
+
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  result.addTypes(dataType);
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
+    return failure();
+  return success();
+}
+
+void LwiOp::print(OpAsmPrinter &p) {
+  Type type = getAddressOperand().getType();
+  p << " " << getAddressOperand();
+  p.printOptionalAttrDict((*this)->getAttrs());
+  p << " : " << type;
+}
+
+std::string cgra::ConditionalBranchOp::getOperandName(unsigned int idx) {
+  assert(idx == 0 || idx == 1);
+  return idx == 0 ? "cond" : "data";
+}
+
+std::string cgra::ConditionalBranchOp::getResultName(unsigned int idx) {
+  assert(idx == 0 || idx == 1);
+  return idx == ConditionalBranchOp::falseIndex ? "outFalse" : "outTrue";
+}
 
 #define GET_ATTRDEF_CLASSES
 #include "compigra/CgraInterfaces.cpp.inc"

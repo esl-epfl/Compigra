@@ -7,7 +7,6 @@ ${PROJECT_SOURCE_DIR}/include/compigra
 ${PROJECT_BINARY_DIR}/include/compigra
 
 DEPENDS
-# MLIRCgraIncGen
 MLIRCgraEnumsIncGen
 MLIRCgraAttributesIncGen
 MLIRCgraInterfacesIncGen
@@ -15,11 +14,11 @@ MLIRCgraInterfacesIncGen
 LINK_LIBS PUBLIC
 MLIRIR
 MLIRFuncDialect
-MLIRMemRefDialect
 MLIRLLVMDialect
+MLIRSupport
+MLIRMemRefDialect
 MLIROpenMPDialect
 MLIRAffineDialect
-MLIRSupport
 MLIRSCFTransforms
 )
 add_subdirectory(Passes)

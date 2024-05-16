@@ -35,5 +35,14 @@ def CfReduceBranches : Pass<"reduce-branches"> {
   let constructor = "compigra::createCfReduceBranches()";
 }
 
+//===----------------------------------------------------------------------===//
+// LLVM passes
+//===----------------------------------------------------------------------===//
+
+def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
+  let summary = "Convert LLVM to CGRA dialect";
+  let constructor = "compigra::createLLVMToCgraConversion()";
+  let dependentDialects = ["cgra::CgraDialect"];
+}
 
 #endif // COMPIGRA_PASSES_TD

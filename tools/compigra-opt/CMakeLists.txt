@@ -19,6 +19,7 @@ set(LIBS
         MLIRSupport
         MLIRTransforms
         MLIRSCFDialect
+        MLIRFunctionInterfaces
 )
 
 set(LLVM_LINK_COMPONENTS

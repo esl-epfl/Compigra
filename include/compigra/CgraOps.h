@@ -35,8 +35,6 @@
 
 namespace mlir {
 namespace OpTrait {
-// template <typename ConcreteType>
-// class HasClock : public TraitBase<ConcreteType, HasClock> {};
 
 template <typename InterfaceType> class HasParentInterface {
 public:
