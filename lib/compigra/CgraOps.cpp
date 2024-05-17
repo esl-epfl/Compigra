@@ -433,7 +433,7 @@ void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 void BneOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
-/// Parse the cgra select-like operation such as bsfz and bsfa. 
+/// Parse the cgra select-like operation such as bzfa and bsfa. 
 static ParseResult
 parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand jumpOperand,
                Type selectType, Type dataType,
@@ -449,7 +449,7 @@ parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand jumpOperand,
   return success();
 }
 
-ParseResult BsfzOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult BzfaOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand jumpOperand;
   Type selectType, dataType;
   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
@@ -473,7 +473,7 @@ ParseResult BsfzOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
-void BsfzOp::print(OpAsmPrinter &p) {
+void BzfaOp::print(OpAsmPrinter &p) {
   auto ops = getOperands();
   Type type = getFlagOperand().getType();
   p << " " << ops.front();

@@ -281,9 +281,19 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
       // replace the bsfa with select operation
       for (auto selOp : selOps) {
         rewriter.setInsertionPoint(selOp);
-        rewriter.replaceOpWithNewOp<cgra::BsfaOp>(
-            selOp, selOp->getResult(0).getType(), selectFlag,
-            SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
+        if (predicate == LLVM::ICmpPredicate::eq) {
+          rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
+              selOp, selOp->getResult(0).getType(), selectFlag,
+              SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
+        } else if (predicate == LLVM::ICmpPredicate::ne) {
+          rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
+              selOp, selOp->getResult(0).getType(), selectFlag,
+              SmallVector<Value>({selOp->getOperand(2), selOp->getOperand(1)}));
+        } else {
+          rewriter.replaceOpWithNewOp<cgra::BsfaOp>(
+              selOp, selOp->getResult(0).getType(), selectFlag,
+              SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
+        }
       }
     }
 
@@ -323,10 +333,25 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp constOp1 = rewriter.create<LLVM::ConstantOp>(
           cmpOp.getLoc(), rewriter.getI1Type(), APInt(1, 1));
       rewriter.setInsertionPoint(cmpOp);
-      cgra::BsfaOp bsfaOp = rewriter.create<cgra::BsfaOp>(
-          cmpOp.getLoc(), rewriter.getI1Type(), selectFlag,
-          SmallVector<Value>({constOp0.getResult(), constOp1.getResult()}));
-      rewriter.replaceAllUsesWith(cmpOp.getResult(), bsfaOp.getResult());
+      Operation *binSelOp = nullptr;
+      if (predicate == LLVM::ICmpPredicate::eq) {
+        // insert bzfa %selFlag, 1, 0;
+        binSelOp = rewriter.create<cgra::BzfaOp>(
+            cmpOp.getLoc(), rewriter.getI1Type(), selectFlag,
+            SmallVector<Value>({constOp1.getResult(), constOp0.getResult()}));
+      } else if (predicate == LLVM::ICmpPredicate::ne) {
+        // insert bzfa %selFlag, 0, 1;
+        binSelOp = rewriter.create<cgra::BzfaOp>(
+            cmpOp.getLoc(), rewriter.getI1Type(), selectFlag,
+            SmallVector<Value>({constOp0.getResult(), constOp1.getResult()}));
+      } else {
+        // insert bsfa %selFlag, 1, 0;
+        binSelOp = rewriter.create<cgra::BsfaOp>(
+            cmpOp.getLoc(), rewriter.getI1Type(), selectFlag,
+            SmallVector<Value>({constOp1.getResult(), constOp0.getResult()}));
+      }
+
+      rewriter.replaceAllUsesWith(cmpOp.getResult(), binSelOp->getResult(0));
     }
   }
 
@@ -660,12 +685,11 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
   return success();
 };
 
-static bool isBackEdge(Value edge, Operation *dstOp) {
+static bool isBackEdge(Operation *srcOp, Operation *dstOp) {
   // If the destination operation is not used by any operation, it is not a
   // backedge
   if (dstOp->getResults().use_empty())
     return false;
-  Operation *srcOp = edge.getDefiningOp();
 
   // check whether a propagation path exists from dstOp to srcOp, if yes, it
   // is a backedge.
@@ -714,7 +738,9 @@ LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
       continue;
 
     nodes.push_back(&op);
-
+    for (auto dstOp : op.getUsers())
+      llvm::errs() << op << " -> " << *dstOp << ":" << isBackEdge(&op, dstOp)
+                   << "\n";
   }
   return success();
 }

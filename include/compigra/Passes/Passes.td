@@ -43,6 +43,10 @@ def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
   let summary = "Convert LLVM to CGRA dialect";
   let constructor = "compigra::createLLVMToCgraConversion()";
   let dependentDialects = ["cgra::CgraDialect"];
+  let options =
+      [Option<"outputDAG", "output-dag", "std::string", "",
+              "Specify the name of the fucntion to output the SATMapIt DAG in "
+              "the format of DATE2023 code. ">];
 }
 
 #endif // COMPIGRA_PASSES_TD

@@ -17,7 +17,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f80, dense<32> : 
     %14 = llvm.sub %13, %3 {stage = "loop"} : i32
     %15 = llvm.sub %13, %4 {stage = "loop"} : i32
     %16 = llvm.sub %3, %13 {stage = "loop"} : i32
-    %17 = bsfa %15 [%5, %16]  {stage = "loop"} : i32
+    %17 = bzfa %15 [%5, %16]  {stage = "loop"} : i32
     %18 = bsfa %14 [%17, %13]  {stage = "loop"} : i32
     %19 = llvm.sub %10, %18 {stage = "loop"} : i32
     %20 = bsfa %19 [%18, %10]  {stage = "loop"} : i32

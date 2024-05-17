@@ -100,7 +100,7 @@ public:
   LogicalResult addMemoryInterface(ConversionPatternRewriter &rewriter);
 
   /// This function rewrite the DAG to SATMapIt DAG which requires the original
-  /// DAG is splitted into three phases: Init, Loop(self-loop), and Fini. 
+  /// DAG is splitted into three phases: Init, Loop(self-loop), and Fini.
   /// This function returns failure if the DAG is not in the correct form.
   LogicalResult createSATMapItDAG(ConversionPatternRewriter &rewriter);
 
@@ -146,8 +146,20 @@ static LogicalResult runPartialLowering(
 #define GEN_PASS_DECL_LLVMTOCGRACONVERSION
 #include "compigra/Passes/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass> createLLVMToCgraConversion();
+std::unique_ptr<mlir::Pass>
+createLLVMToCgraConversion(StringRef outputDAG = "");
 
 } // namespace compigra
+
+namespace {
+struct LLVMToCgraConversionPass
+    : public compigra::impl::LLVMToCgraConversionBase<
+          LLVMToCgraConversionPass> {
+  LLVMToCgraConversionPass(StringRef outputDAG) {}
+
+  void runOnOperation() override;
+  LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp);
+};
+} // namespace
 
 #endif // LLVM_TO_CGRA_CONVERSION_H
