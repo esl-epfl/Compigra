@@ -35,16 +35,16 @@ using ValueMap = DenseMap<Value, Value>;
 /// between the host processor and the CGRA.
 struct MemoryInterface {
   MemoryInterface() {}
-  MemoryInterface(int varHeadAddr, int varTailAddr, int activeIntTail,
+  MemoryInterface(int intHeadAddr, int intTailAddr, int activeIntTail,
                   int arrHeadAddr, int arrTailAddr,
                   std::vector<int> activeArrTail, int activeArrTailIdx)
-      : varHeadAddr(varHeadAddr), varTailAddr(varTailAddr),
+      : intHeadAddr(intHeadAddr), intTailAddr(intTailAddr),
         activeIntTail(activeIntTail), arrHeadAddr(arrHeadAddr),
         arrTailAddr(arrTailAddr), activeArrTail(activeArrTail) {}
 
   // Address space reserved for integer variables
-  int varHeadAddr = 0x0;
-  int varTailAddr = 0x200;
+  int intHeadAddr = 0x0;
+  int intTailAddr = 0x200;
   // define the number of input integer variables
   int activeIntTail = 0;
 
@@ -61,17 +61,8 @@ struct MemoryInterface {
 // ============================================================================
 class CgraLowering {
 public:
-  /// Groups information to "rewire the IR" around a particular merge-like
-  /// operation.
-  struct MergeOpInfo {
-    /// The merge-like operation under consideration.
-    cgra::MergeLikeOpInterface mergeLikeOp;
-    /// The original block argument that the merge-like operation "replaces".
-    BlockArgument blockArg;
-    /// All data operands to the merge-like operation that need to be resolved
-    /// during branch insertion.
-    SmallVector<Value> dataEdges;
-  };
+  bool replaceBranch = true;
+  MemoryInterface memInterface;
 
   /// Groups information to rewire the IR around merge-like operations by owning
   /// basic block (which must still exist).

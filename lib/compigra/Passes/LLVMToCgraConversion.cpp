@@ -33,6 +33,7 @@
 
 // memory interface support
 #include "nlohmann/json.hpp"
+#include <fstream>
 
 // Debugging support
 #include "llvm/Support/Debug.h"
@@ -40,6 +41,7 @@
 
 using namespace mlir;
 using namespace compigra;
+using json = nlohmann::json;
 
 namespace {
 /// Conversion target for lowering a func::FuncOp to a handshake::FuncOp.
@@ -219,6 +221,37 @@ Operation *CgraLowering::getConstantOp() {
   return nullptr;
 }
 
+// Get the stage of the block in SATMapIt DAG
+enum class SATLoopBlock { Unkown, Init, Loop, Fini };
+static SATLoopBlock getSATMapItBlockType(Block *block) {
+  if (block->isEntryBlock()) {
+    return SATLoopBlock::Init;
+  }
+
+  if (isa<LLVM::ReturnOp>(block->getTerminator())) {
+    return SATLoopBlock::Fini;
+  }
+
+  if (auto condBranchOp = dyn_cast<LLVM::CondBrOp>(block->getTerminator()))
+    for (auto attr : condBranchOp.getAttributeNames())
+      if (attr.contains(StringRef("loop_annotation")))
+        return SATLoopBlock::Loop;
+
+  return SATLoopBlock::Unkown;
+}
+
+static Value getCgraBranchDst(Block *block) {
+  for (auto suc : block->getSuccessors()) {
+    if (getSATMapItBlockType(block) == SATLoopBlock::Init &&
+        getSATMapItBlockType(suc) == SATLoopBlock::Fini)
+      return suc->getOperations().front().getResult(0);
+    if (getSATMapItBlockType(block) == SATLoopBlock::Loop &&
+        getSATMapItBlockType(suc) == SATLoopBlock::Loop)
+      return suc->getOperations().front().getResult(0);
+  }
+  return nullptr;
+}
+
 LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
   // Store all the cmp operations to be replaced
   SmallVector<Operation *> cmpOps;
@@ -240,7 +273,7 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
     // substitute the cmp operation with sub operation and using its zero/sign
     // flag to signal the result of comparison.
     auto selOps = getICmpOpUsers<LLVM::SelectOp>(cmpOp.getResult());
-    auto branchOps = getICmpOpUsers<LLVM::CondBrOp>(cmpOp.getResult());
+    auto condBrOps = getICmpOpUsers<LLVM::CondBrOp>(cmpOp.getResult());
 
     bool existNonSelectUser =
         static_cast<size_t>(std::distance(op.getUsers().begin(),
@@ -297,30 +330,28 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
       }
     }
 
-    // Replace the cond_br operation with cgra branch operation.
-    if (!branchOps.empty()) {
-      auto jumpOprand = op.getBlock()->getOperations().front().getResult(0);
-      switch (predicate) {
-      case LLVM::ICmpPredicate::eq:
-        for (auto branchOp : branchOps) {
-          rewriter.setInsertionPoint(branchOp);
-          rewriter.create<cgra::BeqOp>(
-              branchOp->getLoc(), jumpOprand.getType(),
+    if (replaceBranch && !condBrOps.empty()) {
+      for (auto brOp : condBrOps) {
+        rewriter.setInsertionPoint(brOp);
+        auto predicate = cmpOp.getPredicate();
+        auto jumpOprand = getCgraBranchDst(brOp->getBlock());
+        Operation *op;
+        switch (predicate) {
+        case LLVM::ICmpPredicate::eq:
+          op = rewriter.create<cgra::BeqOp>(
+              brOp->getLoc(), jumpOprand.getType(),
               SmallVector<Value>(
                   {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
-        }
-        break;
-      case LLVM::ICmpPredicate::ne:
-        for (auto branchOp : branchOps) {
-          rewriter.setInsertionPoint(branchOp);
-          rewriter.create<cgra::BneOp>(
-              branchOp->getLoc(), jumpOprand.getType(),
+          break;
+        case LLVM::ICmpPredicate::ne:
+          op = rewriter.create<cgra::BneOp>(
+              brOp->getLoc(), jumpOprand.getType(),
               SmallVector<Value>(
                   {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          break;
+        default:
+          return failure();
         }
-        break;
-      default:
-        return failure();
       }
     }
 
@@ -378,33 +409,11 @@ compigra::partiallyLowerRegion(const RegionLoweringFunc &loweringFunc,
       partialLoweringSuccessfull.succeeded());
 }
 
-// Get the stage of the block in SATMapIt DAG
-enum class SATLoopBlock { Unkown, Init, Loop, Fini };
-static SATLoopBlock SATMapItBlock(Block *block) {
-  if (block->isEntryBlock()) {
-    if (block->getSuccessors().size() == 1)
-      return SATLoopBlock::Init;
-    else
-      return SATLoopBlock::Unkown;
-  }
-
-  if (isa<LLVM::ReturnOp>(block->getTerminator())) {
-    if (getBlockPredecessorCount(block) == 1)
-      return SATLoopBlock::Fini;
-    else
-      return SATLoopBlock::Unkown;
-  }
-
-  if (auto condBranchOp = dyn_cast<LLVM::CondBrOp>(block->getTerminator()))
-    for (auto attr : condBranchOp.getAttributeNames())
-      if (attr.contains(StringRef("loop_annotation")))
-        return SATLoopBlock::Loop;
-
-  return SATLoopBlock::Unkown;
-}
-
 LogicalResult
 CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
+  // if more than three basic blocks, return failure
+  if (std::distance(region.getBlocks().begin(), region.getBlocks().end()) > 3)
+    return failure();
 
   // rewrite branchOp
   SmallVector<Block *> eraseBlocks;
@@ -412,6 +421,7 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
 
   Block &entryBlock = region.getBlocks().front();
   Operation *entryTerminator = entryBlock.getTerminator();
+
   if (isa<LLVM::ReturnOp>(entryTerminator))
     return success();
 
@@ -419,24 +429,34 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
     Operation *termOp = block.getTerminator();
 
     // check whether one of the predecessors is unconditional branch
-    if (SATMapItBlock(termOp->getBlock()) == SATLoopBlock::Unkown)
+    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Unkown)
       return failure();
 
-    if (SATMapItBlock(termOp->getBlock()) == SATLoopBlock::Init) {
+    // insert cgra branch operation
+    llvm::errs() << static_cast<int>(getSATMapItBlockType(termOp->getBlock()))
+                 << "\n";
+
+    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Init) {
       for (Operation &op : block) {
         op.setAttr("stage", rewriter.getStringAttr("init"));
       }
       eraseOps.push_back(termOp);
     }
 
-    if (SATMapItBlock(termOp->getBlock()) == SATLoopBlock::Fini) {
-      for (Operation &op : block) {
-        op.setAttr("stage", rewriter.getStringAttr("fini"));
+    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Fini) {
+      eraseBlocks.push_back(&block);
+      std::vector<Operation *> opsToMove;
+      for (auto &op : block.getOperations())
+        if (&op != termOp)
+          opsToMove.push_back(&op);
+      for (auto op : opsToMove) {
+        op->setAttr("stage", rewriter.getStringAttr("fini"));
+        op->moveBefore(entryTerminator);
       }
       rewriter.moveOpAfter(termOp, entryBlock.getTerminator());
-      eraseBlocks.push_back(&block);
     }
-    if (SATMapItBlock(termOp->getBlock()) == SATLoopBlock::Loop) {
+
+    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Loop) {
       std::vector<Operation *> opsToMove;
       for (auto &op : block.getOperations())
         if (&op != termOp)
@@ -458,14 +478,14 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
 
 /// Get the address of the integer variable with the given index.
 static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
-  int addr = memInterface.varHeadAddr + idx * 4;
-  if (addr >= memInterface.varTailAddr)
+  int addr = memInterface.intHeadAddr + idx * 4;
+  if (addr >= memInterface.intTailAddr)
     return -1;
   return addr;
 }
 
 /// Get the base address of the data array variable with the given index.
-static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, int idx) {
+static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t idx) {
   if (idx == 0)
     return memInterface.arrHeadAddr;
   return memInterface.activeArrTail[idx - 1];
@@ -505,9 +525,11 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       // do nothing if the argument is not in use
       if (arg.use_empty())
         continue;
+
       // get the base address of the array variable
       int baseAddr = getCgraArrVarBaseAddress(
           memInterface, argIndex - memInterface.activeIntTail);
+      llvm::errs() << argIndex << ":" << baseAddr << "\n";
       // create a constant operation for the base address
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           arg.getLoc(), rewriter.getI32Type(),
@@ -515,6 +537,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       arrayBaseAddrs[arg] = constOp;
       arrayBaseAddrs[arg]->setAttr("arg" + std::to_string(argIndex),
                                    rewriter.getStringAttr("base"));
+      llvm::errs() << constOp << "\n";
     }
   }
 
@@ -582,7 +605,10 @@ CgraLowering::removeUnusedOps(ConversionPatternRewriter &rewriter) {
         for (Value operand : op->getOperands()) {
           Operation *predOp = operand.getDefiningOp();
           if (predOp && predOp->hasOneUse()) {
-            eraseOps.push_back(predOp);
+            // Erase an operation once
+            if (std::find(eraseOps.begin(), eraseOps.end(), predOp) ==
+                eraseOps.end())
+              eraseOps.push_back(predOp);
             toProcess.push_back(predOp);
           }
         }
@@ -600,16 +626,19 @@ CgraLowering::removeUnusedOps(ConversionPatternRewriter &rewriter) {
 static LogicalResult lowerRegion(CgraLowering &cl) {
   if (failed(runPartialLowering(cl, &CgraLowering::addMemoryInterface)))
     return failure();
+  llvm::errs() << "addMemoryInterface success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::addMergeOps)))
     return failure();
+  llvm::errs() << "addMergeOps success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::replaceCmpOps)))
     return failure();
+  llvm::errs() << "replaceCmpOps success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::createSATMapItDAG)))
     return failure();
-
+  llvm::errs() << "sat transformation success\n";
   if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
     return failure();
 
@@ -659,16 +688,20 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
     newFuncOp = rewriter.create<cgra::FuncOp>(funcOp.getLoc(), funcOp.getName(),
                                               funcType, attributes);
 
+    argAttrs.push_back(rewriter.getDictionaryAttr(
+        rewriter.getNamedAttr("cgra.None", rewriter.getUnitAttr())));
+    newFuncOp.setArgAttrsAttr(ArrayAttr::get(ctx, argAttrs));
+
+    if (funcOp.isExternal())
+      return success();
+
     auto &entryBlock = funcOp.getRegion().front();
     entryBlock.addArgument(rewriter.getNoneType(), newFuncOp.getLoc());
 
     rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(),
                                 newFuncOp.end());
     if (!newFuncOp.isExternal()) {
-      argAttrs.push_back(rewriter.getDictionaryAttr(
-          rewriter.getNamedAttr("cgra.None", rewriter.getUnitAttr())));
       newFuncOp.resolveArgAndResNames();
-      newFuncOp.setArgAttrsAttr(ArrayAttr::get(ctx, argAttrs));
     }
 
     return success();
@@ -688,33 +721,54 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
 static bool isBackEdge(Operation *srcOp, Operation *dstOp) {
   // If the destination operation is not used by any operation, it is not a
   // backedge
-  if (dstOp->getResults().use_empty())
-    return false;
+  return isa<cgra::MergeLikeOpInterface>(dstOp);
+}
 
-  // check whether a propagation path exists from dstOp to srcOp, if yes, it
-  // is a backedge.
-  SmallVector<Operation *> opVec = {dstOp};
-  SmallVector<Operation *> visited = {dstOp};
-  while (!opVec.empty()) {
-    Operation *op = opVec.back();
-    opVec.pop_back();
-    if (op == srcOp)
-      return true;
-    for (Value operand : op->getOperands())
-      for (Operation *sucOp : operand.getUsers()) {
-        if (llvm::is_contained(visited, sucOp))
-          continue;
-        visited.push_back(sucOp);
-        opVec.push_back(sucOp);
-      }
+static LogicalResult parseMemoryInterface(MemoryInterface &memInterface,
+                                          json &memAttr) {
+  // print the json file
+  for (auto &element : memAttr.items()) {
+    auto funcName = element.key();
+    auto value = element.value();
+
+    llvm::errs() << "Function: " << funcName << "\n";
+
+    if (value.contains("arrHeadAddr") && value["arrHeadAddr"].is_string()) {
+      std::string arrHeadAddr = value["arrHeadAddr"];
+      llvm::errs() << arrHeadAddr << "\n";
+    } else {
+      return failure();
+    }
+
+    std::string intTailAddr = value["intTailAddr"];
+    llvm::errs() << intTailAddr << "\n";
+    int activeIntTail = value["activeIntTail"];
+    llvm::errs() << activeIntTail << "\n";
+
+    std::vector<std::string> activeArrTail = value["activeArrTail"];
+    for (auto &arrTail : activeArrTail)
+      llvm::errs() << arrTail << "\n";
   }
-  return false;
+  return success();
 }
 
 void LLVMToCgraConversionPass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
 
-  // rewrite funcOp
+  // Parse Memory Interface from input json file
+  std::ifstream infile(outputDAG.getValue());
+  if (!infile.is_open()) {
+    llvm::errs() << "Failed to open the memory description file: " << outputDAG
+                 << "\n";
+    return signalPassFailure();
+  }
+
+  json memJson = json::parse(infile);
+  MemoryInterface memInterface;
+  if (failed(parseMemoryInterface(memInterface, memJson)))
+    return signalPassFailure();
+
+  // rewrite funcOp to cgra::FuncOp
   for (auto funcOp :
        llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
     if (failed(lowerFuncOp(funcOp, &getContext())))
