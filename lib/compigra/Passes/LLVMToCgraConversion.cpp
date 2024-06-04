@@ -432,10 +432,6 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
     if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Unkown)
       return failure();
 
-    // insert cgra branch operation
-    llvm::errs() << static_cast<int>(getSATMapItBlockType(termOp->getBlock()))
-                 << "\n";
-
     if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Init) {
       for (Operation &op : block) {
         op.setAttr("stage", rewriter.getStringAttr("init"));
@@ -446,11 +442,13 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
     if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Fini) {
       eraseBlocks.push_back(&block);
       std::vector<Operation *> opsToMove;
-      for (auto &op : block.getOperations())
+      for (auto &op : block.getOperations()) {
+        op.setAttr("stage", rewriter.getStringAttr("fini"));
         if (&op != termOp)
           opsToMove.push_back(&op);
+      }
+
       for (auto op : opsToMove) {
-        op->setAttr("stage", rewriter.getStringAttr("fini"));
         op->moveBefore(entryTerminator);
       }
       rewriter.moveOpAfter(termOp, entryBlock.getTerminator());
@@ -646,7 +644,8 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
 }
 
 /// Lower a func::FuncOp to a cgra::FuncOp.
-static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
+static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, StringRef outputDAG,
+                                 MLIRContext *ctx) {
 
   // The cgra function only retains the original function's symbol and
   // function type
@@ -676,34 +675,26 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
   cgra::FuncOp newFuncOp = nullptr;
 
   auto funcLowering = [&](LLVM::LLVMFuncOp funcOp, PatternRewriter &rewriter) {
-    auto noneType = rewriter.getNoneType();
-    if (resTypes.empty())
-      resTypes.push_back(noneType);
     if (!argTypes.empty())
       for (auto argAttr : funcOp.getAllArgAttrs())
         argAttrs.push_back(argAttr);
-    argTypes.push_back(noneType);
 
     auto funcType = rewriter.getFunctionType(argTypes, resTypes);
     newFuncOp = rewriter.create<cgra::FuncOp>(funcOp.getLoc(), funcOp.getName(),
                                               funcType, attributes);
 
-    argAttrs.push_back(rewriter.getDictionaryAttr(
-        rewriter.getNamedAttr("cgra.None", rewriter.getUnitAttr())));
-    newFuncOp.setArgAttrsAttr(ArrayAttr::get(ctx, argAttrs));
+    if (!argTypes.empty())
+      newFuncOp.setArgAttrsAttr(ArrayAttr::get(ctx, argAttrs));
 
     if (funcOp.isExternal())
       return success();
-
-    auto &entryBlock = funcOp.getRegion().front();
-    entryBlock.addArgument(rewriter.getNoneType(), newFuncOp.getLoc());
 
     rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(),
                                 newFuncOp.end());
     if (!newFuncOp.isExternal()) {
       newFuncOp.resolveArgAndResNames();
     }
-
+    llvm::errs() << newFuncOp << "\n";
     return success();
   };
 
@@ -711,7 +702,7 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, MLIRContext *ctx) {
     return failure();
 
   funcOp.erase();
-  if (!newFuncOp.isExternal()) {
+  if (newFuncOp.getName() == outputDAG && !newFuncOp.isExternal()) {
     CgraLowering cl(newFuncOp.getBody());
     return lowerRegion(cl);
   }
@@ -756,7 +747,7 @@ void LLVMToCgraConversionPass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
 
   // Parse Memory Interface from input json file
-  std::ifstream infile(outputDAG.getValue());
+  std::ifstream infile(memAlloc.getValue());
   if (!infile.is_open()) {
     llvm::errs() << "Failed to open the memory description file: " << outputDAG
                  << "\n";
@@ -771,7 +762,7 @@ void LLVMToCgraConversionPass::runOnOperation() {
   // rewrite funcOp to cgra::FuncOp
   for (auto funcOp :
        llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
-    if (failed(lowerFuncOp(funcOp, &getContext())))
+    if (failed(lowerFuncOp(funcOp, outputDAG, &getContext())))
       return signalPassFailure();
   }
 
@@ -800,7 +791,8 @@ LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
 }
 
 namespace compigra {
-std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG) {
-  return std::make_unique<LLVMToCgraConversionPass>(outputDAG);
+std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG,
+                                                       StringRef memAlloc) {
+  return std::make_unique<LLVMToCgraConversionPass>(outputDAG, memAlloc);
 }
 } // namespace compigra
