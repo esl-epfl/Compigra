@@ -9,9 +9,10 @@ int BitCount(long x)
 ** The loop will execute once for each bit of x set, this is in average
 ** twice as fast as the shift/test method.
 */
-        if (x == 0){
-            return 0;
-        }
+        // if (x == 0){
+        //     return 0;
+        // }
+        #pragma cgra
         
         do{
           n++;
@@ -27,7 +28,7 @@ int main(){
 
   int res = BitCount(a);
 
-  printf("%d", res);
+  // printf("%d", res);
   return 0;
   
 }
