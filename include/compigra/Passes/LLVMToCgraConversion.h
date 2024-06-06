@@ -21,6 +21,7 @@
 using namespace mlir;
 
 namespace compigra {
+
 struct MergeOpInfo {
   Operation *op;
   Value val;
@@ -90,6 +91,10 @@ public:
   /// load/store users
   LogicalResult addMemoryInterface(ConversionPatternRewriter &rewriter);
 
+  // Ensure the constant operation is only used once and replicate the constant
+  // if it is in multiple uses.
+  LogicalResult raiseConstOnlyUse(ConversionPatternRewriter &rewriter);
+
   /// This function rewrite the DAG to SATMapIt DAG which requires the original
   /// DAG is splitted into three phases: Init, Loop(self-loop), and Fini.
   /// This function returns failure if the DAG is not in the correct form.
@@ -137,8 +142,8 @@ static LogicalResult runPartialLowering(
 #define GEN_PASS_DECL_LLVMTOCGRACONVERSION
 #include "compigra/Passes/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass>
-createLLVMToCgraConversion(StringRef outputDAG = "", StringRef memAlloc="");
+std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG = "",
+                                                       StringRef memAlloc = "");
 
 } // namespace compigra
 

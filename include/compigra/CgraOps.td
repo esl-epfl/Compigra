@@ -264,6 +264,12 @@ def BzfaOp : Cgra_Op<"bzfa", [
   let arguments = (ins  AnyType : $flagOperand, Variadic<AnyType> : $dataOperands);
   let results = (outs AnyType : $dataResult);
   let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    // These are the indices into the dests list.
+    ::mlir::Value getPredicate() { return getOperand(0); }
+    ;
+  }];
 }
 
 def BsfaOp : Cgra_Op<"bsfa", [

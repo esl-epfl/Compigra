@@ -20,3 +20,5 @@ MLIRAffineDialect
 MLIRSupport
 MLIRSCFTransforms
 )
+
+add_subdirectory(SatMapItDATE2023InputGen)

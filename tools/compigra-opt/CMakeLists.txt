@@ -5,6 +5,7 @@ set(LIBS
         ${conversion_libs}
         MLIRCgra
         MLIRCompigraTransforms
+        MLIRCompigraSatMapPrint
         
         MLIRIR
         MLIROptLib
