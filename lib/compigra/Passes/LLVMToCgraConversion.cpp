@@ -213,12 +213,6 @@ static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t idx) {
   return memInterface.activeArrTail[idx - 1];
 }
 
-static bool isBackEdge(Operation *srcOp, Operation *dstOp) {
-  // If the destination operation is not used by any operation, it is not a
-  // backedge
-  return isa<cgra::MergeLikeOpInterface>(dstOp);
-}
-
 static std::string getFileNameFromPath(const std::string &filePath) {
   size_t lastSlash = filePath.find_last_of("/\\");
   if (lastSlash != std::string::npos) {
@@ -281,7 +275,22 @@ Operation *CgraLowering::getConstantOp() {
   return nullptr;
 }
 
-LogicalResult raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
+LogicalResult
+CgraLowering::raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
+  for (auto constOp : region.getOps<LLVM::ConstantOp>()) {
+    // iterate through the users of the constant operation, and replace the uses
+    // from the second one
+    SmallVector<Operation *, 4> users(std::next(constOp->getUsers().begin(), 1),
+                                      constOp->getUsers().end());
+    for (auto [ind, user] : llvm::enumerate(users)) {
+
+      rewriter.setInsertionPoint(constOp);
+      auto insertCstOp = rewriter.create<LLVM::ConstantOp>(
+          constOp.getLoc(), constOp.getType(), constOp.getValue());
+      //  replace the user's use of constOp result with insertCstOp result
+      user->replaceUsesOfWith(constOp.getResult(), insertCstOp.getResult());
+    }
+  }
   return success();
 }
 
@@ -368,8 +377,9 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
         rewriter.setInsertionPoint(brOp);
         auto predicate = cmpOp.getPredicate();
         auto jumpOprand = getCgraBranchDst(brOp->getBlock());
-        Operation *op;
+
         switch (predicate) {
+          Operation *op;
         case LLVM::ICmpPredicate::eq:
           op = rewriter.create<cgra::BeqOp>(
               brOp->getLoc(), jumpOprand.getType(),
@@ -652,6 +662,10 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
     return failure();
   llvm::errs() << "replaceCmpOps success\n";
 
+  if (failed(runPartialLowering(cl, &CgraLowering::raiseConstOnlyUse)))
+    return failure();
+  llvm::errs() << "raiseConstOnlyUse success\n";
+
   if (failed(runPartialLowering(cl, &CgraLowering::createSATMapItDAG)))
     return failure();
   llvm::errs() << "sat transformation success\n";
@@ -792,6 +806,7 @@ LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
   SmallVector<Operation *> nodes;
   SmallVector<LLVM::ConstantOp> constants;
   SmallVector<Operation *> liveIns;
+  SmallVector<Operation *> liveOuts;
   // define the edge by the srcOp and dstOp
   using Edge = std::pair<Operation *, Operation *>;
 
@@ -804,22 +819,39 @@ LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
   for (Operation &op : funcOp.getOps()) {
     StringRef stage = dyn_cast<StringAttr>(op.getAttr("stage")).getValue();
 
-    if (stage == StringRef("init")) {
-      if (LLVM::ConstantOp constOp = dyn_cast<LLVM::ConstantOp>(&op))
-        // Store constant values
-        constants.push_back(constOp);
-      else
-        // store operations in init blocks that can be used as live-in for loop
-        liveIns.push_back(&op);
+    // SAT-MapIt only schedule operations in loop
+    if (stage != StringRef("loop"))
+      continue;
+
+    // store operator related operations
+    for (Value operand : op.getOperands()) {
+      if (Operation *defOp = operand.getDefiningOp()) {
+        // only store the related nodes in init stage
+        StringRef ownerStage =
+            dyn_cast<StringAttr>(defOp->getAttr("stage")).getValue();
+        if (ownerStage == StringRef("init")) {
+          if (isa<LLVM::ConstantOp>(defOp))
+            constants.push_back(cast<LLVM::ConstantOp>(defOp));
+          else
+            liveIns.push_back(defOp);
+        }
+      }
     }
 
-    // SAT-MapIt only schedule operations in loop
-    if (stage == StringRef("loop"))
-      nodes.push_back(&op);
+    nodes.push_back(&op);
+
+    // if the result of the operation is used by the operation in the fini
+    // stage, it is a liveOut node
+    for (auto userOp : op.getUsers()) {
+      StringRef userStage =
+          dyn_cast<StringAttr>(userOp->getAttr("stage")).getValue();
+      if (userStage == StringRef("fini"))
+        liveOuts.push_back(userOp);
+    }
   }
 
   // init print class
-  satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns);
+  satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns, liveOuts);
   if (failed(printer.printDAG(outputDAG)))
     return failure();
 

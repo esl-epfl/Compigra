@@ -14,9 +14,6 @@
 #define PRINT_SAT_MAP_IT_DAG_H
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-// #include "llvm/ADT/SmallSet.h"
-// #include "llvm/ADT/ilist.h"
-// #include "llvm/Support/Format.h"
 
 using namespace mlir;
 
@@ -24,26 +21,32 @@ namespace compigra {
 namespace satmapit {
 size_t getNodeIndex(Operation *op, SmallVector<Operation *> &nodes,
                     SmallVector<LLVM::ConstantOp> constants = {},
-                    SmallVector<Operation *> liveIns = {});
+                    SmallVector<Operation *> liveIns = {},
+                    SmallVector<Operation *> liveOuts = {});
 
 class PrintSatMapItDAG {
 public:
   // initialization
   PrintSatMapItDAG(SmallVector<Operation *> nodes,
                    SmallVector<LLVM::ConstantOp> constants,
-                   SmallVector<Operation *> liveIns)
-      : nodes(nodes), constants(constants), liveIns(liveIns) {}
+                   SmallVector<Operation *> liveIns,
+                   SmallVector<Operation *> liveOuts)
+      : nodes(nodes), constants(constants), liveIns(liveIns),
+        liveOuts(liveOuts) {}
 
   // print the DAG into multiple text files
   LogicalResult printDAG(std::string fileName);
   LogicalResult printNodes(std::string fileName);
   LogicalResult printConsts(std::string fileName);
   LogicalResult printEdges(std::string fileName);
+  LogicalResult printLiveIns(std::string fileName);
+  LogicalResult printLiveOuts(std::string fileName);
 
 private:
   SmallVector<Operation *> nodes;
   SmallVector<LLVM::ConstantOp> constants;
   SmallVector<Operation *> liveIns;
+  SmallVector<Operation *> liveOuts;
 
   llvm::DenseMap<llvm::StringRef, int> CgraInsts = {
       {"EXIT", 0},     {"add", 1},      {"sub", 2},      {"mul", 3},

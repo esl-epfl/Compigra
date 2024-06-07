@@ -21,9 +21,26 @@ using namespace mlir;
 using namespace compigra;
 using namespace compigra::satmapit;
 
+// Get the stage of the operation for scheduling
+static std::string getOpStage(Operation *op) {
+  if (auto stageAttr = op->getAttrOfType<StringAttr>("stage"))
+    return stageAttr.getValue().str();
+  return "";
+}
+
+// The edge in the DAG is a backedge if the destination operation is a merge,
+// and both the srcOp and dstOp are in the loop stage. The dstcOp receives its
+// opearnds from the latter execution of srcOp.
+static bool isBackEdge(Operation *srcOp, Operation *dstOp) {
+  if (getOpStage(srcOp) == "loop" && (getOpStage(dstOp) == "loop"))
+    return isa<cgra::MergeLikeOpInterface>(dstOp);
+  return false;
+}
+
 size_t satmapit::getNodeIndex(Operation *op, SmallVector<Operation *> &nodes,
                               SmallVector<LLVM::ConstantOp> constants,
-                              SmallVector<Operation *> liveIns) {
+                              SmallVector<Operation *> liveIns,
+                              SmallVector<Operation *> liveOuts) {
   // first seek the constant value
   size_t constBase = nodes.size() + 10;
 
@@ -32,10 +49,16 @@ size_t satmapit::getNodeIndex(Operation *op, SmallVector<Operation *> &nodes,
       return ind + constBase;
 
   // seek the live-in operation
-  size_t liveInBase = constBase + constants.size();
+  size_t liveInBase = constBase + constants.size() + 10;
   for (auto [ind, liveIn] : llvm::enumerate(liveIns))
     if (op == liveIn)
-      return ind + liveInBase;
+      return ind * 10 + liveInBase + 1;
+
+  // seek the live-out operation
+  size_t liveOutBase = liveInBase + liveIns.size() + 10;
+  for (auto [ind, liveOut] : llvm::enumerate(liveOuts))
+    if (op == liveOut)
+      return ind * 10 + liveOutBase + 1;
 
   // seek the operation
   for (auto [ind, node] : llvm::enumerate(nodes)) {
@@ -50,24 +73,22 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
   std::string edgeFile = fileName + "_edges";
   std::string constFile = fileName + "_constants";
 
-  std::string liveInNode = fileName + "_liveinnodes";
-  std::string liveInEdge = fileName + "_livein_edges";
-
-  std::string liveOutNode = fileName + "_liveoutnodes";
-  std::string liveOutEdge = fileName + "_liveout_edges";
+  std::string liveInFile = fileName + "_livein";
+  std::string liveOutFile = fileName + "_liveout";
   if (failed(printNodes(nodeFile)) || failed(printConsts(constFile)) ||
-      failed(printEdges(edgeFile)))
+      failed(printEdges(edgeFile)) || failed(printLiveIns(liveInFile)) ||
+      failed(printLiveOuts(liveOutFile)))
     return failure();
 
   return success();
 }
 
-LogicalResult PrintSatMapItDAG::printNodes(std::string nodeFile) {
+LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
 
   unsigned nodeCount = nodes.size();
 
   std::ofstream dotFile;
-  dotFile.open(nodeFile.c_str());
+  dotFile.open(fileName.c_str());
   for (auto [ind, node] : llvm::enumerate(nodes)) {
     size_t namePos = node->getName().getStringRef().str().find(".");
     std::string nodeName =
@@ -104,9 +125,9 @@ LogicalResult PrintSatMapItDAG::printNodes(std::string nodeFile) {
   return success();
 }
 
-LogicalResult PrintSatMapItDAG::printConsts(std::string constFile) {
+LogicalResult PrintSatMapItDAG::printConsts(std::string fileName) {
   std::ofstream dotFile;
-  dotFile.open(constFile.c_str());
+  dotFile.open(fileName.c_str());
   for (auto [ind, constOp] : llvm::enumerate(constants)) {
     // The constant should only have one user
     if (std::distance(constOp->getUsers().begin(), constOp->getUsers().end()) >
@@ -115,28 +136,103 @@ LogicalResult PrintSatMapItDAG::printConsts(std::string constFile) {
       return failure();
     }
 
-    llvm::errs() << "const " << constOp;
     // get the one and only one user of the constant
     auto user = *constOp->getUsers().begin();
-    size_t userInd = getNodeIndex(user, nodes);
-    llvm::errs() << "---->user " << *user << "\n";
+    unsigned posLR = user->getOperand(0).getDefiningOp() == constOp ? 0 : 1;
 
-    if (userInd == unsigned(-1))
+    size_t userInd = getNodeIndex(user, nodes);
+
+    if (userInd == uint32_t(-1))
       return failure();
 
     // TODO: check the type of the constant
     // currently only support integer
     int constVal = constOp.getValueAttr().cast<IntegerAttr>().getInt();
-    llvm::errs() << getNodeIndex(constOp, nodes, constants) << " " << userInd;
-    llvm::errs() << " " << constVal << " 1 \n";
-    // dotFile << getNodeIndex(op, nodes, constants) << " " << userInd;
-    // dotFile << " " << constVal << "1 \n";
+
+    dotFile << getNodeIndex(constOp, nodes, constants) << " " << userInd;
+    dotFile << " " << constVal << " " << posLR << "\n";
   }
   dotFile.close();
 
   return success();
 }
 
-LogicalResult PrintSatMapItDAG::printEdges(std::string edgeFile) {
+LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
+  std::ofstream dotFile;
+  dotFile.open(fileName.c_str());
+  for (auto *node : nodes) {
+    for (auto user : node->getUsers()) {
+      if (getOpStage(user) != "loop")
+        continue;
+
+      // ignore the cgra branch operation's destination
+      if (isa<cgra::BeqOp, cgra::BneOp>(user) &&
+          user->getOperand(2).getDefiningOp() == node)
+        continue;
+
+      unsigned distance = isBackEdge(node, user) ? 1 : 0;
+      dotFile << " " << getNodeIndex(node, nodes, constants, liveIns) << " ";
+      dotFile << getNodeIndex(user, nodes, constants, liveIns) << " "
+              << distance << " 1\n";
+    }
+  }
+
+  dotFile.close();
+  return success();
+}
+
+LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
+
+  std::string inNodeFile = fileName + "nodes";
+  std::string inEdgeFile = fileName + "_edges";
+
+  // print the live-in nodes to text file
+  std::ofstream dotFile;
+  dotFile.open(inNodeFile.c_str());
+  for (auto liveIn : liveIns)
+    dotFile << " " << getNodeIndex(liveIn, nodes, constants, liveIns) << "\n";
+  dotFile.close();
+
+  // print live-in edges to the text file
+  dotFile.open(inEdgeFile.c_str());
+  for (auto liveIn : liveIns) {
+    for (auto user : liveIn->getUsers()) {
+      if (getOpStage(user) != "loop")
+        continue;
+      dotFile << " " << getNodeIndex(liveIn, nodes, constants, liveIns) << " ";
+      dotFile << getNodeIndex(user, nodes, constants, liveIns) << " 0 1\n";
+    }
+  }
+  dotFile.close();
+
+  return success();
+}
+
+LogicalResult PrintSatMapItDAG::printLiveOuts(std::string fileName) {
+  std::string outNodeFile = fileName + "nodes";
+  std::string outEdgeFile = fileName + "_edges";
+
+  // print the live-out nodes to text file
+  std::ofstream dotFile;
+  dotFile.open(outNodeFile.c_str());
+  for (auto liveOut : liveOuts)
+    dotFile << " " << getNodeIndex(liveOut, nodes, constants, liveIns, liveOuts)
+            << "\n";
+  dotFile.close();
+
+  // print live-out edges to the text file
+  dotFile.open(outEdgeFile.c_str());
+  for (Operation *liveOut : liveOuts) {
+    for (Value operand : liveOut->getOperands()) {
+      auto defOp = operand.getDefiningOp();
+      if (getOpStage(defOp) != "loop")
+        continue;
+      dotFile << " " << getNodeIndex(defOp, nodes, constants, liveIns) << " "
+              << getNodeIndex(liveOut, nodes, constants, liveIns, liveOuts)
+              << " 0 1\n";
+    }
+  }
+  dotFile.close();
+
   return success();
 }
