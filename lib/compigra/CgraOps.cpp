@@ -42,7 +42,7 @@ static ParseResult parseIntInSquareBrackets(OpAsmParser &parser, int &v) {
   return success();
 }
 
-/// Parse the sized operation with single type 
+/// Parse the sized operation with single type
 static ParseResult
 parseSostOperation(OpAsmParser &parser,
                    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
@@ -360,7 +360,7 @@ void ConditionalBranchOp::print(OpAsmPrinter &p) {
 
 bool BeqOp::isControl() { return true; }
 
-/// Parse the cgra branch-like operation such as beq, bne., blt, and bge. 
+/// Parse the cgra branch-like operation such as beq, bne., blt, and bge.
 static ParseResult
 parseBranchLikeOp(OpAsmParser &parser,
                   OpAsmParser::UnresolvedOperand jumpOperand,
@@ -414,7 +414,7 @@ ParseResult BneOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
-/// Print the cgra branch-like operation such as beq, bne., blt, and bge. 
+/// Print the cgra branch-like operation such as beq, bne., blt, and bge.
 static void printBranchLikeOp(OpAsmPrinter &p, Operation *op) {
   auto ops = op->getOperands();
   p << " [";
@@ -433,7 +433,7 @@ void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 void BneOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
-/// Parse the cgra select-like operation such as bzfa and bsfa. 
+/// Parse the cgra select-like operation such as bzfa and bsfa.
 static ParseResult
 parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand jumpOperand,
                Type selectType, Type dataType,
@@ -552,6 +552,24 @@ void LwiOp::print(OpAsmPrinter &p) {
   p << " " << getAddressOperand();
   p.printOptionalAttrDict((*this)->getAttrs());
   p << " : " << type;
+}
+
+ParseResult SwiOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  OpAsmParser::UnresolvedOperand dataOperand, addressOperand;
+
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (parser.parseOperand(addressOperand) || parser.parseColon() ||
+      parser.parseOperand(dataOperand))
+    return failure();
+  return success();
+}
+
+void SwiOp::print(OpAsmPrinter &p) {
+  Type type = getDataOperand().getType();
+  p << " " << getDataOperand() << ", " << getAddressOperand();
+  p.printOptionalAttrDict((*this)->getAttrs());
 }
 
 std::string cgra::ConditionalBranchOp::getOperandName(unsigned int idx) {

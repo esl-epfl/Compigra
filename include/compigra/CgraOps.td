@@ -267,8 +267,7 @@ def BzfaOp : Cgra_Op<"bzfa", [
 
   let extraClassDeclaration = [{
     // These are the indices into the dests list.
-    ::mlir::Value getPredicate() { return getOperand(0); }
-    ;
+    ::mlir::Value getPredicate() { return getOperand(0); };
   }];
 }
 
@@ -307,5 +306,21 @@ def LwiOp : Cgra_Op<"lwi", [Pure]> {
   }];
   let arguments = (ins AnyType : $addressOperand);
   let results = (outs AnyType : $dataResult);
+  let hasCustomAssemblyFormat = 1;
+}
+
+def SwiOp : Cgra_Op<"swi", [Pure]> {
+  let summary = "store word indirectly operation";
+  let description = [{
+    The swi operations represents a store operation of the cgra,
+    where it stores the dataOperand to the address specified by the
+        addressOperand.
+
+    Example:
+      ```swi %
+    dataOperand: i32, % addressOperand: i32
+      ```
+  }];
+  let arguments = (ins AnyType : $dataOperand, AnyType : $addressOperand);
   let hasCustomAssemblyFormat = 1;
 }
