@@ -186,41 +186,6 @@ static SATLoopBlock getSATMapItBlockType(Block *block) {
   return SATLoopBlock::Unkown;
 }
 
-static Value getCgraBranchDst(Block *block) {
-  for (auto suc : block->getSuccessors()) {
-    if (getSATMapItBlockType(block) == SATLoopBlock::Init &&
-        getSATMapItBlockType(suc) == SATLoopBlock::Fini)
-      return suc->getOperations().front().getResult(0);
-    if (getSATMapItBlockType(block) == SATLoopBlock::Loop &&
-        getSATMapItBlockType(suc) == SATLoopBlock::Loop)
-      return suc->getOperations().front().getResult(0);
-  }
-  return nullptr;
-}
-
-/// Get the address of the integer variable with the given index.
-static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
-  int addr = memInterface.intHeadAddr + idx * 4;
-  if (addr >= memInterface.intTailAddr)
-    return -1;
-  return addr;
-}
-
-/// Get the base address of the data array variable with the given index.
-static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t idx) {
-  if (idx == 0)
-    return memInterface.arrHeadAddr;
-  return memInterface.activeArrTail[idx - 1];
-}
-
-static std::string getFileNameFromPath(const std::string &filePath) {
-  size_t lastSlash = filePath.find_last_of("/\\");
-  if (lastSlash != std::string::npos) {
-    return filePath.substr(lastSlash + 1);
-  }
-  return filePath;
-}
-
 LogicalResult CgraLowering::addMergeOps(ConversionPatternRewriter &rewriter) {
   ValueMap mergePairs;
 
@@ -292,6 +257,18 @@ CgraLowering::raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
     }
   }
   return success();
+}
+
+static Value getCgraBranchDst(Block *block) {
+  for (auto suc : block->getSuccessors()) {
+    if (getSATMapItBlockType(block) == SATLoopBlock::Init &&
+        getSATMapItBlockType(suc) == SATLoopBlock::Fini)
+      return suc->getOperations().front().getResult(0);
+    if (getSATMapItBlockType(block) == SATLoopBlock::Loop &&
+        getSATMapItBlockType(suc) == SATLoopBlock::Loop)
+      return suc->getOperations().front().getResult(0);
+  }
+  return nullptr;
 }
 
 LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
@@ -517,18 +494,37 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
   return success();
 }
 
+/// Get the address of the integer variable with the given index.
+static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
+  int addr = memInterface.intHeadAddr + idx * 4;
+  if (addr >= memInterface.intTailAddr)
+    return -1;
+  return addr;
+}
+
+/// Get the base address of the data array variable with the given index.
+static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t idx) {
+  if (idx == 0)
+    return memInterface.arrHeadAddr;
+  return memInterface.activeArrTail[idx - 1];
+}
+
+static std::string getFileNameFromPath(const std::string &filePath) {
+  size_t lastSlash = filePath.find_last_of("/\\");
+  if (lastSlash != std::string::npos) {
+    return filePath.substr(lastSlash + 1);
+  }
+  return filePath;
+}
+
 LogicalResult
 CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
-  // temporal memory interface hard coded
-  MemoryInterface memInterface;
-  memInterface.activeIntTail = 2;
-  mlir::IntegerAttr base_addr;
-
   auto funcOp = region.getParentOfType<cgra::FuncOp>();
   DenseMap<Value, Operation *> arrayBaseAddrs;
 
   for (auto [argIndex, arg] : llvm::enumerate(funcOp.getArguments())) {
     // identify the data type of the argument
+    llvm::errs() << "argIndex: " << argIndex << "\n";
     rewriter.setInsertionPointToStart(&region.front());
     if (arg.getType().isIntOrIndex()) {
       // do nothing if the argument is not in use
@@ -548,6 +544,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       // replace the argument with the result of the lwi operation
       arg.replaceAllUsesWith(lwiOp.getResult());
     } else if (arg.getType().isa<LLVM::LLVMPointerType>()) {
+      llvm::errs() << "pointer: " << memInterface.activeIntTail << "\n";
       // do nothing if the argument is not in use
       if (arg.use_empty())
         continue;
@@ -556,6 +553,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       int baseAddr = getCgraArrVarBaseAddress(
           memInterface, argIndex - memInterface.activeIntTail);
 
+      llvm::errs() << "baseAddr: " << baseAddr << "\n";
       // create a constant operation for the base address
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           arg.getLoc(), rewriter.getI32Type(),
@@ -589,6 +587,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
     LLVM::ConstantOp constOffset = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), rewriter.getI32Type(), 4);
     rewriter.setInsertionPoint(op);
+    auto rightOpr = op.getOperand(1);
     LLVM::MulOp mulOp =
         rewriter.create<LLVM::MulOp>(op.getLoc(), rewriter.getI32Type(),
                                      constOffset.getResult(), op.getOperand(1));
@@ -596,13 +595,18 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
     LLVM::AddOp addOp = rewriter.create<LLVM::AddOp>(
         op.getLoc(), constOp->getResult(0).getType(), constOp->getResult(0),
         mulOp.getResult());
-    // insert load operation
-    cgra::LwiOp loadOp = rewriter.create<cgra::LwiOp>(
-        op.getLoc(), sucOp->getResult(0).getType(), addOp.getResult());
-
-    // replace the llvm.load operation with the result of the cgra.lwi
-    // operation
-    sucOp->getResult(0).replaceAllUsesWith(loadOp.getResult());
+    if (isa<LLVM::LoadOp>(sucOp)) {
+      // insert load operation
+      cgra::LwiOp loadOp = rewriter.create<cgra::LwiOp>(
+          op.getLoc(), sucOp->getResult(0).getType(), addOp.getResult());
+      // replace the llvm.load operation with the result of the cgra.lwi
+      // operation
+      sucOp->getResult(0).replaceAllUsesWith(loadOp.getResult());
+    } else if (isa<LLVM::StoreOp>(sucOp)) {
+      // insert store operation
+      cgra::SwiOp storeOp = rewriter.create<cgra::SwiOp>(
+          op.getLoc(), sucOp->getOperand(0), addOp.getResult());
+    }
   }
 
   for (Operation *op : gepOps)
@@ -616,7 +620,8 @@ LogicalResult
 CgraLowering::removeUnusedOps(ConversionPatternRewriter &rewriter) {
   SmallVector<Operation *> eraseOps;
   for (auto &op : region.getOps()) {
-    if (isa<cgra::BeqOp>(op) || isa<cgra::BneOp>(op) || isa<LLVM::ReturnOp>(op))
+    if (isa<cgra::BeqOp>(op) || isa<cgra::BneOp>(op) ||
+        isa<LLVM::ReturnOp>(op) || isa<cgra::SwiOp>(op))
       continue;
 
     if (op.use_empty()) {
@@ -677,6 +682,7 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
 
 /// Lower a func::FuncOp to a cgra::FuncOp.
 static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, StringRef outputDAG,
+                                 MemoryInterface &memInterface,
                                  MLIRContext *ctx) {
 
   // The cgra function only retains the original function's symbol and
@@ -734,73 +740,70 @@ static LogicalResult lowerFuncOp(LLVM::LLVMFuncOp funcOp, StringRef outputDAG,
     return failure();
 
   funcOp.erase();
-  if (newFuncOp.getName() == outputDAG && !newFuncOp.isExternal()) {
+  if (!newFuncOp.isExternal()) {
     CgraLowering cl(newFuncOp.getBody());
+    cl.initMemoryInterface(memInterface);
     return lowerRegion(cl);
   }
   return success();
 };
 
+static LogicalResult processJsonItem(const json &value, const std::string &key,
+                                     int &outAddr, const int repreBase = 10) {
+  if (value.contains(key)) {
+    if (value[key].is_string()) {
+      std::string addrStr = value[key];
+      outAddr = std::stoi(addrStr, nullptr, repreBase);
+    } else if (value[key].is_number_integer()) {
+      outAddr = value[key];
+    } else {
+      return failure();
+    }
+    return success();
+  }
+  return failure();
+}
+
 static LogicalResult parseMemoryInterface(MemoryInterface &memInterface,
-                                          json &memAttr) {
+                                          json &memAttr,
+                                          std::string parseFunc) {
   // print the json file
   for (auto &element : memAttr.items()) {
     auto funcName = element.key();
     auto value = element.value();
 
-    llvm::errs() << "Function: " << funcName << "\n";
+    bool isParseFunc = funcName == parseFunc;
+    if (isParseFunc) {
+      if (failed(processJsonItem(value, "intHeadAddr", memInterface.intHeadAddr,
+                                 16)) ||
+          failed(processJsonItem(value, "intTailAddr", memInterface.intTailAddr,
+                                 16)) ||
+          failed(processJsonItem(value, "activeIntTail",
+                                 memInterface.activeIntTail)) ||
+          failed(processJsonItem(value, "arrHeadAddr", memInterface.arrHeadAddr,
+                                 16)) ||
+          failed(processJsonItem(value, "arrTailAddr", memInterface.arrTailAddr,
+                                 16))) {
+        return failure();
+      }
 
-    if (value.contains("arrHeadAddr") && value["arrHeadAddr"].is_string()) {
-      std::string arrHeadAddr = value["arrHeadAddr"];
-      llvm::errs() << arrHeadAddr << "\n";
-    } else {
-      return failure();
+      // parse the activeArrTail, which is an array
+      if (value.contains("activeArrTail") &&
+          value["activeArrTail"].is_array()) {
+        std::vector<int> activeArrTail;
+        for (auto &arrTail : value["activeArrTail"]) {
+          std::string arrTailVal = arrTail;
+          activeArrTail.push_back(std::stoi(arrTailVal, nullptr, 16));
+        }
+        memInterface.activeArrTail = activeArrTail;
+      } else {
+        return failure();
+      }
+      return success();
     }
-
-    std::string intTailAddr = value["intTailAddr"];
-    llvm::errs() << intTailAddr << "\n";
-    int activeIntTail = value["activeIntTail"];
-    llvm::errs() << activeIntTail << "\n";
-
-    std::vector<std::string> activeArrTail = value["activeArrTail"];
-    for (auto &arrTail : activeArrTail)
-      llvm::errs() << arrTail << "\n";
   }
-  return success();
+  return failure();
 }
-
-void LLVMToCgraConversionPass::runOnOperation() {
-  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
-
-  // Parse Memory Interface from input json file
-  std::ifstream infile(memAlloc.getValue());
-  if (!infile.is_open()) {
-    LLVM_DEBUG(llvm::dbgs() << "Failed to open the memory description file: "
-                            << memAlloc << "\n");
-    return signalPassFailure();
-  }
-
-  json memJson = json::parse(infile);
-  MemoryInterface memInterface;
-  if (failed(parseMemoryInterface(memInterface, memJson)))
-    return signalPassFailure();
-
-  // parse function name from the outputDAG
-  std::string funcName = getFileNameFromPath(outputDAG);
-
-  // rewrite funcOp to cgra::FuncOp
-  for (auto funcOp :
-       llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
-    if (failed(lowerFuncOp(funcOp, funcName, &getContext())))
-      return signalPassFailure();
-  }
-
-  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
-    if (funcName == funcOp.getName() && failed(outputDATE2023DAG(funcOp))) {
-      llvm::errs() << funcOp << "\n";
-      return signalPassFailure();
-    }
-};
 
 LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
   SmallVector<Operation *> nodes;
@@ -850,14 +853,57 @@ LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
     }
   }
 
-  // init print class
+  // initialize print function
   satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns, liveOuts);
   if (failed(printer.printDAG(outputDAG)))
     return failure();
 
-  // print the constants
   return success();
 }
+
+void LLVMToCgraConversionPass::runOnOperation() {
+  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+
+  // Parse Memory Interface from input json file
+  std::ifstream infile(memAlloc.getValue());
+  if (!infile.is_open()) {
+    LLVM_DEBUG(llvm::dbgs() << "Failed to open the memory description file: "
+                            << memAlloc << "\n");
+    return signalPassFailure();
+  }
+
+  // parse function name from the outputDAG
+  std::string funcName = getFileNameFromPath(outputDAG);
+
+  json memJson = json::parse(infile);
+  MemoryInterface memInterface;
+  if (failed(parseMemoryInterface(memInterface, memJson, funcName)))
+    return signalPassFailure();
+
+  // print memInterface
+  llvm::errs() << "intHeadAddr: " << memInterface.intHeadAddr << "\n";
+  llvm::errs() << "intTailAddr: " << memInterface.intTailAddr << "\n";
+  llvm::errs() << "activeIntTail: " << memInterface.activeIntTail << "\n";
+  llvm::errs() << "arrHeadAddr: " << memInterface.arrHeadAddr << "\n";
+  llvm::errs() << "arrTailAddr: " << memInterface.arrTailAddr << "\n";
+  for (auto &arrTail : memInterface.activeArrTail)
+    llvm::errs() << "activeArrTail: " << arrTail << "\n";
+
+  // rewrite funcOp to cgra::FuncOp
+  for (auto funcOp :
+       llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
+    // Not lower the function if it is not required
+    if (funcName == funcOp.getName() &&
+        failed(lowerFuncOp(funcOp, funcName, memInterface, &getContext())))
+      return signalPassFailure();
+  }
+
+  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
+    if (funcName == funcOp.getName() && failed(outputDATE2023DAG(funcOp))) {
+      llvm::errs() << funcOp << "\n";
+      return signalPassFailure();
+    }
+};
 
 namespace compigra {
 std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG,

@@ -63,6 +63,7 @@ struct MemoryInterface {
 class CgraLowering {
 public:
   bool replaceBranch = true;
+  bool initMem = false;
   MemoryInterface memInterface;
 
   /// Groups information to rewire the IR around merge-like operations by owning
@@ -72,6 +73,11 @@ public:
   /// Constructor simply takes the region being lowered and a reference to the
   /// top-level name analysis.
   explicit CgraLowering(Region &region) : region(region) {}
+
+  void initMemoryInterface(MemoryInterface &memInterface) {
+    this->memInterface = memInterface;
+    initMem = true;
+  }
 
   /// Adds merge-like operations after all block arguments within the region,
   /// then removes all block arguments.

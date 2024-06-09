@@ -72,11 +72,19 @@ compile_sat() {
         exit 1
     fi
 
+    # Create the directory to store the DAG text files
+    if [ ! -d "$BENCH_BASE/$benchmark/IR/SatMapDAG" ]; then
+        mkdir "$BENCH_BASE/$benchmark/IR/SatMapDAG"
+    fi
+    # remove the old DAG text files
+    rm -f "$bench_path/IR/SatMapDAG"*
+
     # remove the old IR files
     # using clang to compile 32-bit system
     local f_ll="$bench_path/IR/llvm.ll"
     local f_llvm="$bench_path/IR/llvm.mlir"
     local f_cgra="$bench_path/IR/cgra.mlir"
+    local f_dag="$bench_path/IR/SatMapDAG/${bench_name}"
     
     # Get llvm IR from clang
     $CLANG14 -S -c -emit-llvm -m32 -O3 \
@@ -86,7 +94,8 @@ compile_sat() {
     $MLIR_TRANSLATE --import-llvm  "$f_ll" > "$f_llvm"
 
     # convert llvm to cgra operation
-    $COMPIGRA_OPT --allow-unregistered-dialect --convert-llvm-to-cgra \
+    $COMPIGRA_OPT --allow-unregistered-dialect \
+      --convert-llvm-to-cgra="output-dag=$f_dag mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
      "$f_llvm" > "$f_cgra"
 
     # Check if the compilation was successful

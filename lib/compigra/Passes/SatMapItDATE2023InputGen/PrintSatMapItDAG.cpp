@@ -84,9 +84,6 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
 }
 
 LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
-
-  unsigned nodeCount = nodes.size();
-
   std::ofstream dotFile;
   dotFile.open(fileName.c_str());
   for (auto [ind, node] : llvm::enumerate(nodes)) {
@@ -94,29 +91,36 @@ LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
     std::string nodeName =
         node->getName().getStringRef().str().substr(namePos + 1);
 
-    // get the operator source
-    // check whether the operation is an left operand and right operand
-    if (node->getNumOperands() < 2) {
-      llvm::errs() << node->getName() << " has less than two operands\n";
-      return failure();
-    }
-
     int predicateSel = -1;
-    Operation *leftOp, *rightOp;
-    if (auto bzfaOp = dyn_cast<cgra::BzfaOp>(node)) {
-      predicateSel = getNodeIndex(bzfaOp.getPredicate().getDefiningOp(), nodes);
-      dotFile << " " << predicateSel;
-      leftOp = node->getOperand(1).getDefiningOp();
-      rightOp = node->getOperand(2).getDefiningOp();
+    int leftOpInd = -1;
+    int rightOpInd = -1;
+    if (isa<cgra::BzfaOp, cgra::BsfaOp>(node)) {
+      // get the predicate for selection
+      predicateSel = getNodeIndex(node->getOperand(0).getDefiningOp(), nodes);
+
+      leftOpInd = getNodeIndex(node->getOperand(1).getDefiningOp(), nodes,
+                               constants, liveIns);
+      rightOpInd = getNodeIndex(node->getOperand(2).getDefiningOp(), nodes,
+                                constants, liveIns);
     } else {
-      leftOp = node->getOperand(0).getDefiningOp();
-      rightOp = node->getOperand(1).getDefiningOp();
+      // get the operator source
+      // check whether the operation is an left operand and right operand
+      if (node->getNumOperands() > 2) {
+        llvm::errs() << node->getName() << " has more than two operands\n";
+      }
+
+      for (auto [ind, opr] : llvm::enumerate(node->getOperands())) {
+        if (ind == 0)
+          leftOpInd =
+              getNodeIndex(opr.getDefiningOp(), nodes, constants, liveIns);
+        if (ind == 1)
+          rightOpInd =
+              getNodeIndex(opr.getDefiningOp(), nodes, constants, liveIns);
+      }
     }
 
-    dotFile << std::to_string(ind) << " " << nodeName << " "
-            << getNodeIndex(leftOp, nodes, constants, liveIns) << " "
-            << getNodeIndex(rightOp, nodes, constants, liveIns) << " "
-            << std::to_string(predicateSel);
+    dotFile << std::to_string(ind) << " " << nodeName << " " << leftOpInd << " "
+            << rightOpInd << " " << std::to_string(predicateSel);
 
     dotFile << " " << std::to_string(CgraInsts[nodeName]) << "\n";
   }
@@ -171,7 +175,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
         continue;
 
       unsigned distance = isBackEdge(node, user) ? 1 : 0;
-      dotFile << " " << getNodeIndex(node, nodes, constants, liveIns) << " ";
+      dotFile << getNodeIndex(node, nodes, constants, liveIns) << " ";
       dotFile << getNodeIndex(user, nodes, constants, liveIns) << " "
               << distance << " 1\n";
     }
@@ -190,7 +194,7 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
   std::ofstream dotFile;
   dotFile.open(inNodeFile.c_str());
   for (auto liveIn : liveIns)
-    dotFile << " " << getNodeIndex(liveIn, nodes, constants, liveIns) << "\n";
+    dotFile << getNodeIndex(liveIn, nodes, constants, liveIns) << "\n";
   dotFile.close();
 
   // print live-in edges to the text file
@@ -199,7 +203,7 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
     for (auto user : liveIn->getUsers()) {
       if (getOpStage(user) != "loop")
         continue;
-      dotFile << " " << getNodeIndex(liveIn, nodes, constants, liveIns) << " ";
+      dotFile << getNodeIndex(liveIn, nodes, constants, liveIns) << " ";
       dotFile << getNodeIndex(user, nodes, constants, liveIns) << " 0 1\n";
     }
   }
@@ -216,7 +220,7 @@ LogicalResult PrintSatMapItDAG::printLiveOuts(std::string fileName) {
   std::ofstream dotFile;
   dotFile.open(outNodeFile.c_str());
   for (auto liveOut : liveOuts)
-    dotFile << " " << getNodeIndex(liveOut, nodes, constants, liveIns, liveOuts)
+    dotFile << getNodeIndex(liveOut, nodes, constants, liveIns, liveOuts)
             << "\n";
   dotFile.close();
 
@@ -227,7 +231,7 @@ LogicalResult PrintSatMapItDAG::printLiveOuts(std::string fileName) {
       auto defOp = operand.getDefiningOp();
       if (getOpStage(defOp) != "loop")
         continue;
-      dotFile << " " << getNodeIndex(defOp, nodes, constants, liveIns) << " "
+      dotFile << getNodeIndex(defOp, nodes, constants, liveIns) << " "
               << getNodeIndex(liveOut, nodes, constants, liveIns, liveOuts)
               << " 0 1\n";
     }
