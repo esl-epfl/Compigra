@@ -3,8 +3,6 @@ source_filename = "/home/yuxuan/Projects/24S/Compigra/benchmarks/BitCount/BitCou
 target datalayout = "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-f64:32:64-f80:32-n8:16:32-S128"
 target triple = "i386-unknown-linux-gnu"
 
-@.str = private unnamed_addr constant [3 x i8] c"%d\00", align 1
-
 ; Function Attrs: nofree norecurse nosync nounwind readnone uwtable
 define dso_local i32 @BitCount(i32 noundef %0) local_unnamed_addr #0 {
   br label %2
@@ -22,18 +20,12 @@ define dso_local i32 @BitCount(i32 noundef %0) local_unnamed_addr #0 {
   ret i32 %5
 }
 
-; Function Attrs: nofree nounwind uwtable
-define dso_local i32 @main() local_unnamed_addr #1 {
-  %1 = tail call i32 (i8*, ...) @printf(i8* noundef nonnull dereferenceable(1) getelementptr inbounds ([3 x i8], [3 x i8]* @.str, i32 0, i32 0), i32 noundef 10)
+; Function Attrs: nofree norecurse nosync nounwind readnone uwtable
+define dso_local i32 @main() local_unnamed_addr #0 {
   ret i32 0
 }
 
-; Function Attrs: nofree nounwind
-declare dso_local noundef i32 @printf(i8* nocapture noundef readonly, ...) local_unnamed_addr #2
-
 attributes #0 = { nofree norecurse nosync nounwind readnone uwtable "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="pentium4" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
-attributes #1 = { nofree nounwind uwtable "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="pentium4" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
-attributes #2 = { nofree nounwind "frame-pointer"="none" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="pentium4" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 
 !llvm.module.flags = !{!0, !1, !2}
 !llvm.ident = !{!3}

@@ -21,16 +21,16 @@ int main(){
   unsigned index = 325;
   unsigned NumBits = 32;
   unsigned rev = ReverseBits(index, NumBits);
-  printf("Index: ");
-  for (int i = sizeof(index) * 8 - 1; i >= 0; i--) {
-    putchar((index & (1 << i)) ? '1' : '0');
-  }
-  printf("\nReverse: ");
-  for (int i = sizeof(rev) * 8 - 1; i >= 0; i--) {
-    putchar((rev & (1 << i)) ? '1' : '0');
-  }
+  // printf("Index: ");
+  // for (int i = sizeof(index) * 8 - 1; i >= 0; i--) {
+  //   putchar((index & (1 << i)) ? '1' : '0');
+  // }
+  // printf("\nReverse: ");
+  // for (int i = sizeof(rev) * 8 - 1; i >= 0; i--) {
+  //   putchar((rev & (1 << i)) ? '1' : '0');
+  // }
 
-  printf("\nReverse of %d is %d\n", index, rev);
+  // printf("\nReverse of %d is %d\n", index, rev);
   return 0;
   
 }
