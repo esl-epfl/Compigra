@@ -11,23 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/Passes/LLVMToCgraConversion.h"
+#include "compigra/Conversion/LLVMToCgraConversion.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
-#include "compigra/Passes/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Block.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Value.h"
-#include "mlir/Support/LLVM.h"
-#include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/ilist.h"
-#include "llvm/Support/Format.h"
 
 // memory interface support
 #include "nlohmann/json.hpp"
@@ -864,61 +853,61 @@ static LogicalResult parseMemoryInterface(MemoryInterface &memInterface,
   return failure();
 }
 
-LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
-  SmallVector<Operation *> nodes;
-  SmallVector<LLVM::ConstantOp> constants;
-  SmallVector<Operation *> liveIns;
-  SmallVector<Operation *> liveOuts;
-  // define the edge by the srcOp and dstOp
-  using Edge = std::pair<Operation *, Operation *>;
+// LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
+//   SmallVector<Operation *> nodes;
+//   SmallVector<LLVM::ConstantOp> constants;
+//   SmallVector<Operation *> liveIns;
+//   SmallVector<Operation *> liveOuts;
+//   // define the edge by the srcOp and dstOp
+//   using Edge = std::pair<Operation *, Operation *>;
 
-  // text file to describe the DAG
-  std::ofstream dotFile;
+//   // text file to describe the DAG
+//   std::ofstream dotFile;
 
-  std::vector<Edge> edges;
+//   std::vector<Edge> edges;
 
-  // Store all the nodes (operations)
-  for (Operation &op : funcOp.getOps()) {
-    StringRef stage = dyn_cast<StringAttr>(op.getAttr("stage")).getValue();
+//   // Store all the nodes (operations)
+//   for (Operation &op : funcOp.getOps()) {
+//     StringRef stage = dyn_cast<StringAttr>(op.getAttr("stage")).getValue();
 
-    // SAT-MapIt only schedule operations in loop
-    if (stage != StringRef("loop"))
-      continue;
+//     // SAT-MapIt only schedule operations in loop
+//     if (stage != StringRef("loop"))
+//       continue;
 
-    // store operator related operations
-    for (Value operand : op.getOperands()) {
-      if (Operation *defOp = operand.getDefiningOp()) {
-        // only store the related nodes in init stage
-        StringRef ownerStage =
-            dyn_cast<StringAttr>(defOp->getAttr("stage")).getValue();
-        if (ownerStage == StringRef("init")) {
-          if (isa<LLVM::ConstantOp>(defOp))
-            constants.push_back(cast<LLVM::ConstantOp>(defOp));
-          else
-            liveIns.push_back(defOp);
-        }
-      }
-    }
+//     // store operator related operations
+//     for (Value operand : op.getOperands()) {
+//       if (Operation *defOp = operand.getDefiningOp()) {
+//         // only store the related nodes in init stage
+//         StringRef ownerStage =
+//             dyn_cast<StringAttr>(defOp->getAttr("stage")).getValue();
+//         if (ownerStage == StringRef("init")) {
+//           if (isa<LLVM::ConstantOp>(defOp))
+//             constants.push_back(cast<LLVM::ConstantOp>(defOp));
+//           else
+//             liveIns.push_back(defOp);
+//         }
+//       }
+//     }
 
-    nodes.push_back(&op);
+//     nodes.push_back(&op);
 
-    // if the result of the operation is used by the operation in the fini
-    // stage, it is a liveOut node
-    for (auto userOp : op.getUsers()) {
-      StringRef userStage =
-          dyn_cast<StringAttr>(userOp->getAttr("stage")).getValue();
-      if (userStage == StringRef("fini"))
-        liveOuts.push_back(userOp);
-    }
-  }
+//     // if the result of the operation is used by the operation in the fini
+//     // stage, it is a liveOut node
+//     for (auto userOp : op.getUsers()) {
+//       StringRef userStage =
+//           dyn_cast<StringAttr>(userOp->getAttr("stage")).getValue();
+//       if (userStage == StringRef("fini"))
+//         liveOuts.push_back(userOp);
+//     }
+//   }
 
-  // initialize print function
-  satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns, liveOuts);
-  if (failed(printer.printDAG(outputDAG)))
-    return failure();
+//   // initialize print function
+//   satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns, liveOuts);
+//   if (failed(printer.printDAG(outputDAG)))
+//     return failure();
 
-  return success();
-}
+//   return success();
+// }
 
 void LLVMToCgraConversionPass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
@@ -957,11 +946,11 @@ void LLVMToCgraConversionPass::runOnOperation() {
       return signalPassFailure();
   }
 
-  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
-    if (funcName == funcOp.getName() && failed(outputDATE2023DAG(funcOp))) {
-      llvm::errs() << funcOp << "\n";
-      return signalPassFailure();
-    }
+  // for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
+  //   if (funcName == funcOp.getName() && failed(outputDATE2023DAG(funcOp))) {
+  //     llvm::errs() << funcOp << "\n";
+  //     return signalPassFailure();
+    // }
 };
 
 namespace compigra {

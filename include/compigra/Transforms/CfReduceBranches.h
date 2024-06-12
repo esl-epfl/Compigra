@@ -26,7 +26,7 @@ namespace compigra {
 
 #define GEN_PASS_DEF_CFREDUCEBRANCHES
 #define GEN_PASS_DECL_CFREDUCEBRANCHES
-#include "compigra/Passes/Passes.h.inc"
+#include "compigra/Transforms/Passes.h.inc"
 
 std::unique_ptr<mlir::Pass> createCfReduceBranches();
 

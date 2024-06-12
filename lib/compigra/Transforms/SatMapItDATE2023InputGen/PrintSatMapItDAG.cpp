@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/Passes/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
+#include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"

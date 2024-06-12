@@ -21,4 +21,6 @@ MLIROpenMPDialect
 MLIRAffineDialect
 MLIRSCFTransforms
 )
-add_subdirectory(Passes)
+
+add_subdirectory(Transforms)
+add_subdirectory(Conversion)

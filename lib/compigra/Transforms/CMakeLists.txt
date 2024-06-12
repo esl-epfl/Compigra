@@ -2,23 +2,17 @@ add_compigra_library(MLIRCompigraTransforms
 CfFixIndexWidth.cpp
 CfMapToFullPredict.cpp
 CfReduceBranches.cpp
-LLVMToCgraConversion.cpp
 
 ADDITIONAL_HEADER_DIRS
 ${PROJECT_SOURCE_DIR}/include/compigra
 
 DEPENDS
-CompigraPassIncGen
+CompigraTransformsIncGen
 
 LINK_LIBS PUBLIC
 MLIRIR
 MLIRMemRefDialect
 MLIRArithDialect
-MLIRLLVMDialect
-MLIROpenMPDialect
-MLIRAffineDialect
-MLIRSupport
-MLIRSCFTransforms
 )
 
 add_subdirectory(SatMapItDATE2023InputGen)

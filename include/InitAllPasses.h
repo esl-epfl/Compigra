@@ -13,11 +13,15 @@
 #ifndef INIT_ALL_PASSES_H
 #define INIT_ALL_PASSES_H
 
-#include "compigra/Passes/Passes.h"
+#include "compigra/Conversion/Passes.h"
+#include "compigra/Transforms/Passes.h"
 
 namespace compigra {
 
-inline void registerAllPasses() { registerPasses(); }
+inline void registerAllPasses() {
+  registerConversionPasses();
+  registerPasses();
+}
 } // namespace compigra
 
 #endif // INIT_ALL_PASSES_H

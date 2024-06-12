@@ -1,7 +1,5 @@
 add_compigra_dialect(Cgra cgra)
 add_compigra_interface(CgraInterfaces)
-# add_mlir_doc(CgraDialect -gen-dialect-doc CgraDialect compigra/)
-# add_mlir_doc(CgraOps -gen-op-doc CgraOps compigra/)
 
 set(LLVM_TARGET_DEFINITIONS Cgra.td)
 
@@ -15,4 +13,5 @@ mlir_tablegen(CgraAttributes.cpp.inc -gen-attrdef-defs -attrdefs-dialect=cgra)
 add_public_tablegen_target(MLIRCgraAttributesIncGen)
 add_dependencies(compigra-headers MLIRCgraAttributesIncGen)
 
-add_subdirectory(Passes)
+add_subdirectory(Conversion)
+add_subdirectory(Transforms)

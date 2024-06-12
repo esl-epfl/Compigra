@@ -150,7 +150,7 @@ static LogicalResult runPartialLowering(
 
 #define GEN_PASS_DEF_LLVMTOCGRACONVERSION
 #define GEN_PASS_DECL_LLVMTOCGRACONVERSION
-#include "compigra/Passes/Passes.h.inc"
+#include "compigra/Conversion/Passes.h.inc"
 
 std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG = "",
                                                        StringRef memAlloc = "");
@@ -164,7 +164,7 @@ struct LLVMToCgraConversionPass
   LLVMToCgraConversionPass(StringRef outputDAG, StringRef memAlloc) {}
 
   void runOnOperation() override;
-  LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp);
+  // LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp);
 };
 } // namespace
 

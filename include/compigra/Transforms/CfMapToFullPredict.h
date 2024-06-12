@@ -16,11 +16,7 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
-#include "mlir/Support/LLVM.h"
-#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 
@@ -35,7 +31,7 @@ struct bbInfo {
 
 #define GEN_PASS_DEF_CFMAPTOFULLPREDICT
 #define GEN_PASS_DECL_CFMAPTOFULLPREDICT
-#include "compigra/Passes/Passes.h.inc"
+#include "compigra/Transforms/Passes.h.inc"
 
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict();
 

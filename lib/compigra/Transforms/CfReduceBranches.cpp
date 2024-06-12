@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/Passes/CfReduceBranches.h"
+#include "compigra/Transforms/CfReduceBranches.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Attributes.h"

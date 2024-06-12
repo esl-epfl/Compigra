@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef COMPIGRA_PASSES_TD
-#define COMPIGRA_PASSES_TD
+#ifndef COMPIGRA_TRANSFORMS_PASSES_TD
+#define COMPIGRA_TRANSFORMS_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
 
@@ -35,22 +35,4 @@ def CfReduceBranches : Pass<"reduce-branches"> {
   let constructor = "compigra::createCfReduceBranches()";
 }
 
-//===----------------------------------------------------------------------===//
-// LLVM passes
-//===----------------------------------------------------------------------===//
-
-def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
-  let summary = "Convert LLVM to CGRA dialect";
-  let constructor = "compigra::createLLVMToCgraConversion()";
-  let dependentDialects = ["cgra::CgraDialect"];
-  let options = [
-    Option<"outputDAG", "output-dag", "std::string", "",
-           "Specify the name of the fucntion to output the SATMapIt DAG in "
-           "the format of DATE2023 code. ">,
-    Option<"memAlloc", "mem-json", "std::string", "",
-           "Specify the memory allocation policy for data interface between "
-           "CGRA and host processor ">
-  ];
-}
-
-#endif // COMPIGRA_PASSES_TD
+#endif // COMPIGRA_TRANSFORMS_PASSES_TD

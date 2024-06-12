@@ -5,6 +5,7 @@ set(LIBS
         ${conversion_libs}
         MLIRCgra
         MLIRCompigraTransforms
+        MLIRCompigraConversion
         MLIRCompigraSatMapPrint
         
         MLIRIR
@@ -30,11 +31,6 @@ set(LLVM_LINK_COMPONENTS
 add_llvm_tool(compigra-opt
     compigra-opt.cpp
 )
-
-# install(TARGETS compigra-opt
-# EXPORT CompigraTargets
-# RUNTIME DESTINATION ${LLVM_TOOLS_INSTALL_DIR}
-# COMPONENT compigra-opt)
 
 llvm_update_compile_flags(compigra-opt)
 target_link_libraries(compigra-opt PRIVATE ${LIBS})

@@ -11,21 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/Passes/CfMapToFullPredict.h"
+#include "compigra/Transforms/CfMapToFullPredict.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Block.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Value.h"
-#include "llvm/ADT/ilist.h"
 #include <stack>
 
 // for printing debug informations
