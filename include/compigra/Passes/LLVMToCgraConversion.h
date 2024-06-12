@@ -83,6 +83,10 @@ public:
   /// then removes all block arguments.
   LogicalResult addMergeOps(ConversionPatternRewriter &rewriter);
 
+  // Reorder the index of the basic blocks if it is not in the order of Init,
+  // Loop, and Fini.
+  LogicalResult reorderBBs(ConversionPatternRewriter &rewriter);
+
   /// Replace ICmp operation with substraction which zero/sign flags are used
   /// for further select operation;
   /// Replace ICmp + cond branch with corresponding branch operation in cgra,

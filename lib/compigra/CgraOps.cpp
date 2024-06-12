@@ -414,6 +414,48 @@ ParseResult BneOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
+ParseResult BltOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand jumpOperand;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  Type dataType;
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
+                               result)))
+    return failure();
+
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  result.addTypes(dataType);
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
+    return failure();
+  return success();
+}
+
+bool BltOp::isControl() { return true; }
+
+ParseResult BgeOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand jumpOperand;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  Type dataType;
+  SmallVector<Type, 1> dataOperandsTypes;
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
+                               result)))
+    return failure();
+
+  int size = allOperands.size();
+  dataOperandsTypes.assign(size, dataType);
+  result.addTypes(dataType);
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
+    return failure();
+  return success();
+}
+
+bool BgeOp::isControl() { return true; }
+
 /// Print the cgra branch-like operation such as beq, bne., blt, and bge.
 static void printBranchLikeOp(OpAsmPrinter &p, Operation *op) {
   auto ops = op->getOperands();
@@ -432,6 +474,10 @@ static void printBranchLikeOp(OpAsmPrinter &p, Operation *op) {
 void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 void BneOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
+
+void BltOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
+
+void BgeOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 /// Parse the cgra select-like operation such as bzfa and bsfa.
 static ParseResult

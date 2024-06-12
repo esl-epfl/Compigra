@@ -244,6 +244,42 @@ def BneOp : Cgra_Op<"bne", [
   let hasCustomAssemblyFormat = 1;
 }
 
+def BltOp : Cgra_Op<"blt", [
+  Pure, SOSTInterface,
+  DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
+]> {
+  let summary = "branch if less than operation";
+  let description = [{
+    The branch operation represents a conditional branch to the operation which
+        produces jumpOperands.
+
+    Example:
+      ```% 0 = blt[% operand1, % operand2] % jumpOperand{attributes}: i32
+      ```
+  }];
+  let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
+  let results = (outs AnyType : $dataResult);
+  let hasCustomAssemblyFormat = 1;
+}
+
+def BgeOp : Cgra_Op<"bge", [
+  Pure, SOSTInterface,
+  DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
+]> {
+  let summary = "branch if greater or equal than operation";
+  let description = [{
+    The branch operation represents a conditional branch to the operation which
+        produces jumpOperands.
+
+    Example:
+      ```% 0 = bge[% operand1, % operand2] % jumpOperand{attributes}: i32
+      ```
+  }];
+  let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
+  let results = (outs AnyType : $dataResult);
+  let hasCustomAssemblyFormat = 1;
+}
+
 def BzfaOp : Cgra_Op<"bzfa", [
   Pure
   // SameOperandsAndResultType,

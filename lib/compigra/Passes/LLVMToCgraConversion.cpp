@@ -222,6 +222,26 @@ LogicalResult CgraLowering::addMergeOps(ConversionPatternRewriter &rewriter) {
   return success();
 }
 
+LogicalResult CgraLowering::reorderBBs(ConversionPatternRewriter &rewriter) {
+  // can only reorder the basic blocks if the region satisfies the SAT DAG
+  if (region.getBlocks().size() != 3)
+    return failure();
+  for (auto [ind, block] : llvm::enumerate(region)) {
+    if (ind == 0 && getSATMapItBlockType(&block) != SATLoopBlock::Init)
+      return failure();
+
+    if (ind == 1 && getSATMapItBlockType(&block) == SATLoopBlock::Loop)
+      return success();
+    else if (ind == 1 && getSATMapItBlockType(&block) == SATLoopBlock::Fini) {
+      // switch the order of fini and loop, move the fini block to the end
+      rewriter.moveBlockBefore(block.getNextNode(), &block);
+      return success();
+    }
+  }
+
+  return success();
+}
+
 /// Get the users of the ICmp operation with the given type.
 template <typename T>
 static SmallVector<Operation *> getICmpOpUsers(Value val) {
@@ -242,7 +262,12 @@ Operation *CgraLowering::getConstantOp() {
 
 LogicalResult
 CgraLowering::raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
+  llvm::errs() << "raiseConstOnlyUse\n";
   for (auto constOp : region.getOps<LLVM::ConstantOp>()) {
+    // if the constant operation has more than one user, skip it
+    if (!constOp->hasOneUse())
+      continue;
+
     // iterate through the users of the constant operation, and replace the uses
     // from the second one
     SmallVector<Operation *, 4> users(std::next(constOp->getUsers().begin(), 1),
@@ -311,12 +336,14 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
       subOp = rewriter.create<LLVM::SubOp>(cmpOp.getLoc(), cmpOp.getOperand(0),
                                            cmpOp.getOperand(1));
 
+    // insert additional bzfa operation to conclude equal case of the
+    // comparison.
     auto selectFlag = subOp.getResult();
     if (predicate == LLVM::ICmpPredicate::uge ||
         predicate == LLVM::ICmpPredicate::uge ||
         predicate == LLVM::ICmpPredicate::ule ||
         predicate == LLVM::ICmpPredicate::ule) {
-      // create constant -1
+      // create constant -1 to indicate the equal case
       auto resType = subOp.getResult().getType();
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           cmpOp.getLoc(), resType, APInt(resType.getIntOrFloatBitWidth(), -1));
@@ -349,6 +376,7 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
       }
     }
 
+    // Replace the cond_br operation with corresponding branch operation in cgra
     if (replaceBranch && !condBrOps.empty()) {
       for (auto brOp : condBrOps) {
         rewriter.setInsertionPoint(brOp);
@@ -368,6 +396,34 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
               brOp->getLoc(), jumpOprand.getType(),
               SmallVector<Value>(
                   {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          break;
+        case LLVM::ICmpPredicate::slt:
+        case LLVM::ICmpPredicate::ult:
+          op = rewriter.create<cgra::BltOp>(
+              brOp->getLoc(), jumpOprand.getType(),
+              SmallVector<Value>(
+                  {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          break;
+        case LLVM::ICmpPredicate::sgt:
+        case LLVM::ICmpPredicate::ugt:
+          op = rewriter.create<cgra::BltOp>(
+              brOp->getLoc(), jumpOprand.getType(),
+              SmallVector<Value>(
+                  {cmpOp.getOperand(1), cmpOp.getOperand(0), jumpOprand}));
+          break;
+        case LLVM::ICmpPredicate::sge:
+        case LLVM::ICmpPredicate::uge:
+          op = rewriter.create<cgra::BgeOp>(
+              brOp->getLoc(), jumpOprand.getType(),
+              SmallVector<Value>(
+                  {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          break;
+        case LLVM::ICmpPredicate::sle:
+        case LLVM::ICmpPredicate::ule:
+          op = rewriter.create<cgra::BgeOp>(
+              brOp->getLoc(), jumpOprand.getType(),
+              SmallVector<Value>(
+                  {cmpOp.getOperand(1), cmpOp.getOperand(0), jumpOprand}));
           break;
         default:
           return failure();
@@ -620,8 +676,8 @@ LogicalResult
 CgraLowering::removeUnusedOps(ConversionPatternRewriter &rewriter) {
   SmallVector<Operation *> eraseOps;
   for (auto &op : region.getOps()) {
-    if (isa<cgra::BeqOp>(op) || isa<cgra::BneOp>(op) ||
-        isa<LLVM::ReturnOp>(op) || isa<cgra::SwiOp>(op))
+    if (isa<cgra::BeqOp>(op) || isa<cgra::BneOp>(op) || isa<cgra::BgeOp>(op) ||
+        isa<cgra::BltOp>(op) || isa<LLVM::ReturnOp>(op) || isa<cgra::SwiOp>(op))
       continue;
 
     if (op.use_empty()) {
@@ -655,6 +711,9 @@ CgraLowering::removeUnusedOps(ConversionPatternRewriter &rewriter) {
 
 /// Run partial lowering functions on the region.
 static LogicalResult lowerRegion(CgraLowering &cl) {
+  if (failed(runPartialLowering(cl, &CgraLowering::reorderBBs)))
+    return failure();
+
   if (failed(runPartialLowering(cl, &CgraLowering::addMemoryInterface)))
     return failure();
   llvm::errs() << "addMemoryInterface success\n";
