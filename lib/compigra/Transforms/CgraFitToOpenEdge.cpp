@@ -39,13 +39,22 @@ static bool hasOnlyUser(LLVM::ConstantOp constOp) {
 }
 
 static bool isAddrConstOp(LLVM::ConstantOp constOp) {
-  if (constOp->getAttrDictionary().contains("base"))
-    return true;
+  // if (constOp->getAttrDictionary().contains("base"))
+  //   return true;
   for (auto user : constOp->getUsers())
     if (isa<cgra::LwiOp, cgra::SwiOp>(user))
       return true;
 
   return false;
+}
+
+// Currently only consider add, sub, mul operations
+static bool usedByArithOpOnly(LLVM::ConstantOp constOp) {
+  for (auto user : constOp->getUsers())
+    if (!isa<LLVM::AddOp, LLVM::SubOp, LLVM::MulOp>(user))
+      return false;
+
+  return true;
 }
 
 static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
@@ -129,6 +138,25 @@ static cgra::LwiOp convertImmToLwi(LLVM::ConstantOp constOp, int *constBase,
 }
 
 namespace {
+// Initialze the constant target that can not be deployed in the openedge CGRA
+struct ConstTarget : public ConversionTarget {
+  ConstTarget(MLIRContext *ctx) : ConversionTarget(*ctx) {
+    // add the operation to the target
+    addDynamicallyLegalOp<LLVM::ConstantOp>([&](LLVM::ConstantOp constOp) {
+      auto value = constOp.getValue().cast<IntegerAttr>().getInt();
+      // if the constant operation is used by lwi/swi operation, it is legal
+      if (isAddrConstOp(constOp) && hasOnlyUser(constOp))
+        return true;
+
+      // if it is used by arithmetic operation, and not exceed the Imm range
+      if (usedByArithOpOnly(constOp) && value >= -4097 && value <= 4096)
+        return true;
+
+      return false;
+    });
+  }
+};
+
 struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
 
   ConstantOpRewrite(MLIRContext *ctx, int *constBase)
@@ -220,16 +248,13 @@ struct CgraFitToOpenEdgePass
   void runOnOperation() override {
     MLIRContext *ctx = &getContext();
     RewritePatternSet patterns{ctx};
-    mlir::GreedyRewriteConfig config;
-    config.strictMode = GreedyRewriteStrictness::ExistingOps;
-    config.enableRegionSimplification = false;
+    ConstTarget target(ctx);
 
     int BaseAddr = 64;
     patterns.add<ConstantOpRewrite>(ctx, &BaseAddr);
-    ConversionTarget target(*ctx);
 
-    if (failed(applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
-                                            config)))
+    if (failed(applyAnalysisConversion(getOperation(), target,
+                                       std::move(patterns))))
       signalPassFailure();
 
     // print the DAG of the specified function
