@@ -363,9 +363,9 @@ bool BeqOp::isControl() { return true; }
 /// Parse the cgra branch-like operation such as beq, bne., blt, and bge.
 static ParseResult
 parseBranchLikeOp(OpAsmParser &parser,
-                  OpAsmParser::UnresolvedOperand jumpOperand,
-                  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands,
-                  Type dataType, OperationState &result) {
+                  OpAsmParser::UnresolvedOperand &jumpOperand,
+                  SmallVector<OpAsmParser::UnresolvedOperand, 4> &allOperands,
+                  Type &dataType, OperationState &result) {
   if (parser.parseLSquare() || parser.parseOperandList(allOperands) ||
       parser.parseRSquare() || parser.parseOperand(jumpOperand) ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
@@ -384,6 +384,7 @@ ParseResult BeqOp::parse(OpAsmParser &parser, OperationState &result) {
                                result)))
     return failure();
 
+  allOperands.push_back(jumpOperand);
   int size = allOperands.size();
   dataOperandsTypes.assign(size, dataType);
   result.addTypes(dataType);
@@ -481,14 +482,13 @@ void BgeOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 /// Parse the cgra select-like operation such as bzfa and bsfa.
 static ParseResult
-parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand jumpOperand,
-               Type selectType, Type dataType,
+parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand &jumpOperand,
+               Type &dataType,
                SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
                OperationState &result) {
-  if (parser.parseOperandList(operands) || parser.parseRSquare() ||
-      parser.parseOperand(jumpOperand) || parser.parseLSquare() ||
+  if (parser.parseOperand(jumpOperand) || parser.parseLSquare() ||
+      parser.parseOperandList(operands) || parser.parseRSquare() ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
-      parser.parseType(selectType) || parser.parseComma() ||
       parser.parseType(dataType))
     return failure();
 
@@ -496,24 +496,26 @@ parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand jumpOperand,
 }
 
 ParseResult BzfaOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand jumpOperand;
-  Type selectType, dataType;
+  OpAsmParser::UnresolvedOperand flagOperand;
+  Type dataType;
   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  if (failed(parseSelLikeOp(parser, jumpOperand, selectType, dataType,
-                            allOperands, result)))
+  if (failed(
+          parseSelLikeOp(parser, flagOperand, dataType, allOperands, result)))
     return failure();
+  // push flagOperand in front of allOperands
+  allOperands.insert(allOperands.begin(), flagOperand);
 
-  SmallVector<Type, 1> dataOperandsTypes;
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
+  SmallVector<Type, 3> dataOperandsTypes;
+  // assign the same type to all operands
+  dataOperandsTypes.assign(allOperands.size(), dataType);
+
+  // int size = allOperands.size();
+  // dataOperandsTypes.assign(size, dataType);
   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
   result.addTypes(dataType);
-  allOperands.push_back(jumpOperand);
-  if (parser.resolveOperands(
-          allOperands,
-          llvm::concat<const Type>(ArrayRef<Type>(selectType),
-                                   ArrayRef<Type>(dataOperandsTypes)),
-          allOperandLoc, result.operands))
+
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
     return failure();
 
   return success();
@@ -538,21 +540,21 @@ ParseResult BsfaOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand jumpOperand;
   Type selectType, dataType;
   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  if (failed(parseSelLikeOp(parser, jumpOperand, selectType, dataType,
-                            allOperands, result)))
+  if (failed(
+          parseSelLikeOp(parser, jumpOperand, dataType, allOperands, result)))
     return failure();
 
-  SmallVector<Type, 1> dataOperandsTypes;
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
+  allOperands.push_back(jumpOperand);
+
+  // assign the same type to all operands
+  SmallVector<Type, 3> dataOperandsTypes;
+  dataOperandsTypes.assign(allOperands.size(), dataType);
+
   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
   result.addTypes(dataType);
-  allOperands.push_back(jumpOperand);
-  if (parser.resolveOperands(
-          allOperands,
-          llvm::concat<const Type>(ArrayRef<Type>(selectType),
-                                   ArrayRef<Type>(dataOperandsTypes)),
-          allOperandLoc, result.operands))
+
+  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+                             allOperandLoc, result.operands))
     return failure();
 
   return success();
@@ -574,7 +576,7 @@ void BsfaOp::print(OpAsmPrinter &p) {
 }
 
 ParseResult LwiOp::parse(OpAsmParser &parser, OperationState &result) {
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand, 1> allOperands;
   OpAsmParser::UnresolvedOperand addressOperand;
   Type dataType;
   SmallVector<Type, 1> dataOperandsTypes;
@@ -584,8 +586,8 @@ ParseResult LwiOp::parse(OpAsmParser &parser, OperationState &result) {
       parser.parseType(dataType))
     return failure();
 
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
+  allOperands.push_back(addressOperand);
+  dataOperandsTypes.assign(1, dataType);
   result.addTypes(dataType);
   if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
                              allOperandLoc, result.operands))
@@ -604,10 +606,20 @@ ParseResult SwiOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
   OpAsmParser::UnresolvedOperand dataOperand, addressOperand;
 
-  SmallVector<Type, 1> dataOperandsTypes;
+  SmallVector<Type, 2> dataOperandsTypes;
+  Type dataType;
   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-  if (parser.parseOperand(addressOperand) || parser.parseColon() ||
-      parser.parseOperand(dataOperand))
+  if (parser.parseOperand(addressOperand) || parser.parseComma() ||
+      parser.parseOperand(dataOperand) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(dataType))
+    return failure();
+
+  dataOperandsTypes.assign(2, dataType);
+  if (parser.resolveOperands(
+          SmallVector<OpAsmParser::UnresolvedOperand, 4>{addressOperand,
+                                                         dataOperand},
+          ArrayRef<Type>(dataOperandsTypes), allOperandLoc, result.operands))
     return failure();
   return success();
 }

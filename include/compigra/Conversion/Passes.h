@@ -20,7 +20,7 @@ namespace compigra {
 #define GEN_PASS_REGISTRATION
 #include "compigra/Conversion/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG,
+std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef funcName,
                                                        StringRef memAlloc);
 } // end namespace compigra
 #endif // COMPIGRA_CONVERSION_PASSES_H

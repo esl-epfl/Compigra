@@ -16,11 +16,11 @@
 #include "compigra/Transforms/CfFixIndexWidth.h"
 #include "compigra/Transforms/CfMapToFullPredict.h"
 #include "compigra/Transforms/CfReduceBranches.h"
+#include "compigra/Transforms/CgraFitToOpenEdge.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-
 
 namespace compigra {
 
@@ -29,6 +29,7 @@ namespace compigra {
 
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict();
+std::unique_ptr<mlir::Pass> createCgraFitToOpenEdge(StringRef outputDAG);
 
 } // end namespace compigra
 #endif // COMPIGRA_TRANSFORMS_PASSES_H

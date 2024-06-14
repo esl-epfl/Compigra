@@ -35,4 +35,18 @@ def CfReduceBranches : Pass<"reduce-branches"> {
   let constructor = "compigra::createCfReduceBranches()";
 }
 
+//===----------------------------------------------------------------------===//
+// Cgra passes
+//===----------------------------------------------------------------------===//
+
+def CgraFitToOpenEdge : Pass<"fit-openedge"> {
+  let summary = " Rewrite ops to allow it fit in open edge ISA ";
+  let constructor = "compigra::createCgraFitToOpenEdge()";
+    let options = [
+    Option<"outputDAG", "out-dag", "std::string", "",
+           "Specify the name of the fucntion to output the SATMapIt DAG in "
+           "the format of DATE2023 code. ">
+  ];
+}
+
 #endif // COMPIGRA_TRANSFORMS_PASSES_TD

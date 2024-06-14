@@ -24,9 +24,8 @@ def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
   let constructor = "compigra::createLLVMToCgraConversion()";
   let dependentDialects = ["cgra::CgraDialect"];
   let options = [
-    Option<"outputDAG", "output-dag", "std::string", "",
-           "Specify the name of the fucntion to output the SATMapIt DAG in "
-           "the format of DATE2023 code. ">,
+    Option<"funcName", "func-name", "std::string", "",
+           "Specify the name of the fucntion to convert. ">,
     Option<"memAlloc", "mem-json", "std::string", "",
            "Specify the memory allocation policy for data interface between "
            "CGRA and host processor ">

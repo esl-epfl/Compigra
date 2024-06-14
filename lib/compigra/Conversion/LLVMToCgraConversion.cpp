@@ -581,8 +581,9 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
           arg.getLoc(), rewriter.getI32Type(),
           rewriter.getIntegerAttr(rewriter.getI32Type(), addr));
       arrayBaseAddrs[arg] = constOp;
-      arrayBaseAddrs[arg]->setAttr("arg" + std::to_string(argIndex),
-                                   rewriter.getStringAttr("int"));
+      arrayBaseAddrs[arg]->setAttr(
+          "hostValue",
+          rewriter.getStringAttr("arg" + std::to_string(argIndex)));
       // insert lwi operation to load the integer variable
       cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
           arg.getLoc(), arg.getType(), constOp.getResult());
@@ -604,8 +605,9 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
           arg.getLoc(), rewriter.getI32Type(),
           rewriter.getIntegerAttr(rewriter.getI32Type(), baseAddr));
       arrayBaseAddrs[arg] = constOp;
-      arrayBaseAddrs[arg]->setAttr("arg" + std::to_string(argIndex),
-                                   rewriter.getStringAttr("base"));
+      arrayBaseAddrs[arg]->setAttr(
+          "hostValue",
+          rewriter.getStringAttr("arg" + std::to_string(argIndex)));
     }
   }
 
@@ -853,62 +855,6 @@ static LogicalResult parseMemoryInterface(MemoryInterface &memInterface,
   return failure();
 }
 
-// LogicalResult LLVMToCgraConversionPass::outputDATE2023DAG(cgra::FuncOp funcOp) {
-//   SmallVector<Operation *> nodes;
-//   SmallVector<LLVM::ConstantOp> constants;
-//   SmallVector<Operation *> liveIns;
-//   SmallVector<Operation *> liveOuts;
-//   // define the edge by the srcOp and dstOp
-//   using Edge = std::pair<Operation *, Operation *>;
-
-//   // text file to describe the DAG
-//   std::ofstream dotFile;
-
-//   std::vector<Edge> edges;
-
-//   // Store all the nodes (operations)
-//   for (Operation &op : funcOp.getOps()) {
-//     StringRef stage = dyn_cast<StringAttr>(op.getAttr("stage")).getValue();
-
-//     // SAT-MapIt only schedule operations in loop
-//     if (stage != StringRef("loop"))
-//       continue;
-
-//     // store operator related operations
-//     for (Value operand : op.getOperands()) {
-//       if (Operation *defOp = operand.getDefiningOp()) {
-//         // only store the related nodes in init stage
-//         StringRef ownerStage =
-//             dyn_cast<StringAttr>(defOp->getAttr("stage")).getValue();
-//         if (ownerStage == StringRef("init")) {
-//           if (isa<LLVM::ConstantOp>(defOp))
-//             constants.push_back(cast<LLVM::ConstantOp>(defOp));
-//           else
-//             liveIns.push_back(defOp);
-//         }
-//       }
-//     }
-
-//     nodes.push_back(&op);
-
-//     // if the result of the operation is used by the operation in the fini
-//     // stage, it is a liveOut node
-//     for (auto userOp : op.getUsers()) {
-//       StringRef userStage =
-//           dyn_cast<StringAttr>(userOp->getAttr("stage")).getValue();
-//       if (userStage == StringRef("fini"))
-//         liveOuts.push_back(userOp);
-//     }
-//   }
-
-//   // initialize print function
-//   satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns, liveOuts);
-//   if (failed(printer.printDAG(outputDAG)))
-//     return failure();
-
-//   return success();
-// }
-
 void LLVMToCgraConversionPass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
 
@@ -920,12 +866,9 @@ void LLVMToCgraConversionPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  // parse function name from the outputDAG
-  std::string funcName = getFileNameFromPath(outputDAG);
-
   json memJson = json::parse(infile);
   MemoryInterface memInterface;
-  if (failed(parseMemoryInterface(memInterface, memJson, funcName)))
+  if (failed(parseMemoryInterface(memInterface, memJson, funcName.getValue())))
     return signalPassFailure();
 
   // print memInterface
@@ -946,16 +889,11 @@ void LLVMToCgraConversionPass::runOnOperation() {
       return signalPassFailure();
   }
 
-  // for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
-  //   if (funcName == funcOp.getName() && failed(outputDATE2023DAG(funcOp))) {
-  //     llvm::errs() << funcOp << "\n";
-  //     return signalPassFailure();
-    // }
 };
 
 namespace compigra {
-std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef outputDAG,
+std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef funcName,
                                                        StringRef memAlloc) {
-  return std::make_unique<LLVMToCgraConversionPass>(outputDAG, memAlloc);
+  return std::make_unique<LLVMToCgraConversionPass>(funcName, memAlloc);
 }
 } // namespace compigra
