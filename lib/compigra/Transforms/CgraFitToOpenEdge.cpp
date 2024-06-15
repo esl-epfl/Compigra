@@ -51,10 +51,26 @@ static bool isAddrConstOp(LLVM::ConstantOp constOp) {
 // Currently only consider add, sub, mul operations
 static bool usedByArithOpOnly(LLVM::ConstantOp constOp) {
   for (auto user : constOp->getUsers())
-    if (!isa<LLVM::AddOp, LLVM::SubOp, LLVM::MulOp>(user))
+    if (!isa<LLVM::AddOp, LLVM::SubOp, LLVM::MulOp, cgra::MergeOp>(user))
       return false;
 
   return true;
+}
+
+static LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
+  Operation &beginOp = *funcOp.getOps().begin();
+  // raise the constant operation to the top level
+  for (auto op :
+       llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
+    if (!op->hasOneUse())
+      op.dump();
+    else if (op->getAttr("stage") ==
+             StringAttr::get(op->getContext(), "init")) {
+      op->moveBefore(&beginOp);
+    }
+  }
+
+  return success();
 }
 
 static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
@@ -116,16 +132,18 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
 
 static cgra::LwiOp convertImmToLwi(LLVM::ConstantOp constOp, int *constBase,
                                    PatternRewriter &rewriter) {
-  auto userOps = constOp->getUsers();
-  rewriter.setInsertionPoint(constOp);
+  // auto userOps = constOp->getUsers();
+  // rewriter.setInsertionPoint(constOp);
   // host processor value are specified in the hostValue StringAttr
   auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>();
   if (intAttr) {
     std::string strValue = std::to_string(intAttr.getInt());
     auto strAttr = rewriter.getStringAttr(strValue);
-    constOp->setAttr("hostValue", strAttr);
+    rewriter.modifyOpInPlace(constOp, [&] {
+      constOp->setAttr("hostValue", strAttr);
+      constOp->setAttr("value", rewriter.getI32IntegerAttr(*constBase));
+    });
   }
-  constOp->setAttr("value", rewriter.getI32IntegerAttr(*constBase));
 
   // insert a lwi operation to load the constant value
   auto lwiOp = rewriter.create<cgra::LwiOp>(constOp.getLoc(), constOp.getType(),
@@ -141,18 +159,26 @@ namespace {
 // Initialze the constant target that can not be deployed in the openedge CGRA
 struct ConstTarget : public ConversionTarget {
   ConstTarget(MLIRContext *ctx) : ConversionTarget(*ctx) {
+    addLegalDialect<cgra::CgraDialect>();
+    addDynamicallyLegalDialect<LLVM::LLVMDialect>(
+        [&](Operation *op) { return !isa<LLVM::ConstantOp>(op); });
+
     // add the operation to the target
     addDynamicallyLegalOp<LLVM::ConstantOp>([&](LLVM::ConstantOp constOp) {
       auto value = constOp.getValue().cast<IntegerAttr>().getInt();
-      // if the constant operation is used by lwi/swi operation, it is legal
-      if (isAddrConstOp(constOp) && hasOnlyUser(constOp))
-        return true;
+      bool isAddrOnly = isAddrConstOp(constOp) && hasOnlyUser(constOp);
 
-      // if it is used by arithmetic operation, and not exceed the Imm range
-      if (usedByArithOpOnly(constOp) && value >= -4097 && value <= 4096)
-        return true;
+      // if the value exceed the Imm range
+      if (!isAddrOnly)
+        if (value < -4097 || value > 4096)
+          return false;
 
-      return false;
+      // if the constant is used by beq, bne, blt, bge, it is not legal
+      for (auto user : constOp->getUsers())
+        if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user))
+          return false;
+
+      return true;
     });
   }
 };
@@ -166,35 +192,23 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
                                 PatternRewriter &rewriter) const override {
 
     auto value = constOp.getValue().cast<IntegerAttr>().getInt();
-    llvm::errs() << constOp << "\n";
-
-    // copy to constant operation to skip greedy pattern rewrite
-    auto preAttr = constOp->getAttrs();
-    rewriter.setInsertionPoint(constOp);
-    auto newOp = rewriter.create<LLVM::ConstantOp>(
-        constOp.getLoc(), constOp.getType(), rewriter.getI32IntegerAttr(value));
-    newOp->setAttrs(preAttr);
-    newOp->setAttr("value", rewriter.getI32IntegerAttr(value));
-    rewriter.replaceOp(constOp, newOp.getResult());
-
-    // Don't rewrite if the address.
-    if (isAddrConstOp(newOp))
-      return success();
 
     // rewrite the constant operation if the value exceed the range
     if (value < -4097 || value > 4096) {
-      auto lwiOp = convertImmToLwi(newOp, constBase, rewriter);
-      // replace all the use of the constant operation except the lwi operation
+      auto lwiOp = convertImmToLwi(constOp, constBase, rewriter);
+      // replace all the use of the constant operation except the lwi
+      // operation
+      llvm::errs() << "Replace the use of the constant operation\n";
       rewriter.replaceOpUsesWithIf(
-          newOp, lwiOp.getResult(),
+          constOp, lwiOp.getResult(),
           [&](OpOperand &operand) { return operand.getOwner() != lwiOp; });
     }
 
-    for (auto user : newOp->getUsers()) {
+    for (auto user : constOp->getUsers())
       // rewrite the constant operation if it is used by beq, bne, blt, bge,
       // adapt it to the lwi operation
       if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user)) {
-        if (!hasOnlyUser(newOp)) {
+        if (!hasOnlyUser(constOp)) {
           // insert a new constant operation to specify the load address
           auto brAddrConst = rewriter.create<LLVM::ConstantOp>(
               constOp.getLoc(), constOp.getType(),
@@ -203,34 +217,18 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
               brAddrConst.getLoc(), constOp.getType(), brAddrConst.getResult());
           // replace use if it is beq, bne, blt, bge
           rewriter.replaceOpUsesWithIf(
-              newOp, lwiOp.getResult(), [&](OpOperand &operand) {
+              constOp, lwiOp.getResult(), [&](OpOperand &operand) {
                 return isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
                     operand.getOwner());
               });
           *constBase += 4;
         } else {
-          auto lwiOp = convertImmToLwi(newOp, constBase, rewriter);
+          auto lwiOp = convertImmToLwi(constOp, constBase, rewriter);
           rewriter.replaceOpUsesWithIf(
-              newOp, lwiOp.getResult(),
+              constOp, lwiOp.getResult(),
               [&](OpOperand &operand) { return operand.getOwner() != lwiOp; });
         }
-        // check whether the constant operation is used in the left operand,
-        // switch the order
-        if (newOp->getResult(0) == user->getOperand(0)) {
-          if (isa<LLVM::MulOp, LLVM::AddOp>(user))
-            // switch the operator order
-            rewriter.modifyOpInPlace(user, [&]() {
-              user->setOperands({user->getOperand(1), user->getOperand(0)});
-            });
-          // if (isa<LLVM::SubOp>(user)) {
-          //   // add bitwise not operation to the constant value
-          //   auto notOp = rewriter.create<LLVM::XOrOp>(
-          //       user->getLoc(), user->getResult(0).getType(),
-          //       rewriter.getI32IntegerAttr(-1), newOp.getResult());
-          // }
-        }
       }
-    }
 
     return success();
   }
@@ -246,6 +244,7 @@ struct CgraFitToOpenEdgePass
   explicit CgraFitToOpenEdgePass(StringRef outputDAG) {}
 
   void runOnOperation() override {
+    ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     MLIRContext *ctx = &getContext();
     RewritePatternSet patterns{ctx};
     ConstTarget target(ctx);
@@ -253,9 +252,16 @@ struct CgraFitToOpenEdgePass
     int BaseAddr = 64;
     patterns.add<ConstantOpRewrite>(ctx, &BaseAddr);
 
-    if (failed(applyAnalysisConversion(getOperation(), target,
-                                       std::move(patterns))))
+    // adapt the constant operation to meet the requirement of Imm field of
+    // openedge CGRA
+    if (failed(applyPartialConversion(getOperation(), target,
+                                      std::move(patterns))))
       signalPassFailure();
+
+    // raise the constant operation to the top level
+    for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
+      if (failed(raiseConstOperation(funcOp)))
+        signalPassFailure();
 
     // print the DAG of the specified function
     if (!outputDAG.empty()) {
@@ -263,7 +269,7 @@ struct CgraFitToOpenEdgePass
       bool isPath = lastSlashPos != StringRef::npos;
       StringRef funcName =
           isPath ? outputDAG.substr(lastSlashPos + 1) : outputDAG;
-      ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+
       for (auto funcOp :
            llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
         if (funcName == funcOp.getName() &&
