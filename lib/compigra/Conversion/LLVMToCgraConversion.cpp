@@ -516,6 +516,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
 
   SmallVector<Operation *> gepOps;
   SmallVector<Operation *> loadOps;
+  auto entryBlock = getEntryBlock();
+  Operation *entryOp = getConstantOp();
 
   for (auto loadOp :
        llvm::make_early_inc_range(region.getOps<LLVM::LoadOp>())) {
@@ -524,16 +526,17 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
     // if it is a function argument, replace lwi directly
     if (std::find(funcOp.getArguments().begin(), funcOp.getArguments().end(),
                   arg) != funcOp.getArguments().end()) {
-      rewriter.setInsertionPoint(loadOp);
       auto argIndex = getArgsIndex<Value>(
           arg, SmallVector<Value>{funcOp.getArguments().begin(),
                                   funcOp.getArguments().end()});
 
       // insert lwi operation to load the integer variable
+      rewriter.setInsertionPoint(entryOp);
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
-          loadOp.getLoc(), rewriter.getI32Type(),
+          entryOp->getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
 
+      rewriter.setInsertionPoint(loadOp);
       cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
           loadOp.getLoc(), loadOp.getResult().getType(), constOp.getResult());
 
@@ -542,13 +545,90 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
     }
 
     // calculate the address if it is a GEP operation
+    if (auto gepOp = dyn_cast<LLVM::GEPOp>(arg.getDefiningOp())) {
+      gepOps.push_back(gepOp);
+      Value baseAddr = gepOp.getOperand(0);
+      auto argIndex = getArgsIndex<Value>(
+          baseAddr, SmallVector<Value>{funcOp.getArguments().begin(),
+                                       funcOp.getArguments().end()});
+      rewriter.setInsertionPoint(entryOp);
+      // Add offset constant TODO: CHECK THIS
+      LLVM::ConstantOp addrEle = rewriter.create<LLVM::ConstantOp>(
+          entryOp->getLoc(), rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(4));
+      // Add base address constant
+      LLVM::ConstantOp baseOp = rewriter.create<LLVM::ConstantOp>(
+          entryOp->getLoc(), rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      rewriter.setInsertionPoint(loadOp);
+      LLVM::MulOp offsetOp = rewriter.create<LLVM::MulOp>(
+          loadOp.getLoc(), rewriter.getI32Type(), gepOp.getOperand(1),
+          addrEle.getResult());
+      LLVM::AddOp addrOp = rewriter.create<LLVM::AddOp>(
+          loadOp.getLoc(), rewriter.getI32Type(), baseOp.getResult(),
+          offsetOp.getResult());
+      cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
+          loadOp.getLoc(), loadOp.getResult().getType(), addrOp.getResult());
+
+      rewriter.replaceOp(loadOp, lwiOp.getResult());
+    }
   }
 
   // calculate the address if it is a GEP operation
   for (auto storeOp :
        llvm::make_early_inc_range(region.getOps<LLVM::StoreOp>())) {
-    continue;
+    auto arg = storeOp.getOperand(1);
+    // if it is a function argument, replace swi directly
+    if (std::find(funcOp.getArguments().begin(), funcOp.getArguments().end(),
+                  arg) != funcOp.getArguments().end()) {
+
+      auto argIndex = getArgsIndex<Value>(
+          arg, SmallVector<Value>{funcOp.getArguments().begin(),
+                                  funcOp.getArguments().end()});
+
+      // insert lwi operation to load the integer variable
+      rewriter.setInsertionPoint(entryOp);
+      LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
+          storeOp.getLoc(), rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      rewriter.setInsertionPoint(storeOp);
+      cgra::SwiOp swiOp = rewriter.create<cgra::SwiOp>(
+          storeOp.getLoc(), storeOp.getOperand(0), constOp.getResult());
+
+      rewriter.eraseOp(storeOp);
+      continue;
+    }
+
+    // calculate the address if it is a GEP operation
+    if (auto gepOp = dyn_cast<LLVM::GEPOp>(arg.getDefiningOp())) {
+      gepOps.push_back(gepOp);
+      Value baseAddr = gepOp.getOperand(0);
+      auto argIndex = getArgsIndex<Value>(
+          baseAddr, SmallVector<Value>{funcOp.getArguments().begin(),
+                                       funcOp.getArguments().end()});
+      rewriter.setInsertionPoint(entryOp);
+      // Add offset constant TODO: CHECK THIS
+      LLVM::ConstantOp addrEle = rewriter.create<LLVM::ConstantOp>(
+          entryOp->getLoc(), rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(4));
+      // Add base address constant
+      LLVM::ConstantOp baseOp = rewriter.create<LLVM::ConstantOp>(
+          entryOp->getLoc(), rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      rewriter.setInsertionPoint(storeOp);
+      LLVM::MulOp offsetOp = rewriter.create<LLVM::MulOp>(
+          storeOp.getLoc(), rewriter.getI32Type(), gepOp.getOperand(1),
+          addrEle.getResult());
+      LLVM::AddOp addrOp = rewriter.create<LLVM::AddOp>(
+          storeOp.getLoc(), rewriter.getI32Type(), baseOp.getResult(),
+          offsetOp.getResult());
+      cgra::SwiOp swiOp = rewriter.create<cgra::SwiOp>(
+          storeOp.getLoc(), storeOp.getOperand(0), addrOp.getResult());
+      rewriter.eraseOp(storeOp);
+    }
   }
+  for (Operation *op : gepOps)
+    rewriter.eraseOp(op);
 
   return success();
 }
