@@ -85,6 +85,7 @@ compile_sat() {
     local f_llvm="$bench_path/IR/llvm.mlir"
     local f_cgra="$bench_path/IR/cgra.mlir"
     local f_dag="$bench_path/IR/SatMapDAG/${bench_name}"
+    local f_cgra_optim="$bench_path/IR/cgra_optim.mlir"
     
     # Get llvm IR from clang
     $CLANG14 -S -c -emit-llvm -m32 -O3 \
@@ -97,6 +98,10 @@ compile_sat() {
     $COMPIGRA_OPT --allow-unregistered-dialect \
       --convert-llvm-to-cgra="output-dag=$f_dag mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
      "$f_llvm" > "$f_cgra"
+
+    #  convert cgra operations to fit into hardware ISA
+    # $COMPIGRA_OPT --allow-unregistered-dialect \
+    #   --fit-openedge "$f_cgra" > "$f_cgra_optim"
 
     # Check if the compilation was successful
     if [ $? -eq 0 ]; then
