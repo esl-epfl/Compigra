@@ -22,39 +22,25 @@ using namespace mlir;
 
 namespace compigra {
 
-struct MergeOpInfo {
-  Operation *op;
-  Value val;
-  SmallVector<Value> backedges;
-};
+// struct MergeOpInfo {
+//   Operation *op;
+//   Value val;
+//   SmallVector<Value> backedges;
+// };
 
 using BlockValues = DenseMap<Block *, std::vector<Value>>;
-using BlockOps = DenseMap<Block *, std::vector<MergeOpInfo>>;
+// using BlockOps = DenseMap<Block *, std::vector<MergeOpInfo>>;
 using ValueMap = DenseMap<Value, Value>;
 
 /// Struct for describing the memory allocation policy of the address space
 /// between the host processor and the CGRA.
 struct MemoryInterface {
   MemoryInterface() {}
-  MemoryInterface(int intHeadAddr, int intTailAddr, int activeIntTail,
-                  int arrHeadAddr, int arrTailAddr,
-                  std::vector<int> activeArrTail, int activeArrTailIdx)
-      : intHeadAddr(intHeadAddr), intTailAddr(intTailAddr),
-        activeIntTail(activeIntTail), arrHeadAddr(arrHeadAddr),
-        arrTailAddr(arrTailAddr), activeArrTail(activeArrTail) {}
+  MemoryInterface(std::vector<int> startAddr, std::vector<int> endAddr)
+      : startAddr(startAddr), endAddr(endAddr) {}
 
-  // Address space reserved for integer variables
-  int intHeadAddr = 0x0;
-  int intTailAddr = 0x200;
-  // define the number of input integer variables
-  int activeIntTail = 0;
-
-  // Address space reserved for data array variables
-  int arrHeadAddr = 0x200;
-  int arrTailAddr = 0x10000;
-  // vector stores the end address of each input array, the size of
-  // activeArrTail is equal to the number of input arrays.
-  std::vector<int> activeArrTail;
+  std::vector<int> startAddr;
+  std::vector<int> endAddr;
 };
 
 // ============================================================================
@@ -68,7 +54,6 @@ public:
 
   /// Groups information to rewire the IR around merge-like operations by owning
   /// basic block (which must still exist).
-  using BlockOps = DenseMap<Block *, std::vector<MergeOpInfo>>;
 
   /// Constructor simply takes the region being lowered and a reference to the
   /// top-level name analysis.

@@ -374,25 +374,25 @@ parseBranchLikeOp(OpAsmParser &parser,
   return success();
 }
 
-ParseResult BeqOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand jumpOperand;
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  Type dataType;
-  SmallVector<Type, 1> dataOperandsTypes;
-  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
-                               result)))
-    return failure();
+// ParseResult BeqOp::parse(OpAsmParser &parser, OperationState &result) {
+//   OpAsmParser::UnresolvedOperand jumpOperand;
+//   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+//   Type dataType;
+//   SmallVector<Type, 1> dataOperandsTypes;
+//   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+//   if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
+//                                result)))
+//     return failure();
 
-  allOperands.push_back(jumpOperand);
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
-  result.addTypes(dataType);
-  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
-                             allOperandLoc, result.operands))
-    return failure();
-  return success();
-}
+//   allOperands.push_back(jumpOperand);
+//   int size = allOperands.size();
+//   dataOperandsTypes.assign(size, dataType);
+//   result.addTypes(dataType);
+//   if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
+//                              allOperandLoc, result.operands))
+//     return failure();
+//   return success();
+// }
 
 bool BneOp::isControl() { return true; }
 
@@ -472,7 +472,7 @@ static void printBranchLikeOp(OpAsmPrinter &p, Operation *op) {
   p << " : " << op->getResult(0).getType();
 }
 
-void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
+// void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 void BneOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 

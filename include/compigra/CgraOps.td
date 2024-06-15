@@ -59,7 +59,7 @@ def FuncOp : Cgra_Op<"func", [
 
     /// Implement RegionKindInterface.
     static mlir::RegionKind getRegionKind(unsigned index) {
-      return mlir::RegionKind::Graph;
+      return mlir::RegionKind::SSACFG;
     }
 
     /// Returns the region on the current operation that is callable.
@@ -209,7 +209,7 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
 }
 
 def BeqOp : Cgra_Op<"beq", [
-  Pure, SOSTInterface,
+  Pure, Terminator,AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
 ]> {
   let summary = "branch if equal operation";
@@ -221,9 +221,89 @@ def BeqOp : Cgra_Op<"beq", [
       ```% 0 = beq[% operand1, % operand2] % jumpOperand{attributes}: i32
       ```
   }];
-  let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
-  let results = (outs AnyType : $dataResult);
-  let hasCustomAssemblyFormat = 1;
+  let arguments = (ins AnyInteger : $cmpOperand1, AnyInteger : $cmpOperand2, 
+                   Variadic<AnyType> : $trueDestOperands, 
+                   Variadic<AnyType> : $falseDestOperands);
+  let successors = (successor AnySuccessor:$trueDest, AnySuccessor:$falseDest);
+
+  let builders = [
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+       "::mlir::Block *":$trueDest,
+      "::mlir::ValueRange":$trueOperands, "::mlir::Block *":$falseDest,
+      "::mlir::ValueRange":$falseOperands), [{
+      build($_builder, $_state, cmpOperand1, cmpOperand2, 
+      trueOperands, falseOperands, trueDest,
+            falseDest);
+    }]>,
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+      "::mlir::Block *":$trueDest, "::mlir::Block *":$falseDest, 
+      CArg<"::mlir::ValueRange", "{}">:$falseOperands), [{
+      build($_builder, $_state,  cmpOperand1, cmpOperand2, 
+      trueDest, ValueRange(), falseDest,
+            falseOperands);
+    }]>];
+
+  let extraClassDeclaration = [{
+    // These are the indices into the dests list.
+    enum { trueIndex = 0, falseIndex = 1 };
+
+    size_t getNumTrueDestOperands() { return getTrueDestOperands().size(); }
+
+    // Accessors for operands to the 'true' destination.
+    ::mlir::Value getTrueOperand(unsigned idx) {
+      assert(idx < getNumTrueDestOperands());
+      return getOperand(getTrueDestOperandIndex() + idx);
+    }
+
+    void setTrueOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumTrueDestOperands());
+      setOperand(getTrueDestOperandIndex() + idx, value);
+    }
+
+    unsigned getNumTrueOperands()  { return getTrueOperands().size(); }
+
+    /// Erase the operand at 'index' from the true operand list.
+    void eraseTrueOperand(unsigned index)  {
+      getTrueDestOperandsMutable().erase(index);
+    }
+
+    // Accessors for operands to the 'false' destination.
+    ::mlir::Value getFalseOperand(unsigned idx) {
+      assert(idx < getNumFalseOperands());
+      return getOperand(getFalseDestOperandIndex() + idx);
+    }
+    void setFalseOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumFalseOperands());
+      setOperand(getFalseDestOperandIndex() + idx, value);
+    }
+
+    operand_range getTrueOperands() { return getTrueDestOperands(); }
+    operand_range getFalseOperands() { return getFalseDestOperands(); }
+
+    unsigned getNumFalseOperands() { return getFalseOperands().size(); }
+
+    // /// Erase the operand at 'index' from the false operand list.
+    // void eraseFalseOperand(unsigned index) {
+    //   getFalseDestOperandsMutable().erase(index);
+    // }
+
+  private:
+    /// Get the index of the first true destination operand.
+    unsigned getTrueDestOperandIndex() { return 1; }
+
+    /// Get the index of the first false destination operand.
+    unsigned getFalseDestOperandIndex() {
+      return getTrueDestOperandIndex() + getNumTrueOperands();
+    }
+  }];
+
+  let assemblyFormat = [{
+      ` ` `[` $cmpOperand1 `:` type($cmpOperand1) `,` 
+      $cmpOperand2 `:` type($cmpOperand2) `]` `,`
+      $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`
+      $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?
+      attr-dict
+  }];
 }
 
 def BneOp : Cgra_Op<"bne", [

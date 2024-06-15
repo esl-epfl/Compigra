@@ -285,12 +285,21 @@ static Value getCgraBranchDst(Block *block) {
   return nullptr;
 }
 
+/// Get the destination block of the cgra branch operation, which shouldn't be
+/// the block below it
+static Block *getCgraBranchDstBlock(Block *block) {
+  auto *nextNode = block->getNextNode();
+  auto *sucNode = block->getSuccessors().front();
+  return nextNode == sucNode ? block->getSuccessors().back() : sucNode;
+}
+
 LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
   // Store all the cmp operations to be replaced
   SmallVector<Operation *> cmpOps;
   SmallVector<Operation *> selectOps;
+  SmallVector<Operation *> eraseBrOps;
 
-  for (Operation &op : region.getOps()) {
+  for (Operation &op : llvm::make_early_inc_range(region.getOps())) {
     if (!isa<LLVM::ICmpOp>(op))
       continue;
 
@@ -308,9 +317,10 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
     auto selOps = getICmpOpUsers<LLVM::SelectOp>(cmpOp.getResult());
     auto condBrOps = getICmpOpUsers<LLVM::CondBrOp>(cmpOp.getResult());
 
-    bool existNonSelectUser =
-        static_cast<size_t>(std::distance(op.getUsers().begin(),
-                                          op.getUsers().end())) > selOps.size();
+    bool existNonSelAndBrUser =
+        static_cast<size_t>(
+            std::distance(op.getUsers().begin(), op.getUsers().end())) >
+        selOps.size() + condBrOps.size();
 
     rewriter.setInsertionPoint(cmpOp);
     LLVM::SubOp subOp = nullptr;
@@ -368,17 +378,43 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
     // Replace the cond_br operation with corresponding branch operation in cgra
     if (replaceBranch && !condBrOps.empty()) {
       for (auto brOp : condBrOps) {
-        rewriter.setInsertionPoint(brOp);
+        eraseBrOps.push_back(brOp);
+        LLVM::CondBrOp condBrOp = dyn_cast<LLVM::CondBrOp>(brOp);
+
         auto predicate = cmpOp.getPredicate();
+        // TODO: delete this
         auto jumpOprand = getCgraBranchDst(brOp->getBlock());
+
+        // Get the conditional branch block for cgra bge, blt, etc.
+        // Assign the other branch block of original cond_br to the br block
+        Block *condBrBlock = getCgraBranchDstBlock(brOp->getBlock());
+        bool isTrueDest = condBrBlock == condBrOp.getTrueDest();
+        auto condBrArgs = isTrueDest ? condBrOp.getTrueDestOperands()
+                                     : condBrOp.getFalseDestOperands();
+
+        // Add a new basic block after the beq, bne, blt, bge, block as the
+        // false branch rewriter.
+
+        Block *jumpBlock =
+            isTrueDest ? condBrOp.getFalseDest() : condBrOp.getTrueDest();
+        auto jumpArgs = isTrueDest ? condBrOp.getFalseDestOperands()
+                                   : condBrOp.getTrueDestOperands();
+        //  get type range of jumpArgs
+        auto jumpArgsType = jumpArgs.getTypes();
+        auto newDefaltBlk =
+            rewriter.createBlock(brOp->getBlock()->getNextNode(), jumpArgsType);
+
+        llvm::errs() << *condBrBlock->getTerminator() << "\n";
+        llvm::errs() << "isTrueDest " << isTrueDest << "\n";
+        llvm::errs() << "jumpBlock\n";
 
         switch (predicate) {
           Operation *op;
         case LLVM::ICmpPredicate::eq:
-          op = rewriter.create<cgra::BeqOp>(
-              brOp->getLoc(), jumpOprand.getType(),
-              SmallVector<Value>(
-                  {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          rewriter.setInsertionPoint(brOp);
+          op = rewriter.create<cgra::BeqOp>(brOp->getLoc(), cmpOp.getOperand(0),
+                                            cmpOp.getOperand(1), condBrBlock,
+                                            condBrArgs, newDefaltBlk, jumpArgs);
           break;
         case LLVM::ICmpPredicate::ne:
           op = rewriter.create<cgra::BneOp>(
@@ -417,12 +453,18 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
         default:
           return failure();
         }
+
+        // insert branch operation to the new block
+        rewriter.setInsertionPointToEnd(newDefaltBlk);
+        auto defaultBr =
+            rewriter.create<LLVM::BrOp>(brOp->getLoc(), jumpArgs, jumpBlock);
+        defaultBr->moveAfter(&newDefaltBlk->getOperations().front());
       }
     }
 
-    // if exists user Op except select, create a bsfa operation to select either
-    // 0 or 1
-    if (existNonSelectUser) {
+    // if exists user Op except select and branch, create a bsfa operation to
+    // select either 0 or 1
+    if (existNonSelAndBrUser) {
       rewriter.setInsertionPoint(getConstantOp());
       LLVM::ConstantOp constOp0 = rewriter.create<LLVM::ConstantOp>(
           cmpOp.getLoc(), rewriter.getI1Type(), APInt(1, 0));
@@ -454,6 +496,8 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
   for (Operation *op : cmpOps)
     rewriter.eraseOp(op);
   for (Operation *op : selectOps)
+    rewriter.eraseOp(op);
+  for (Operation *op : eraseBrOps)
     rewriter.eraseOp(op);
 
   return success();
@@ -540,19 +584,20 @@ CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
 }
 
 /// Get the address of the integer variable with the given index.
-static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
-  int addr = memInterface.intHeadAddr + idx * 4;
-  if (addr >= memInterface.intTailAddr)
-    return -1;
-  return addr;
-}
+// static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
+//   int addr = memInterface.intHeadAddr + idx * 4;
+//   if (addr >= memInterface.intTailAddr)
+//     return -1;
+//   return addr;
+// }
 
-/// Get the base address of the data array variable with the given index.
-static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t idx) {
-  if (idx == 0)
-    return memInterface.arrHeadAddr;
-  return memInterface.activeArrTail[idx - 1];
-}
+// /// Get the base address of the data array variable with the given index.
+// static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t
+// idx) {
+//   if (idx == 0)
+//     return memInterface.arrHeadAddr;
+//   return memInterface.activeArrTail[idx - 1];
+// }
 
 static std::string getFileNameFromPath(const std::string &filePath) {
   size_t lastSlash = filePath.find_last_of("/\\");
@@ -562,104 +607,145 @@ static std::string getFileNameFromPath(const std::string &filePath) {
   return filePath;
 }
 
+template <typename T> static size_t getArgsIndex(T val, SmallVector<T> set) {
+  for (auto [ind, arg] : llvm::enumerate(set)) {
+    if (arg == val)
+      return ind;
+  }
+}
+
 LogicalResult
 CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
   auto funcOp = region.getParentOfType<cgra::FuncOp>();
   DenseMap<Value, Operation *> arrayBaseAddrs;
 
-  for (auto [argIndex, arg] : llvm::enumerate(funcOp.getArguments())) {
-    // identify the data type of the argument
-    llvm::errs() << "argIndex: " << argIndex << "\n";
-    rewriter.setInsertionPointToStart(&region.front());
-    if (arg.getType().isIntOrIndex()) {
-      // do nothing if the argument is not in use
-      if (arg.use_empty())
-        continue;
-      // get the address of the integer variable
-      int addr = getCgraIntVarAddress(memInterface, argIndex);
-      LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
-          arg.getLoc(), rewriter.getI32Type(),
-          rewriter.getIntegerAttr(rewriter.getI32Type(), addr));
-      arrayBaseAddrs[arg] = constOp;
-      arrayBaseAddrs[arg]->setAttr(
-          "hostValue",
-          rewriter.getStringAttr("arg" + std::to_string(argIndex)));
-      // insert lwi operation to load the integer variable
-      cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
-          arg.getLoc(), arg.getType(), constOp.getResult());
-      // replace the argument with the result of the lwi operation
-      arg.replaceAllUsesWith(lwiOp.getResult());
-    } else if (arg.getType().isa<LLVM::LLVMPointerType>()) {
-      llvm::errs() << "pointer: " << memInterface.activeIntTail << "\n";
-      // do nothing if the argument is not in use
-      if (arg.use_empty())
-        continue;
+  // for (auto [argIndex, arg] : llvm::enumerate(funcOp.getArguments())) {
+  //   // identify the data type of the argument
+  //   llvm::errs() << "argIndex: " << argIndex << "\n";
+  //   rewriter.setInsertionPointToStart(&region.front());
+  //   if (arg.getType().isIntOrIndex()) {
+  //     // do nothing if the argument is not in use
+  //     if (arg.use_empty())
+  //       continue;
+  //     // get the address of the integer variable
+  //     int addr = getCgraIntVarAddress(memInterface, argIndex);
+  //     LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
+  //         arg.getLoc(), rewriter.getI32Type(),
+  //         rewriter.getIntegerAttr(rewriter.getI32Type(), addr));
+  //     arrayBaseAddrs[arg] = constOp;
+  //     arrayBaseAddrs[arg]->setAttr(
+  //         "hostValue",
+  //         rewriter.getStringAttr("arg" + std::to_string(argIndex)));
+  //     // insert lwi operation to load the integer variable
+  //     cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
+  //         arg.getLoc(), arg.getType(), constOp.getResult());
+  //     // replace the argument with the result of the lwi operation
+  //     arg.replaceAllUsesWith(lwiOp.getResult());
+  //   } else if (arg.getType().isa<LLVM::LLVMPointerType>()) {
+  //     llvm::errs() << "pointer: " << memInterface.activeIntTail << "\n";
+  //     // do nothing if the argument is not in use
+  //     if (arg.use_empty())
+  //       continue;
 
-      // get the base address of the array variable
-      int baseAddr = getCgraArrVarBaseAddress(
-          memInterface, argIndex - memInterface.activeIntTail);
+  //     // get the base address of the array variable
+  //     int baseAddr = getCgraArrVarBaseAddress(
+  //         memInterface, argIndex - memInterface.activeIntTail);
 
-      llvm::errs() << "baseAddr: " << baseAddr << "\n";
-      // create a constant operation for the base address
-      LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
-          arg.getLoc(), rewriter.getI32Type(),
-          rewriter.getIntegerAttr(rewriter.getI32Type(), baseAddr));
-      arrayBaseAddrs[arg] = constOp;
-      arrayBaseAddrs[arg]->setAttr(
-          "hostValue",
-          rewriter.getStringAttr("arg" + std::to_string(argIndex)));
-    }
-  }
+  //     llvm::errs() << "baseAddr: " << baseAddr << "\n";
+  //     // create a constant operation for the base address
+  //     LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
+  //         arg.getLoc(), rewriter.getI32Type(),
+  //         rewriter.getIntegerAttr(rewriter.getI32Type(), baseAddr));
+  //     arrayBaseAddrs[arg] = constOp;
+  //     arrayBaseAddrs[arg]->setAttr(
+  //         "hostValue",
+  //         rewriter.getStringAttr("arg" + std::to_string(argIndex)));
+  //   }
+  // }
 
   SmallVector<Operation *> gepOps;
   SmallVector<Operation *> loadOps;
 
-  for (LLVM::GEPOp op : region.getOps<LLVM::GEPOp>()) {
-    // Validate the result is used by a load operation
-    auto users = op->getResult(0).getUsers();
-    if (std::distance(users.begin(), users.end()) != 1) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "LLVM::GEPOp is not used by one load/store operation\n");
-      return failure();
+  for (auto loadOp :
+       llvm::make_early_inc_range(region.getOps<LLVM::LoadOp>())) {
+    auto arg = loadOp.getOperand();
+
+    // if it is a function argument, replace lwi directly
+    if (std::find(funcOp.getArguments().begin(), funcOp.getArguments().end(),
+                  arg) != funcOp.getArguments().end()) {
+      rewriter.setInsertionPoint(loadOp);
+      auto argIndex = getArgsIndex<Value>(
+          arg, SmallVector<Value>{funcOp.getArguments().begin(),
+                                  funcOp.getArguments().end()});
+
+      // insert lwi operation to load the integer variable
+      LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
+          loadOp.getLoc(), rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+
+      cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
+          loadOp.getLoc(), loadOp.getResult().getType(), constOp.getResult());
+
+      rewriter.replaceOp(loadOp, lwiOp.getResult());
+      continue;
     }
 
-    auto sucOp = *users.begin();
-    gepOps.push_back(op);
-    loadOps.push_back(sucOp);
-
-    rewriter.setInsertionPoint(getEntryBlockTerminator());
-    // insert base address and offset
-    Value loadArg = op.getOperand(0);
-    auto constOp = arrayBaseAddrs[loadArg];
-    LLVM::ConstantOp constOffset = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getI32Type(), 4);
-    rewriter.setInsertionPoint(op);
-    auto rightOpr = op.getOperand(1);
-    LLVM::MulOp mulOp =
-        rewriter.create<LLVM::MulOp>(op.getLoc(), rewriter.getI32Type(),
-                                     constOffset.getResult(), op.getOperand(1));
-    // calculate the address
-    LLVM::AddOp addOp = rewriter.create<LLVM::AddOp>(
-        op.getLoc(), constOp->getResult(0).getType(), constOp->getResult(0),
-        mulOp.getResult());
-    if (isa<LLVM::LoadOp>(sucOp)) {
-      // insert load operation
-      cgra::LwiOp loadOp = rewriter.create<cgra::LwiOp>(
-          op.getLoc(), sucOp->getResult(0).getType(), addOp.getResult());
-      // replace the llvm.load operation with the result of the cgra.lwi
-      // operation
-      sucOp->getResult(0).replaceAllUsesWith(loadOp.getResult());
-    } else if (isa<LLVM::StoreOp>(sucOp)) {
-      // insert store operation
-      cgra::SwiOp storeOp = rewriter.create<cgra::SwiOp>(
-          op.getLoc(), sucOp->getOperand(0), addOp.getResult());
-    }
+    // calculate the address if it is a GEP operation
   }
 
-  for (Operation *op : gepOps)
-    rewriter.eraseOp(op);
-  for (Operation *op : loadOps)
-    rewriter.eraseOp(op);
+  // calculate the address if it is a GEP operation
+  for (auto storeOp :
+       llvm::make_early_inc_range(region.getOps<LLVM::StoreOp>())) {
+    continue;
+  }
+
+  // for (LLVM::GEPOp op : region.getOps<LLVM::GEPOp>()) {
+  //   // Validate the result is used by a load operation
+  //   auto users = op->getResult(0).getUsers();
+  //   if (std::distance(users.begin(), users.end()) != 1) {
+  //     LLVM_DEBUG(llvm::dbgs()
+  //                << "LLVM::GEPOp is not used by one load/store operation\n");
+  //     return failure();
+  //   }
+
+  //   auto sucOp = *users.begin();
+  //   gepOps.push_back(op);
+  //   loadOps.push_back(sucOp);
+
+  //   rewriter.setInsertionPoint(getEntryBlockTerminator());
+  //   // insert base address and offset
+  //   Value loadArg = op.getOperand(0);
+  //   auto constOp = arrayBaseAddrs[loadArg];
+  //   LLVM::ConstantOp constOffset = rewriter.create<LLVM::ConstantOp>(
+  //       op.getLoc(), rewriter.getI32Type(), 4);
+  //   rewriter.setInsertionPoint(op);
+  //   auto rightOpr = op.getOperand(1);
+  //   LLVM::MulOp mulOp =
+  //       rewriter.create<LLVM::MulOp>(op.getLoc(), rewriter.getI32Type(),
+  //                                    constOffset.getResult(),
+  //                                    op.getOperand(1));
+  //   // calculate the address
+  //   LLVM::AddOp addOp = rewriter.create<LLVM::AddOp>(
+  //       op.getLoc(), constOp->getResult(0).getType(), constOp->getResult(0),
+  //       mulOp.getResult());
+  //   if (isa<LLVM::LoadOp>(sucOp)) {
+  //     // insert load operation
+  //     cgra::LwiOp loadOp = rewriter.create<cgra::LwiOp>(
+  //         op.getLoc(), sucOp->getResult(0).getType(), addOp.getResult());
+  //     // replace the llvm.load operation with the result of the cgra.lwi
+  //     // operation
+  //     sucOp->getResult(0).replaceAllUsesWith(loadOp.getResult());
+  //   } else if (isa<LLVM::StoreOp>(sucOp)) {
+  //     // insert store operation
+  //     cgra::SwiOp storeOp = rewriter.create<cgra::SwiOp>(
+  //         op.getLoc(), sucOp->getOperand(0), addOp.getResult());
+  //   }
+  // }
+
+  // for (Operation *op : gepOps)
+  //   rewriter.eraseOp(op);
+  // for (Operation *op : loadOps)
+  //   rewriter.eraseOp(op);
   return success();
 }
 
@@ -709,23 +795,24 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
     return failure();
   llvm::errs() << "addMemoryInterface success\n";
 
-  if (failed(runPartialLowering(cl, &CgraLowering::addMergeOps)))
-    return failure();
-  llvm::errs() << "addMergeOps success\n";
+  // if (failed(runPartialLowering(cl, &CgraLowering::addMergeOps)))
+  //   return failure();
+  // llvm::errs() << "addMergeOps success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::replaceCmpOps)))
     return failure();
   llvm::errs() << "replaceCmpOps success\n";
 
-  if (failed(runPartialLowering(cl, &CgraLowering::raiseConstOnlyUse)))
-    return failure();
-  llvm::errs() << "raiseConstOnlyUse success\n";
+  // if (failed(runPartialLowering(cl, &CgraLowering::raiseConstOnlyUse)))
+  //   return failure();
+  // llvm::errs() << "raiseConstOnlyUse success\n";
 
-  if (failed(runPartialLowering(cl, &CgraLowering::createSATMapItDAG)))
-    return failure();
-  llvm::errs() << "sat transformation success\n";
-  if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
-    return failure();
+  // if (failed(runPartialLowering(cl, &CgraLowering::createSATMapItDAG)))
+  //   return failure();
+  // llvm::errs() << "sat transformation success\n";
+
+  // if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
+  //   return failure();
 
   return success();
 }
@@ -824,30 +911,27 @@ static LogicalResult parseMemoryInterface(MemoryInterface &memInterface,
 
     bool isParseFunc = funcName == parseFunc;
     if (isParseFunc) {
-      if (failed(processJsonItem(value, "intHeadAddr", memInterface.intHeadAddr,
-                                 16)) ||
-          failed(processJsonItem(value, "intTailAddr", memInterface.intTailAddr,
-                                 16)) ||
-          failed(processJsonItem(value, "activeIntTail",
-                                 memInterface.activeIntTail)) ||
-          failed(processJsonItem(value, "arrHeadAddr", memInterface.arrHeadAddr,
-                                 16)) ||
-          failed(processJsonItem(value, "arrTailAddr", memInterface.arrTailAddr,
-                                 16))) {
+
+      // parse the activeArrTail, which is an array
+      if (value.contains("startAddr") && value["startAddr"].is_array()) {
+        std::vector<int> startAddr;
+        for (auto &arrTail : value["startAddr"]) {
+          std::string arrTailVal = arrTail;
+          startAddr.push_back(std::stoi(arrTailVal, nullptr, 16));
+        }
+        memInterface.startAddr = startAddr;
+      } else {
         return failure();
       }
 
-      // parse the activeArrTail, which is an array
-      if (value.contains("activeArrTail") &&
-          value["activeArrTail"].is_array()) {
-        std::vector<int> activeArrTail;
-        for (auto &arrTail : value["activeArrTail"]) {
+      // parse the endAddr, which is for exceed boundary check (optional)
+      if (value.contains("endAddr") && value["endAddr"].is_array()) {
+        std::vector<int> endAddr;
+        for (auto &arrTail : value["endAddr"]) {
           std::string arrTailVal = arrTail;
-          activeArrTail.push_back(std::stoi(arrTailVal, nullptr, 16));
+          endAddr.push_back(std::stoi(arrTailVal, nullptr, 16));
         }
-        memInterface.activeArrTail = activeArrTail;
-      } else {
-        return failure();
+        memInterface.endAddr = endAddr;
       }
       return success();
     }
@@ -871,15 +955,6 @@ void LLVMToCgraConversionPass::runOnOperation() {
   if (failed(parseMemoryInterface(memInterface, memJson, funcName.getValue())))
     return signalPassFailure();
 
-  // print memInterface
-  llvm::errs() << "intHeadAddr: " << memInterface.intHeadAddr << "\n";
-  llvm::errs() << "intTailAddr: " << memInterface.intTailAddr << "\n";
-  llvm::errs() << "activeIntTail: " << memInterface.activeIntTail << "\n";
-  llvm::errs() << "arrHeadAddr: " << memInterface.arrHeadAddr << "\n";
-  llvm::errs() << "arrTailAddr: " << memInterface.arrTailAddr << "\n";
-  for (auto &arrTail : memInterface.activeArrTail)
-    llvm::errs() << "activeArrTail: " << arrTail << "\n";
-
   // rewrite funcOp to cgra::FuncOp
   for (auto funcOp :
        llvm::make_early_inc_range(modOp.getOps<LLVM::LLVMFuncOp>())) {
@@ -889,6 +964,10 @@ void LLVMToCgraConversionPass::runOnOperation() {
       return signalPassFailure();
   }
 
+  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>())) {
+    // Not lower the function if it is not required
+    llvm::errs() << "funcOp: " << funcOp << "\n";
+  }
 };
 
 namespace compigra {
