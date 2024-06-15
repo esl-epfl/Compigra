@@ -324,39 +324,6 @@ ParseResult BranchOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void BranchOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
-ParseResult ConditionalBranchOp::parse(OpAsmParser &parser,
-                                       OperationState &result) {
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  Type dataType;
-  SmallVector<Type> operandTypes;
-  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-  if (parser.parseOperandList(allOperands) ||
-      parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseColonType(dataType))
-    return failure();
-
-  if (allOperands.size() != 2)
-    return parser.emitError(parser.getCurrentLocation(),
-                            "Expected exactly 2 operands");
-
-  result.addTypes({dataType, dataType});
-  operandTypes.push_back(IntegerType::get(parser.getContext(), 1));
-  operandTypes.push_back(dataType);
-  if (parser.resolveOperands(allOperands, operandTypes, allOperandLoc,
-                             result.operands))
-    return failure();
-
-  return success();
-}
-
-bool ConditionalBranchOp::isControl() { return true; }
-
-void ConditionalBranchOp::print(OpAsmPrinter &p) {
-  Type type = getDataOperand().getType();
-  p << " " << getOperands();
-  p.printOptionalAttrDict((*this)->getAttrs());
-  p << " : " << type;
-}
 
 bool BeqOp::isControl() { return true; }
 
@@ -374,111 +341,11 @@ parseBranchLikeOp(OpAsmParser &parser,
   return success();
 }
 
-// ParseResult BeqOp::parse(OpAsmParser &parser, OperationState &result) {
-//   OpAsmParser::UnresolvedOperand jumpOperand;
-//   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-//   Type dataType;
-//   SmallVector<Type, 1> dataOperandsTypes;
-//   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-//   if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
-//                                result)))
-//     return failure();
-
-//   allOperands.push_back(jumpOperand);
-//   int size = allOperands.size();
-//   dataOperandsTypes.assign(size, dataType);
-//   result.addTypes(dataType);
-//   if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
-//                              allOperandLoc, result.operands))
-//     return failure();
-//   return success();
-// }
-
 bool BneOp::isControl() { return true; }
-
-ParseResult BneOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand jumpOperand;
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  Type dataType;
-  SmallVector<Type, 1> dataOperandsTypes;
-  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
-                               result)))
-    return failure();
-
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
-  result.addTypes(dataType);
-  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
-                             allOperandLoc, result.operands))
-    return failure();
-  return success();
-}
-
-ParseResult BltOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand jumpOperand;
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  Type dataType;
-  SmallVector<Type, 1> dataOperandsTypes;
-  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
-                               result)))
-    return failure();
-
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
-  result.addTypes(dataType);
-  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
-                             allOperandLoc, result.operands))
-    return failure();
-  return success();
-}
 
 bool BltOp::isControl() { return true; }
 
-ParseResult BgeOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand jumpOperand;
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  Type dataType;
-  SmallVector<Type, 1> dataOperandsTypes;
-  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-  if (failed(parseBranchLikeOp(parser, jumpOperand, allOperands, dataType,
-                               result)))
-    return failure();
-
-  int size = allOperands.size();
-  dataOperandsTypes.assign(size, dataType);
-  result.addTypes(dataType);
-  if (parser.resolveOperands(allOperands, ArrayRef<Type>(dataOperandsTypes),
-                             allOperandLoc, result.operands))
-    return failure();
-  return success();
-}
-
 bool BgeOp::isControl() { return true; }
-
-/// Print the cgra branch-like operation such as beq, bne., blt, and bge.
-static void printBranchLikeOp(OpAsmPrinter &p, Operation *op) {
-  auto ops = op->getOperands();
-  p << " [";
-  for (size_t i = 0; i < ops.size() - 1; i++) {
-    p.printOperand(ops[i]);
-    if (i == 0)
-      p << ", ";
-  }
-  p << "] ";
-  p.printOperand(ops[ops.size() - 1]);
-  p.printOptionalAttrDict(op->getAttrs());
-  p << " : " << op->getResult(0).getType();
-}
-
-// void BeqOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
-
-void BneOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
-
-void BltOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
-
-void BgeOp::print(OpAsmPrinter &p) { printBranchLikeOp(p, *this); }
 
 /// Parse the cgra select-like operation such as bzfa and bsfa.
 static ParseResult
@@ -628,16 +495,6 @@ void SwiOp::print(OpAsmPrinter &p) {
   Type type = getDataOperand().getType();
   p << " " << getDataOperand() << ", " << getAddressOperand();
   p.printOptionalAttrDict((*this)->getAttrs());
-}
-
-std::string cgra::ConditionalBranchOp::getOperandName(unsigned int idx) {
-  assert(idx == 0 || idx == 1);
-  return idx == 0 ? "cond" : "data";
-}
-
-std::string cgra::ConditionalBranchOp::getResultName(unsigned int idx) {
-  assert(idx == 0 || idx == 1);
-  return idx == ConditionalBranchOp::falseIndex ? "outFalse" : "outTrue";
 }
 
 #define GET_ATTRDEF_CLASSES

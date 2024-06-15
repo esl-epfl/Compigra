@@ -175,42 +175,6 @@ static SATLoopBlock getSATMapItBlockType(Block *block) {
   return SATLoopBlock::Unkown;
 }
 
-LogicalResult CgraLowering::addMergeOps(ConversionPatternRewriter &rewriter) {
-  ValueMap mergePairs;
-
-  for (Block &block : region) {
-    rewriter.setInsertionPointToStart(&block);
-    auto insertLoc = block.front().getLoc();
-
-    for (size_t i = 0; i < block.getNumArguments(); i++) {
-      std::vector<Value> operands;
-      // get the operands from its successors
-      for (auto pred : block.getPredecessors()) {
-        if (auto branchOp = dyn_cast<LLVM::BrOp>(pred->getTerminator())) {
-          operands.push_back(branchOp.getOperand(i));
-          continue;
-        } else if (auto condBranchOp =
-                       dyn_cast<LLVM::CondBrOp>(pred->getTerminator())) {
-          if (&block == condBranchOp.getTrueDest()) {
-            operands.push_back(condBranchOp.getTrueDestOperands()[i]);
-          } else if (&block == condBranchOp.getFalseDest()) {
-            operands.push_back(condBranchOp.getFalseDestOperands()[i]);
-          } else {
-            return failure();
-          }
-        }
-      }
-      if (operands.size() <= 1)
-        continue;
-      auto mergeOp = rewriter.create<cgra::MergeOp>(insertLoc, operands);
-      insertLoc = mergeOp.getLoc();
-      // replace the argument with the result of mergeOp
-      block.getArgument(i).replaceAllUsesWith(mergeOp.getResult());
-    }
-  }
-  return success();
-}
-
 LogicalResult CgraLowering::reorderBBs(ConversionPatternRewriter &rewriter) {
   // can only reorder the basic blocks if the region satisfies the SAT DAG
   if (region.getBlocks().size() != 3)
@@ -404,10 +368,6 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
         auto newDefaltBlk =
             rewriter.createBlock(brOp->getBlock()->getNextNode(), jumpArgsType);
 
-        llvm::errs() << *condBrBlock->getTerminator() << "\n";
-        llvm::errs() << "isTrueDest " << isTrueDest << "\n";
-        llvm::errs() << "jumpBlock\n";
-
         switch (predicate) {
           Operation *op;
         case LLVM::ICmpPredicate::eq:
@@ -417,45 +377,45 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
                                             condBrArgs, newDefaltBlk, jumpArgs);
           break;
         case LLVM::ICmpPredicate::ne:
-          op = rewriter.create<cgra::BneOp>(
-              brOp->getLoc(), jumpOprand.getType(),
-              SmallVector<Value>(
-                  {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          rewriter.setInsertionPoint(brOp);
+          op = rewriter.create<cgra::BneOp>(brOp->getLoc(), cmpOp.getOperand(0),
+                                            cmpOp.getOperand(1), condBrBlock,
+                                            condBrArgs, newDefaltBlk, jumpArgs);
           break;
         case LLVM::ICmpPredicate::slt:
         case LLVM::ICmpPredicate::ult:
-          op = rewriter.create<cgra::BltOp>(
-              brOp->getLoc(), jumpOprand.getType(),
-              SmallVector<Value>(
-                  {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          rewriter.setInsertionPoint(brOp);
+          op = rewriter.create<cgra::BltOp>(brOp->getLoc(), cmpOp.getOperand(0),
+                                            cmpOp.getOperand(1), condBrBlock,
+                                            condBrArgs, newDefaltBlk, jumpArgs);
           break;
         case LLVM::ICmpPredicate::sgt:
         case LLVM::ICmpPredicate::ugt:
-          op = rewriter.create<cgra::BltOp>(
-              brOp->getLoc(), jumpOprand.getType(),
-              SmallVector<Value>(
-                  {cmpOp.getOperand(1), cmpOp.getOperand(0), jumpOprand}));
+          rewriter.setInsertionPoint(brOp);
+          op = rewriter.create<cgra::BltOp>(brOp->getLoc(), cmpOp.getOperand(1),
+                                            cmpOp.getOperand(0), condBrBlock,
+                                            condBrArgs, newDefaltBlk, jumpArgs);
           break;
         case LLVM::ICmpPredicate::sge:
         case LLVM::ICmpPredicate::uge:
-          op = rewriter.create<cgra::BgeOp>(
-              brOp->getLoc(), jumpOprand.getType(),
-              SmallVector<Value>(
-                  {cmpOp.getOperand(0), cmpOp.getOperand(1), jumpOprand}));
+          rewriter.setInsertionPoint(brOp);
+          op = rewriter.create<cgra::BgeOp>(brOp->getLoc(), cmpOp.getOperand(0),
+                                            cmpOp.getOperand(1), condBrBlock,
+                                            condBrArgs, newDefaltBlk, jumpArgs);
           break;
         case LLVM::ICmpPredicate::sle:
         case LLVM::ICmpPredicate::ule:
-          op = rewriter.create<cgra::BgeOp>(
-              brOp->getLoc(), jumpOprand.getType(),
-              SmallVector<Value>(
-                  {cmpOp.getOperand(1), cmpOp.getOperand(0), jumpOprand}));
+          rewriter.setInsertionPoint(brOp);
+          op = rewriter.create<cgra::BgeOp>(brOp->getLoc(), cmpOp.getOperand(1),
+                                            cmpOp.getOperand(0), condBrBlock,
+                                            condBrArgs, newDefaltBlk, jumpArgs);
           break;
         default:
           return failure();
         }
 
         // insert branch operation to the new block
-        rewriter.setInsertionPointToEnd(newDefaltBlk);
+        rewriter.setInsertionPointToStart(newDefaltBlk);
         auto defaultBr =
             rewriter.create<LLVM::BrOp>(brOp->getLoc(), jumpArgs, jumpBlock);
         defaultBr->moveAfter(&newDefaltBlk->getOperations().front());
@@ -518,71 +478,6 @@ compigra::partiallyLowerRegion(const RegionLoweringFunc &loweringFunc,
       partialLoweringSuccessfull.succeeded());
 }
 
-LogicalResult
-CgraLowering::createSATMapItDAG(ConversionPatternRewriter &rewriter) {
-  // if more than three basic blocks, return failure
-  if (std::distance(region.getBlocks().begin(), region.getBlocks().end()) > 3)
-    return failure();
-
-  // rewrite branchOp
-  SmallVector<Block *> eraseBlocks;
-  SmallVector<Operation *> eraseOps;
-
-  Block &entryBlock = region.getBlocks().front();
-  Operation *entryTerminator = entryBlock.getTerminator();
-
-  if (isa<LLVM::ReturnOp>(entryTerminator))
-    return success();
-
-  for (auto &block : region) {
-    Operation *termOp = block.getTerminator();
-
-    // check whether one of the predecessors is unconditional branch
-    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Unkown)
-      return failure();
-
-    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Init) {
-      for (Operation &op : block) {
-        op.setAttr("stage", rewriter.getStringAttr("init"));
-      }
-      eraseOps.push_back(termOp);
-    }
-
-    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Fini) {
-      eraseBlocks.push_back(&block);
-      std::vector<Operation *> opsToMove;
-      for (auto &op : block.getOperations()) {
-        op.setAttr("stage", rewriter.getStringAttr("fini"));
-        if (&op != termOp)
-          opsToMove.push_back(&op);
-      }
-
-      for (auto op : opsToMove) {
-        op->moveBefore(entryTerminator);
-      }
-      rewriter.moveOpAfter(termOp, entryBlock.getTerminator());
-    }
-
-    if (getSATMapItBlockType(termOp->getBlock()) == SATLoopBlock::Loop) {
-      std::vector<Operation *> opsToMove;
-      for (auto &op : block.getOperations())
-        if (&op != termOp)
-          opsToMove.push_back(&op);
-      for (auto op : opsToMove) {
-        op->setAttr("stage", rewriter.getStringAttr("loop"));
-        op->moveBefore(entryTerminator);
-      }
-      eraseBlocks.push_back(&block);
-    }
-  }
-
-  for (Block *block : eraseBlocks)
-    rewriter.eraseBlock(block);
-  for (Operation *op : eraseOps)
-    rewriter.eraseOp(op);
-  return success();
-}
-
 /// Get the address of the integer variable with the given index.
 // static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
 //   int addr = memInterface.intHeadAddr + idx * 4;
@@ -618,50 +513,6 @@ LogicalResult
 CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
   auto funcOp = region.getParentOfType<cgra::FuncOp>();
   DenseMap<Value, Operation *> arrayBaseAddrs;
-
-  // for (auto [argIndex, arg] : llvm::enumerate(funcOp.getArguments())) {
-  //   // identify the data type of the argument
-  //   llvm::errs() << "argIndex: " << argIndex << "\n";
-  //   rewriter.setInsertionPointToStart(&region.front());
-  //   if (arg.getType().isIntOrIndex()) {
-  //     // do nothing if the argument is not in use
-  //     if (arg.use_empty())
-  //       continue;
-  //     // get the address of the integer variable
-  //     int addr = getCgraIntVarAddress(memInterface, argIndex);
-  //     LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
-  //         arg.getLoc(), rewriter.getI32Type(),
-  //         rewriter.getIntegerAttr(rewriter.getI32Type(), addr));
-  //     arrayBaseAddrs[arg] = constOp;
-  //     arrayBaseAddrs[arg]->setAttr(
-  //         "hostValue",
-  //         rewriter.getStringAttr("arg" + std::to_string(argIndex)));
-  //     // insert lwi operation to load the integer variable
-  //     cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
-  //         arg.getLoc(), arg.getType(), constOp.getResult());
-  //     // replace the argument with the result of the lwi operation
-  //     arg.replaceAllUsesWith(lwiOp.getResult());
-  //   } else if (arg.getType().isa<LLVM::LLVMPointerType>()) {
-  //     llvm::errs() << "pointer: " << memInterface.activeIntTail << "\n";
-  //     // do nothing if the argument is not in use
-  //     if (arg.use_empty())
-  //       continue;
-
-  //     // get the base address of the array variable
-  //     int baseAddr = getCgraArrVarBaseAddress(
-  //         memInterface, argIndex - memInterface.activeIntTail);
-
-  //     llvm::errs() << "baseAddr: " << baseAddr << "\n";
-  //     // create a constant operation for the base address
-  //     LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
-  //         arg.getLoc(), rewriter.getI32Type(),
-  //         rewriter.getIntegerAttr(rewriter.getI32Type(), baseAddr));
-  //     arrayBaseAddrs[arg] = constOp;
-  //     arrayBaseAddrs[arg]->setAttr(
-  //         "hostValue",
-  //         rewriter.getStringAttr("arg" + std::to_string(argIndex)));
-  //   }
-  // }
 
   SmallVector<Operation *> gepOps;
   SmallVector<Operation *> loadOps;
@@ -699,53 +550,6 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
     continue;
   }
 
-  // for (LLVM::GEPOp op : region.getOps<LLVM::GEPOp>()) {
-  //   // Validate the result is used by a load operation
-  //   auto users = op->getResult(0).getUsers();
-  //   if (std::distance(users.begin(), users.end()) != 1) {
-  //     LLVM_DEBUG(llvm::dbgs()
-  //                << "LLVM::GEPOp is not used by one load/store operation\n");
-  //     return failure();
-  //   }
-
-  //   auto sucOp = *users.begin();
-  //   gepOps.push_back(op);
-  //   loadOps.push_back(sucOp);
-
-  //   rewriter.setInsertionPoint(getEntryBlockTerminator());
-  //   // insert base address and offset
-  //   Value loadArg = op.getOperand(0);
-  //   auto constOp = arrayBaseAddrs[loadArg];
-  //   LLVM::ConstantOp constOffset = rewriter.create<LLVM::ConstantOp>(
-  //       op.getLoc(), rewriter.getI32Type(), 4);
-  //   rewriter.setInsertionPoint(op);
-  //   auto rightOpr = op.getOperand(1);
-  //   LLVM::MulOp mulOp =
-  //       rewriter.create<LLVM::MulOp>(op.getLoc(), rewriter.getI32Type(),
-  //                                    constOffset.getResult(),
-  //                                    op.getOperand(1));
-  //   // calculate the address
-  //   LLVM::AddOp addOp = rewriter.create<LLVM::AddOp>(
-  //       op.getLoc(), constOp->getResult(0).getType(), constOp->getResult(0),
-  //       mulOp.getResult());
-  //   if (isa<LLVM::LoadOp>(sucOp)) {
-  //     // insert load operation
-  //     cgra::LwiOp loadOp = rewriter.create<cgra::LwiOp>(
-  //         op.getLoc(), sucOp->getResult(0).getType(), addOp.getResult());
-  //     // replace the llvm.load operation with the result of the cgra.lwi
-  //     // operation
-  //     sucOp->getResult(0).replaceAllUsesWith(loadOp.getResult());
-  //   } else if (isa<LLVM::StoreOp>(sucOp)) {
-  //     // insert store operation
-  //     cgra::SwiOp storeOp = rewriter.create<cgra::SwiOp>(
-  //         op.getLoc(), sucOp->getOperand(0), addOp.getResult());
-  //   }
-  // }
-
-  // for (Operation *op : gepOps)
-  //   rewriter.eraseOp(op);
-  // for (Operation *op : loadOps)
-  //   rewriter.eraseOp(op);
   return success();
 }
 
@@ -795,21 +599,13 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
     return failure();
   llvm::errs() << "addMemoryInterface success\n";
 
-  // if (failed(runPartialLowering(cl, &CgraLowering::addMergeOps)))
-  //   return failure();
-  // llvm::errs() << "addMergeOps success\n";
-
   if (failed(runPartialLowering(cl, &CgraLowering::replaceCmpOps)))
     return failure();
   llvm::errs() << "replaceCmpOps success\n";
 
-  // if (failed(runPartialLowering(cl, &CgraLowering::raiseConstOnlyUse)))
-  //   return failure();
-  // llvm::errs() << "raiseConstOnlyUse success\n";
-
-  // if (failed(runPartialLowering(cl, &CgraLowering::createSATMapItDAG)))
-  //   return failure();
-  // llvm::errs() << "sat transformation success\n";
+  if (failed(runPartialLowering(cl, &CgraLowering::raiseConstOnlyUse)))
+    return failure();
+  llvm::errs() << "raiseConstOnlyUse success\n";
 
   // if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
   //   return failure();

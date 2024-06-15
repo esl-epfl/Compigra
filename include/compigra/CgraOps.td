@@ -172,53 +172,18 @@ def BranchOp : Cgra_Op<"br", [
   let hasCustomAssemblyFormat = 1;
 }
 
-def ConditionalBranchOp : Cgra_Op<"cond_br", [
-  Pure,
-  // DeclareOpInterfaceMethods<ExecutableOpInterface>,
-  // DeclareOpInterfaceMethods<InferTypeOpInterface, ["inferReturnTypes"]>,
-  DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>,
-  DeclareOpInterfaceMethods<NamedIOInterface, ["getOperandName"]>,
-  DeclareOpInterfaceMethods<NamedIOInterface, ["getResultName"]>,
-  TypesMatchWith<"data operand type matches true branch result type",
-                 "dataOperand", "trueResult", "$_self">,
-  TypesMatchWith<"data operand type matches false branch result type",
-                 "dataOperand", "falseResult", "$_self">
-]> {
-  let summary = "conditional branch operation";
-  let description = [{
-    The cbranch operation represents a conditional branch
-        .The data input is propagated to one of the two outputs based on the
-            condition input.
 
-    Example:
-     ```mlir % true,
-    % false = conditional_branch % cond,
-    %
-    data: i32
-     ```
-  }];
-
-  let arguments = (ins I1 : $conditionOperand, AnyType : $dataOperand);
-  let results = (outs AnyType : $trueResult, AnyType : $falseResult);
-  let hasCustomAssemblyFormat = 1;
-  let extraClassDeclaration = [{
-    // These are the indices into the dests list.
-    enum { trueIndex = 0, falseIndex = 1 }
-    ;
-  }];
-}
 
 def BeqOp : Cgra_Op<"beq", [
-  Pure, Terminator,AttrSizedOperandSegments,
+  Pure, Terminator, AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
 ]> {
   let summary = "branch if equal operation";
   let description = [{
-    The branch operation represents a conditional branch to the operation which
-        produces jumpOperands.
+    The branch operation represents a conditional branch to the true basic block
 
     Example:
-      ```% 0 = beq[% operand1, % operand2] % jumpOperand{attributes}: i32
+      ```% 0 = beq[% operand1, % operand2] ^BBi(%dataoperands), ^BBj {attributes}
       ```
   }];
   let arguments = (ins AnyInteger : $cmpOperand1, AnyInteger : $cmpOperand2, 
@@ -307,57 +272,330 @@ def BeqOp : Cgra_Op<"beq", [
 }
 
 def BneOp : Cgra_Op<"bne", [
-  Pure, SOSTInterface,
+  Pure, Terminator, AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
 ]> {
   let summary = "branch if not equal operation";
   let description = [{
-    The branch operation represents a conditional branch to the operation which
-        produces jumpOperands.
+    The branch operation represents a conditional branch to the true basic block
 
     Example:
-      ```% 0 = bne[% operand1, % operand2] % jumpOperand{attributes}: i32
+      ```% 0 = bne[% operand1, % operand2] ^BBi(%dataoperands), ^BBj {attributes}
       ```
   }];
-  let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
-  let results = (outs AnyType : $dataResult);
-  let hasCustomAssemblyFormat = 1;
+  let arguments = (ins AnyInteger : $cmpOperand1, AnyInteger : $cmpOperand2, 
+                   Variadic<AnyType> : $trueDestOperands, 
+                   Variadic<AnyType> : $falseDestOperands);
+  let successors = (successor AnySuccessor:$trueDest, AnySuccessor:$falseDest);
+
+  let builders = [
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+       "::mlir::Block *":$trueDest,
+      "::mlir::ValueRange":$trueOperands, "::mlir::Block *":$falseDest,
+      "::mlir::ValueRange":$falseOperands), [{
+      build($_builder, $_state, cmpOperand1, cmpOperand2, 
+      trueOperands, falseOperands, trueDest,
+            falseDest);
+    }]>,
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+      "::mlir::Block *":$trueDest, "::mlir::Block *":$falseDest, 
+      CArg<"::mlir::ValueRange", "{}">:$falseOperands), [{
+      build($_builder, $_state,  cmpOperand1, cmpOperand2, 
+      trueDest, ValueRange(), falseDest,
+            falseOperands);
+    }]>];
+
+  let extraClassDeclaration = [{
+    // These are the indices into the dests list.
+    enum { trueIndex = 0, falseIndex = 1 };
+
+    size_t getNumTrueDestOperands() { return getTrueDestOperands().size(); }
+
+    // Accessors for operands to the 'true' destination.
+    ::mlir::Value getTrueOperand(unsigned idx) {
+      assert(idx < getNumTrueDestOperands());
+      return getOperand(getTrueDestOperandIndex() + idx);
+    }
+
+    void setTrueOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumTrueDestOperands());
+      setOperand(getTrueDestOperandIndex() + idx, value);
+    }
+
+    unsigned getNumTrueOperands()  { return getTrueOperands().size(); }
+
+    /// Erase the operand at 'index' from the true operand list.
+    void eraseTrueOperand(unsigned index)  {
+      getTrueDestOperandsMutable().erase(index);
+    }
+
+    // Accessors for operands to the 'false' destination.
+    ::mlir::Value getFalseOperand(unsigned idx) {
+      assert(idx < getNumFalseOperands());
+      return getOperand(getFalseDestOperandIndex() + idx);
+    }
+    void setFalseOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumFalseOperands());
+      setOperand(getFalseDestOperandIndex() + idx, value);
+    }
+
+    operand_range getTrueOperands() { return getTrueDestOperands(); }
+    operand_range getFalseOperands() { return getFalseDestOperands(); }
+
+    unsigned getNumFalseOperands() { return getFalseOperands().size(); }
+
+    // /// Erase the operand at 'index' from the false operand list.
+    // void eraseFalseOperand(unsigned index) {
+    //   getFalseDestOperandsMutable().erase(index);
+    // }
+
+  private:
+    /// Get the index of the first true destination operand.
+    unsigned getTrueDestOperandIndex() { return 1; }
+
+    /// Get the index of the first false destination operand.
+    unsigned getFalseDestOperandIndex() {
+      return getTrueDestOperandIndex() + getNumTrueOperands();
+    }
+  }];
+
+  let assemblyFormat = [{
+      ` ` `[` $cmpOperand1 `:` type($cmpOperand1) `,` 
+      $cmpOperand2 `:` type($cmpOperand2) `]` `,`
+      $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`
+      $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?
+      attr-dict
+  }];
 }
 
 def BltOp : Cgra_Op<"blt", [
-  Pure, SOSTInterface,
+  Pure, Terminator, AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
 ]> {
   let summary = "branch if less than operation";
   let description = [{
-    The branch operation represents a conditional branch to the operation which
-        produces jumpOperands.
+    The branch operation represents a conditional branch to the true basic block
 
     Example:
-      ```% 0 = blt[% operand1, % operand2] % jumpOperand{attributes}: i32
+      ```% 0 = blt[% operand1, % operand2] ^BBi(%dataoperands), ^BBj {attributes}
       ```
   }];
-  let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
-  let results = (outs AnyType : $dataResult);
-  let hasCustomAssemblyFormat = 1;
+  let arguments = (ins AnyInteger : $cmpOperand1, AnyInteger : $cmpOperand2, 
+                   Variadic<AnyType> : $trueDestOperands, 
+                   Variadic<AnyType> : $falseDestOperands);
+  let successors = (successor AnySuccessor:$trueDest, AnySuccessor:$falseDest);
+
+  let builders = [
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+       "::mlir::Block *":$trueDest,
+      "::mlir::ValueRange":$trueOperands, "::mlir::Block *":$falseDest,
+      "::mlir::ValueRange":$falseOperands), [{
+      build($_builder, $_state, cmpOperand1, cmpOperand2, 
+      trueOperands, falseOperands, trueDest,
+            falseDest);
+    }]>,
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+      "::mlir::Block *":$trueDest, "::mlir::Block *":$falseDest, 
+      CArg<"::mlir::ValueRange", "{}">:$falseOperands), [{
+      build($_builder, $_state,  cmpOperand1, cmpOperand2, 
+      trueDest, ValueRange(), falseDest,
+            falseOperands);
+    }]>];
+
+  let extraClassDeclaration = [{
+    // These are the indices into the dests list.
+    enum { trueIndex = 0, falseIndex = 1 };
+
+    size_t getNumTrueDestOperands() { return getTrueDestOperands().size(); }
+
+    // Accessors for operands to the 'true' destination.
+    ::mlir::Value getTrueOperand(unsigned idx) {
+      assert(idx < getNumTrueDestOperands());
+      return getOperand(getTrueDestOperandIndex() + idx);
+    }
+
+    void setTrueOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumTrueDestOperands());
+      setOperand(getTrueDestOperandIndex() + idx, value);
+    }
+
+    unsigned getNumTrueOperands()  { return getTrueOperands().size(); }
+
+    /// Erase the operand at 'index' from the true operand list.
+    void eraseTrueOperand(unsigned index)  {
+      getTrueDestOperandsMutable().erase(index);
+    }
+
+    // Accessors for operands to the 'false' destination.
+    ::mlir::Value getFalseOperand(unsigned idx) {
+      assert(idx < getNumFalseOperands());
+      return getOperand(getFalseDestOperandIndex() + idx);
+    }
+    void setFalseOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumFalseOperands());
+      setOperand(getFalseDestOperandIndex() + idx, value);
+    }
+
+    operand_range getTrueOperands() { return getTrueDestOperands(); }
+    operand_range getFalseOperands() { return getFalseDestOperands(); }
+
+    unsigned getNumFalseOperands() { return getFalseOperands().size(); }
+
+    // /// Erase the operand at 'index' from the false operand list.
+    // void eraseFalseOperand(unsigned index) {
+    //   getFalseDestOperandsMutable().erase(index);
+    // }
+
+  private:
+    /// Get the index of the first true destination operand.
+    unsigned getTrueDestOperandIndex() { return 1; }
+
+    /// Get the index of the first false destination operand.
+    unsigned getFalseDestOperandIndex() {
+      return getTrueDestOperandIndex() + getNumTrueOperands();
+    }
+  }];
+
+  let assemblyFormat = [{
+      ` ` `[` $cmpOperand1 `:` type($cmpOperand1) `,` 
+      $cmpOperand2 `:` type($cmpOperand2) `]` `,`
+      $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`
+      $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?
+      attr-dict
+  }];
 }
 
+// def BltOp : Cgra_Op<"blt", [
+//   Pure, SOSTInterface,
+//   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
+// ]> {
+//   let summary = "branch if less than operation";
+//   let description = [{
+//     The branch operation represents a conditional branch to the operation which
+//         produces jumpOperands.
+
+//     Example:
+//       ```% 0 = blt[% operand1, % operand2] % jumpOperand{attributes}: i32
+//       ```
+//   }];
+//   let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
+//   let results = (outs AnyType : $dataResult);
+//   let hasCustomAssemblyFormat = 1;
+// }
+
+// def BgeOp : Cgra_Op<"bge", [
+//   Pure, SOSTInterface,
+//   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
+// ]> {
+//   let summary = "branch if greater or equal than operation";
+//   let description = [{
+//     The branch operation represents a conditional branch to the operation which
+//         produces jumpOperands.
+
+//     Example:
+//       ```% 0 = bge[% operand1, % operand2] % jumpOperand{attributes}: i32
+//       ```
+//   }];
+//   let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
+//   let results = (outs AnyType : $dataResult);
+//   let hasCustomAssemblyFormat = 1;
+// }
+
 def BgeOp : Cgra_Op<"bge", [
-  Pure, SOSTInterface,
+  Pure, Terminator, AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<ControlInterface, ["isControl"]>
 ]> {
-  let summary = "branch if greater or equal than operation";
+  let summary = "branch if greater than operation";
   let description = [{
-    The branch operation represents a conditional branch to the operation which
-        produces jumpOperands.
+    The branch operation represents a conditional branch to the true basic block
 
     Example:
-      ```% 0 = bge[% operand1, % operand2] % jumpOperand{attributes}: i32
+      ```% 0 = bge[% operand1, % operand2] ^BBi(%dataoperands), ^BBj {attributes}
       ```
   }];
-  let arguments = (ins Variadic<AnyType> : $dataOperands, AnyType : $jumpOperand);
-  let results = (outs AnyType : $dataResult);
-  let hasCustomAssemblyFormat = 1;
+  let arguments = (ins AnyInteger : $cmpOperand1, AnyInteger : $cmpOperand2, 
+                   Variadic<AnyType> : $trueDestOperands, 
+                   Variadic<AnyType> : $falseDestOperands);
+  let successors = (successor AnySuccessor:$trueDest, AnySuccessor:$falseDest);
+
+  let builders = [
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+       "::mlir::Block *":$trueDest,
+      "::mlir::ValueRange":$trueOperands, "::mlir::Block *":$falseDest,
+      "::mlir::ValueRange":$falseOperands), [{
+      build($_builder, $_state, cmpOperand1, cmpOperand2, 
+      trueOperands, falseOperands, trueDest,
+            falseDest);
+    }]>,
+    OpBuilder<(ins "::mlir::Value":$cmpOperand1, "::mlir::Value":$cmpOperand2,
+      "::mlir::Block *":$trueDest, "::mlir::Block *":$falseDest, 
+      CArg<"::mlir::ValueRange", "{}">:$falseOperands), [{
+      build($_builder, $_state,  cmpOperand1, cmpOperand2, 
+      trueDest, ValueRange(), falseDest,
+            falseOperands);
+    }]>];
+
+  let extraClassDeclaration = [{
+    // These are the indices into the dests list.
+    enum { trueIndex = 0, falseIndex = 1 };
+
+    size_t getNumTrueDestOperands() { return getTrueDestOperands().size(); }
+
+    // Accessors for operands to the 'true' destination.
+    ::mlir::Value getTrueOperand(unsigned idx) {
+      assert(idx < getNumTrueDestOperands());
+      return getOperand(getTrueDestOperandIndex() + idx);
+    }
+
+    void setTrueOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumTrueDestOperands());
+      setOperand(getTrueDestOperandIndex() + idx, value);
+    }
+
+    unsigned getNumTrueOperands()  { return getTrueOperands().size(); }
+
+    /// Erase the operand at 'index' from the true operand list.
+    void eraseTrueOperand(unsigned index)  {
+      getTrueDestOperandsMutable().erase(index);
+    }
+
+    // Accessors for operands to the 'false' destination.
+    ::mlir::Value getFalseOperand(unsigned idx) {
+      assert(idx < getNumFalseOperands());
+      return getOperand(getFalseDestOperandIndex() + idx);
+    }
+    void setFalseOperand(unsigned idx, ::mlir::Value value) {
+      assert(idx < getNumFalseOperands());
+      setOperand(getFalseDestOperandIndex() + idx, value);
+    }
+
+    operand_range getTrueOperands() { return getTrueDestOperands(); }
+    operand_range getFalseOperands() { return getFalseDestOperands(); }
+
+    unsigned getNumFalseOperands() { return getFalseOperands().size(); }
+
+    // /// Erase the operand at 'index' from the false operand list.
+    // void eraseFalseOperand(unsigned index) {
+    //   getFalseDestOperandsMutable().erase(index);
+    // }
+
+  private:
+    /// Get the index of the first true destination operand.
+    unsigned getTrueDestOperandIndex() { return 1; }
+
+    /// Get the index of the first false destination operand.
+    unsigned getFalseDestOperandIndex() {
+      return getTrueDestOperandIndex() + getNumTrueOperands();
+    }
+  }];
+
+  let assemblyFormat = [{
+      ` ` `[` $cmpOperand1 `:` type($cmpOperand1) `,` 
+      $cmpOperand2 `:` type($cmpOperand2) `]` `,`
+      $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`
+      $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?
+      attr-dict
+  }];
 }
 
 def BzfaOp : Cgra_Op<"bzfa", [

@@ -64,10 +64,6 @@ public:
     initMem = true;
   }
 
-  /// Adds merge-like operations after all block arguments within the region,
-  /// then removes all block arguments.
-  LogicalResult addMergeOps(ConversionPatternRewriter &rewriter);
-
   // Reorder the index of the basic blocks if it is not in the order of Init,
   // Loop, and Fini.
   LogicalResult reorderBBs(ConversionPatternRewriter &rewriter);
@@ -89,11 +85,6 @@ public:
   // Ensure the constant operation is only used once and replicate the constant
   // if it is in multiple uses.
   LogicalResult raiseConstOnlyUse(ConversionPatternRewriter &rewriter);
-
-  /// This function rewrite the DAG to SATMapIt DAG which requires the original
-  /// DAG is splitted into three phases: Init, Loop(self-loop), and Fini.
-  /// This function returns failure if the DAG is not in the correct form.
-  LogicalResult createSATMapItDAG(ConversionPatternRewriter &rewriter);
 
   /// Remove unused operations in the region if it is not controlled operation
   /// and return operation. This function mainly removes the subtraction created
