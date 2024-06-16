@@ -19,20 +19,19 @@ using namespace mlir;
 
 namespace compigra {
 namespace satmapit {
-size_t getNodeIndex(Operation *op, SmallVector<Operation *> &nodes,
-                    SmallVector<LLVM::ConstantOp> constants = {},
-                    SmallVector<Operation *> liveIns = {},
-                    SmallVector<Operation *> liveOuts = {});
 
 class PrintSatMapItDAG {
 public:
   // initialization
-  PrintSatMapItDAG(SmallVector<Operation *> nodes,
+  PrintSatMapItDAG(Operation *terminator, SmallVector<Operation *> nodes,
                    SmallVector<LLVM::ConstantOp> constants,
-                   SmallVector<Operation *> liveIns,
-                   SmallVector<Operation *> liveOuts)
-      : nodes(nodes), constants(constants), liveIns(liveIns),
-        liveOuts(liveOuts) {}
+                   SmallVector<BlockArgument> &BlockArgs,
+                   SmallVector<Value> &liveOutArgs)
+      : terminator(terminator), nodes(nodes), constants(constants),
+        BlockArgs(BlockArgs), liveOutArgs(liveOutArgs) {}
+
+  PrintSatMapItDAG(Operation *terminator, SmallVector<Operation *> nodes)
+      : terminator(terminator), nodes(nodes) {}
 
   // print the DAG into multiple text files
   LogicalResult printDAG(std::string fileName);
@@ -42,11 +41,40 @@ public:
   LogicalResult printLiveIns(std::string fileName);
   LogicalResult printLiveOuts(std::string fileName);
 
+  // init the BlockArgs and liveOuts according to the terminator
+  LogicalResult init();
+  void initLoopBlock() { loopBlock = terminator->getBlock(); }
+  void initPredBlock() {
+    for (auto pred : loopBlock->getPredecessors())
+      if (pred != loopBlock) {
+        initBlock = pred;
+        break;
+      }
+  }
+
+  // If the operation is constant, add it to constants; if the operation belongs
+  // to initBlock, add it to liveIns; if the operation is propated to finiBlock,
+  // add the corresponding operation finiBlock to liveOuts.
+  void addNodes(Operation *op);
+  int getNodeIndex(Operation *op);
+  int getNodeIndex(Value val);
+
 private:
-  SmallVector<Operation *> nodes;
-  SmallVector<LLVM::ConstantOp> constants;
-  SmallVector<Operation *> liveIns;
-  SmallVector<Operation *> liveOuts;
+  SmallVector<Operation *> nodes = {};
+  Operation *terminator = nullptr;
+  Block *loopBlock, *initBlock, *finiBlock;
+  unsigned blockArg = 0;
+  SmallVector<BlockArgument> BlockArgs = {};
+  SmallVector<Value> liveOutArgs = {};
+
+  // operation out of SAT-MapIt schedule block
+  SmallVector<Operation *> liveIns = {};
+  SmallVector<Operation *> liveOuts = {};
+  SmallVector<LLVM::ConstantOp> constants = {};
+
+  // Argument with corresponding definition operations
+  using selectOps = SmallVector<Operation *, 2>;
+  std::map<int, selectOps> argMaps;
 
   llvm::DenseMap<llvm::StringRef, int> CgraInsts = {
       {"EXIT", 0},     {"add", 1},      {"sub", 2},      {"mul", 3},
@@ -58,7 +86,7 @@ private:
       {"FXP_DIV", 23}, {"beq", 24},     {"bne", 25},     {"blt", 26},
       {"bge", 27},     {"lwd", 28},     {"lwi", 29},     {"LWIPI", 30},
       {"swd", 31},     {"swi", 32},     {"SWIPI", 33},   {"NOP", 34},
-      {"merge", 40},   {"ble", 41},     {"bge", 42},     {"ashr", 44},
+      {"phi", 40},     {"ble", 41},     {"bge", 42},     {"ashr", 44},
       {"mv", 45}};
 };
 

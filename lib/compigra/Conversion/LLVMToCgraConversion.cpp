@@ -215,10 +215,9 @@ Operation *CgraLowering::getConstantOp() {
 
 LogicalResult
 CgraLowering::raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
-  llvm::errs() << "raiseConstOnlyUse\n";
   for (auto constOp : region.getOps<LLVM::ConstantOp>()) {
-    // if the constant operation has more than one user, skip it
-    if (!constOp->hasOneUse())
+    // if the constant operation has only one user, skip it
+    if (constOp->hasOneUse())
       continue;
 
     // iterate through the users of the constant operation, and replace the uses
@@ -535,6 +534,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           entryOp->getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      constOp->setAttr("hostValue", rewriter.getStringAttr(
+                                        "arg" + std::to_string(argIndex)));
 
       rewriter.setInsertionPoint(loadOp);
       cgra::LwiOp lwiOp = rewriter.create<cgra::LwiOp>(
@@ -552,7 +553,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
           baseAddr, SmallVector<Value>{funcOp.getArguments().begin(),
                                        funcOp.getArguments().end()});
       rewriter.setInsertionPoint(entryOp);
-      // Add offset constant TODO: CHECK THIS
+      // Add offset constant
       LLVM::ConstantOp addrEle = rewriter.create<LLVM::ConstantOp>(
           entryOp->getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(4));
@@ -560,6 +561,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp baseOp = rewriter.create<LLVM::ConstantOp>(
           entryOp->getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      baseOp->setAttr("hostValue",
+                      rewriter.getStringAttr("arg" + std::to_string(argIndex)));
       rewriter.setInsertionPoint(loadOp);
       LLVM::MulOp offsetOp = rewriter.create<LLVM::MulOp>(
           loadOp.getLoc(), rewriter.getI32Type(), gepOp.getOperand(1),
@@ -591,6 +594,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           storeOp.getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      constOp->setAttr("returnValue", rewriter.getStringAttr(
+                                          "arg" + std::to_string(argIndex)));
       rewriter.setInsertionPoint(storeOp);
       cgra::SwiOp swiOp = rewriter.create<cgra::SwiOp>(
           storeOp.getLoc(), storeOp.getOperand(0), constOp.getResult());
@@ -615,6 +620,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp baseOp = rewriter.create<LLVM::ConstantOp>(
           entryOp->getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
+      baseOp->setAttr("returnValue", rewriter.getStringAttr(
+                                          "arg" + std::to_string(argIndex)));
       rewriter.setInsertionPoint(storeOp);
       LLVM::MulOp offsetOp = rewriter.create<LLVM::MulOp>(
           storeOp.getLoc(), rewriter.getI32Type(), gepOp.getOperand(1),
