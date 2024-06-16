@@ -77,7 +77,7 @@ compile_sat() {
         mkdir "$BENCH_BASE/$benchmark/IR/SatMapDAG"
     fi
     # remove the old DAG text files
-    rm -f "$bench_path/IR/SatMapDAG"*
+    rm -rf "$bench_path/IR/SatMapDAG"*
 
     # remove the old IR files
     # using clang to compile 32-bit system
@@ -96,7 +96,7 @@ compile_sat() {
 
     # convert llvm to cgra operation
     $COMPIGRA_OPT --allow-unregistered-dialect \
-      --convert-llvm-to-cgra="output-dag=$f_dag mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
+      --convert-llvm-to-cgra="func-name=$bench_name mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
      "$f_llvm" > "$f_cgra"
 
     #  convert cgra operations to fit into hardware ISA

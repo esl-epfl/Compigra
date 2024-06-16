@@ -48,88 +48,6 @@ static bool isAddrConstOp(LLVM::ConstantOp constOp) {
   return false;
 }
 
-// Currently only consider add, sub, mul operations
-static bool usedByArithOpOnly(LLVM::ConstantOp constOp) {
-  for (auto user : constOp->getUsers())
-    if (!isa<LLVM::AddOp, LLVM::SubOp, LLVM::MulOp, cgra::MergeOp>(user))
-      return false;
-
-  return true;
-}
-
-static LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
-  Operation &beginOp = *funcOp.getOps().begin();
-  // raise the constant operation to the top level
-  for (auto op :
-       llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
-    if (!op->hasOneUse())
-      op.dump();
-    else if (op->getAttr("stage") ==
-             StringAttr::get(op->getContext(), "init")) {
-      op->moveBefore(&beginOp);
-    }
-  }
-
-  return success();
-}
-
-static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
-                                       std::string outputDAG) {
-  SmallVector<Operation *> nodes;
-  SmallVector<LLVM::ConstantOp> constants;
-  SmallVector<Operation *> liveIns;
-  SmallVector<Operation *> liveOuts;
-  // define the edge by the srcOp and dstOp
-  using Edge = std::pair<Operation *, Operation *>;
-
-  // text file to describe the DAG
-  std::ofstream dotFile;
-
-  std::vector<Edge> edges;
-
-  // Store all the nodes (operations)
-  for (Operation &op : funcOp.getOps()) {
-    StringRef stage = dyn_cast<StringAttr>(op.getAttr("stage")).getValue();
-
-    // SAT-MapIt only schedule operations in loop
-    if (stage != StringRef("loop"))
-      continue;
-
-    // store operator related operations
-    for (Value operand : op.getOperands()) {
-      if (Operation *defOp = operand.getDefiningOp()) {
-        // only store the related nodes in init stage
-        StringRef ownerStage =
-            dyn_cast<StringAttr>(defOp->getAttr("stage")).getValue();
-        if (ownerStage == StringRef("init")) {
-          if (isa<LLVM::ConstantOp>(defOp))
-            constants.push_back(cast<LLVM::ConstantOp>(defOp));
-          else
-            liveIns.push_back(defOp);
-        }
-      }
-    }
-
-    nodes.push_back(&op);
-
-    // if the result of the operation is used by the operation in the fini
-    // stage, it is a liveOut node
-    for (auto userOp : op.getUsers()) {
-      StringRef userStage =
-          dyn_cast<StringAttr>(userOp->getAttr("stage")).getValue();
-      if (userStage == StringRef("fini"))
-        liveOuts.push_back(userOp);
-    }
-  }
-
-  // initialize print function
-  satmapit::PrintSatMapItDAG printer(nodes, constants, liveIns, liveOuts);
-  if (failed(printer.printDAG(outputDAG)))
-    return failure();
-
-  return success();
-}
-
 static cgra::LwiOp convertImmToLwi(LLVM::ConstantOp constOp, int *constBase,
                                    PatternRewriter &rewriter) {
   // auto userOps = constOp->getUsers();
@@ -146,13 +64,33 @@ static cgra::LwiOp convertImmToLwi(LLVM::ConstantOp constOp, int *constBase,
   }
 
   // insert a lwi operation to load the constant value
-  auto lwiOp = rewriter.create<cgra::LwiOp>(constOp.getLoc(), constOp.getType(),
-                                            constOp.getResult());
+  rewriter.setInsertionPoint(constOp->getBlock()->getTerminator());
+  auto lwiOp = rewriter.create<cgra::LwiOp>(
+      constOp->getBlock()->getTerminator()->getLoc(), constOp.getType(),
+      constOp.getResult());
   lwiOp->setAttr("stage", constOp->getAttr("stage"));
 
   *constBase += 4;
 
   return lwiOp;
+}
+
+static LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
+                                    PatternRewriter &rewriter) {
+  auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>();
+  // insert a new zero constant operation
+  rewriter.setInsertionPoint(constOp);
+  auto zeroConst = rewriter.create<LLVM::ConstantOp>(
+      constOp.getLoc(), constOp.getType(), rewriter.getI32IntegerAttr(0));
+  rewriter.setInsertionPoint(constOp->getBlock()->getTerminator());
+  // replicate the constant operation in case it is used by multiple operations
+  auto immConst = rewriter.create<LLVM::ConstantOp>(
+      constOp.getLoc(), constOp.getType(),
+      rewriter.getI32IntegerAttr(intAttr.getInt()));
+  auto addOp = rewriter.create<LLVM::AddOp>(
+      constOp->getBlock()->getTerminator()->getLoc(), constOp.getType(),
+      zeroConst.getResult(), immConst.getResult());
+  return addOp;
 }
 
 namespace {
@@ -176,7 +114,10 @@ struct ConstTarget : public ConversionTarget {
       // if the constant is used by beq, bne, blt, bge, it is not legal
       for (auto user : constOp->getUsers())
         if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user))
-          return false;
+          // if it is used for comparison, it is not legal
+          if (user->getOperand(0).getDefiningOp() == constOp ||
+              user->getOperand(1).getDefiningOp() == constOp)
+            return false;
 
       return true;
     });
@@ -192,6 +133,9 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
                                 PatternRewriter &rewriter) const override {
 
     auto value = constOp.getValue().cast<IntegerAttr>().getInt();
+    rewriter.modifyOpInPlace(constOp, [&] {
+      constOp->setAttr("value", rewriter.getI32IntegerAttr(value));
+    });
 
     // rewrite the constant operation if the value exceed the range
     if (value < -4097 || value > 4096) {
@@ -206,28 +150,11 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
 
     for (auto user : constOp->getUsers())
       // rewrite the constant operation if it is used by beq, bne, blt, bge,
-      // adapt it to the lwi operation
       if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user)) {
-        if (!hasOnlyUser(constOp)) {
-          // insert a new constant operation to specify the load address
-          auto brAddrConst = rewriter.create<LLVM::ConstantOp>(
-              constOp.getLoc(), constOp.getType(),
-              rewriter.getI32IntegerAttr(*constBase));
-          auto lwiOp = rewriter.create<cgra::LwiOp>(
-              brAddrConst.getLoc(), constOp.getType(), brAddrConst.getResult());
-          // replace use if it is beq, bne, blt, bge
-          rewriter.replaceOpUsesWithIf(
-              constOp, lwiOp.getResult(), [&](OpOperand &operand) {
-                return isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
-                    operand.getOwner());
-              });
-          *constBase += 4;
-        } else {
-          auto lwiOp = convertImmToLwi(constOp, constBase, rewriter);
-          rewriter.replaceOpUsesWithIf(
-              constOp, lwiOp.getResult(),
-              [&](OpOperand &operand) { return operand.getOwner() != lwiOp; });
-        }
+        // Only rewrite if the constant operation is used by the compare
+        // operation, otherwise propagate the branch arguments
+        auto addOp = generateImmAddOp(constOp, rewriter);
+        user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
       }
 
     return success();
@@ -236,6 +163,68 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
 protected:
   int *constBase;
 };
+
+static LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
+  Operation &beginOp = *funcOp.getOps().begin();
+  // raise the constant operation to the top level
+  for (auto op :
+       llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
+    if (op->getBlock()->isEntryBlock()) {
+      op->moveBefore(&beginOp);
+    }
+  }
+
+  return success();
+}
+
+static LogicalResult removeUnusedConstOp(cgra::FuncOp funcOp) {
+  // remove the constant operation if it is not used
+  for (auto op :
+       llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
+    if (op->use_empty())
+      op->erase();
+  }
+
+  return success();
+}
+
+static bool isLoopBlock(Block *blk) {
+  for (auto sucBlk : blk->getSuccessors())
+    if (sucBlk == blk)
+      return true;
+  return false;
+}
+
+static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
+                                       std::string outputDAG) {
+
+  Block *loopBlk = nullptr;
+  Block *initBlk = nullptr;
+  // Find the loop block
+  for (auto &blk : funcOp.getBlocks())
+    if (isLoopBlock(&blk)) {
+      loopBlk = &blk;
+      break;
+    }
+
+  // init the initBlock
+
+
+  // Get the oeprations in the loop block
+  SmallVector<Operation *> nodes;
+  for (Operation &op : loopBlk->getOperations()) {
+    nodes.push_back(&op);
+  }
+  llvm::errs() << "The number of operations: " << nodes.size() << "\n";
+
+  // initialize print function
+  satmapit::PrintSatMapItDAG printer(loopBlk->getTerminator(), nodes);
+  printer.init();
+  if (failed(printer.printDAG(outputDAG)))
+    return failure();
+
+  return success();
+}
 
 /// Driver for the fit-openedge pass.
 struct CgraFitToOpenEdgePass
@@ -260,7 +249,8 @@ struct CgraFitToOpenEdgePass
 
     // raise the constant operation to the top level
     for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
-      if (failed(raiseConstOperation(funcOp)))
+      if (failed(raiseConstOperation(funcOp)) ||
+          failed(removeUnusedConstOp(funcOp)))
         signalPassFailure();
 
     // print the DAG of the specified function

@@ -324,7 +324,6 @@ ParseResult BranchOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void BranchOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
-
 bool BeqOp::isControl() { return true; }
 
 /// Parse the cgra branch-like operation such as beq, bne., blt, and bge.
@@ -474,15 +473,17 @@ ParseResult SwiOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand dataOperand, addressOperand;
 
   SmallVector<Type, 2> dataOperandsTypes;
-  Type dataType;
+  Type dataType, addrType;
   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
   if (parser.parseOperand(addressOperand) || parser.parseComma() ||
-      parser.parseOperand(dataOperand) ||
-      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
-      parser.parseType(dataType))
+      parser.parseOperand(dataOperand) || parser.parseColon() ||
+      parser.parseType(dataType) || parser.parseComma() ||
+      parser.parseType(addrType) ||
+      parser.parseOptionalAttrDict(result.attributes))
     return failure();
 
-  dataOperandsTypes.assign(2, dataType);
+  dataOperandsTypes.push_back(dataType);
+  dataOperandsTypes.push_back(addrType);
   if (parser.resolveOperands(
           SmallVector<OpAsmParser::UnresolvedOperand, 4>{addressOperand,
                                                          dataOperand},
@@ -494,6 +495,7 @@ ParseResult SwiOp::parse(OpAsmParser &parser, OperationState &result) {
 void SwiOp::print(OpAsmPrinter &p) {
   Type type = getDataOperand().getType();
   p << " " << getDataOperand() << ", " << getAddressOperand();
+  p << " : " << type << ", " << getAddressOperand().getType();
   p.printOptionalAttrDict((*this)->getAttrs());
 }
 
