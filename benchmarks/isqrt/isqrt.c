@@ -6,11 +6,11 @@
 
 #define TEST_LENGTH 10
 
-uint16_t isqrt(uint32_t* in_ptr) 
+uint32_t isqrt(uint32_t* in_ptr) 
 {
-	uint16_t mask = 1<<14;
-	uint16_t result = 0;
-	uint16_t temp = 0;
+	uint32_t mask = 1<<14;
+	uint32_t result = 0;
+	uint32_t temp = 0;
 
 	if(*in_ptr < 0) return 0;
 	while(mask)

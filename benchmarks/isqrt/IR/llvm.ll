@@ -4,24 +4,23 @@ target datalayout = "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-f64:32:64-f8
 target triple = "i386-unknown-linux-gnu"
 
 ; Function Attrs: nofree norecurse nosync nounwind readonly uwtable
-define dso_local zeroext i16 @isqrt(i32* nocapture noundef readonly %0) local_unnamed_addr #0 {
+define dso_local i32 @isqrt(i32* nocapture noundef readonly %0) local_unnamed_addr #0 {
   %2 = load i32, i32* %0, align 4, !tbaa !4
   br label %3
 
 3:                                                ; preds = %1, %3
-  %4 = phi i16 [ 0, %1 ], [ %10, %3 ]
-  %5 = phi i16 [ 16384, %1 ], [ %11, %3 ]
-  %6 = or i16 %4, %5
-  %7 = zext i16 %6 to i32
-  %8 = mul nuw i32 %7, %7
-  %9 = icmp ugt i32 %8, %2
-  %10 = select i1 %9, i16 %4, i16 %6
-  %11 = lshr i16 %5, 1
-  %12 = icmp ult i16 %5, 2
-  br i1 %12, label %13, label %3, !llvm.loop !8
+  %4 = phi i32 [ 0, %1 ], [ %9, %3 ]
+  %5 = phi i32 [ 16384, %1 ], [ %10, %3 ]
+  %6 = or i32 %4, %5
+  %7 = mul i32 %6, %6
+  %8 = icmp ugt i32 %7, %2
+  %9 = select i1 %8, i32 %4, i32 %6
+  %10 = lshr i32 %5, 1
+  %11 = icmp ult i32 %5, 2
+  br i1 %11, label %12, label %3, !llvm.loop !8
 
-13:                                               ; preds = %3
-  ret i16 %10
+12:                                               ; preds = %3
+  ret i32 %9
 }
 
 ; Function Attrs: nounwind uwtable

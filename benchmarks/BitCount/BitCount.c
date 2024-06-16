@@ -2,7 +2,7 @@
 #include <math.h>
 
 
-int BitCount(long x)
+int BitCount(long *x)
 {
         int n = 0;
 /*
@@ -16,7 +16,7 @@ int BitCount(long x)
         
         do{
           n++;
-        }while (0 != (x = x&(x-1)));
+        }while (0 != (*x = *x&(*x-1)));
 
         return(n);
 }
