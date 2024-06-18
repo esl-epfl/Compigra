@@ -206,10 +206,6 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
       loopBlk = &blk;
       break;
     }
-
-  // init the initBlock
-
-
   // Get the oeprations in the loop block
   SmallVector<Operation *> nodes;
   for (Operation &op : loopBlk->getOperations()) {

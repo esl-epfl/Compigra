@@ -154,11 +154,12 @@ LogicalResult PrintSatMapItDAG::init() {
                    loopBlock->getArguments().end());
   llvm::errs() << "The number of liveIn arguments: " << BlockArgs.size()
                << "\n";
-  // The liveOut arguments are the true branch arguments
+  // The liveOut arguments are the false branch arguments
 
   if (auto beqOp = dyn_cast<cgra::BeqOp>(terminator)) {
     getFalseDestOperands<cgra::BeqOp>(beqOp, liveOutArgs);
   } else if (auto bneOp = dyn_cast<cgra::BneOp>(terminator)) {
+    llvm::errs() << bneOp.getFalseDestOperands().size() << "\n";
     getFalseDestOperands<cgra::BneOp>(bneOp, liveOutArgs);
   } else if (auto bltOp = dyn_cast<cgra::BltOp>(terminator)) {
     getFalseDestOperands<cgra::BltOp>(bltOp, liveOutArgs);
@@ -321,8 +322,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
         // branch operations are for comparison flag generation
         if (use.getOperandNumber() > 1) {
           dotFile << getNodeIndex(node) << " ";
-          dotFile << getNodeIndex(user->getOperand(use.getOperandNumber()))
-                  << " 1 1\n";
+          dotFile << use.getOperandNumber() - 2 << " 1 1\n";
           continue;
         }
 
@@ -372,10 +372,10 @@ LogicalResult PrintSatMapItDAG::printLiveOuts(std::string fileName) {
   // for (auto liveOut : liveOuts)
   //   dotFile << getNodeIndex(liveOut, nodes, constants, liveIns, liveOuts)
   //           << "\n";
-  // dotFile.close();
+  dotFile.close();
 
   // // print live-out edges to the text file
-  // dotFile.open(outEdgeFile.c_str());
+  dotFile.open(outEdgeFile.c_str());
   // for (Operation *liveOut : liveOuts) {
   //   for (Value operand : liveOut->getOperands()) {
   //     auto defOp = operand.getDefiningOp();
