@@ -345,27 +345,72 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
         LLVM::CondBrOp condBrOp = dyn_cast<LLVM::CondBrOp>(brOp);
 
         auto predicate = cmpOp.getPredicate();
-        // TODO: delete this
-        auto jumpOprand = getCgraBranchDst(brOp->getBlock());
 
-        // Get the conditional branch block for cgra bge, blt, etc.
-        // Assign the other branch block of original cond_br to the br block
-        Block *condBrBlock = getCgraBranchDstBlock(brOp->getBlock());
+        // Get the conditional branch block for cgra bge, blt, etc, which should
+        // not be the next node of current block.
+        Block *condBrBlock = getCgraBranchDstBlock(condBrOp->getBlock());
+
+        // If the next node is not the trueDest, revise the conditional flag to
+        // be the opposite.
+        // e.g if a==b branch to ^2 else ^1 => if a!=b branch to ^1 else ^2
+        // e.g if a>b branch to ^2 else ^1 => if a<=b branch to ^1 else ^2
+        // The rewrite does not change the functionality.
         bool isTrueDest = condBrBlock == condBrOp.getTrueDest();
+        if (!isTrueDest) {
+          switch (predicate) {
+          case LLVM::ICmpPredicate::eq:
+            predicate = LLVM::ICmpPredicate::ne;
+            break;
+          case LLVM::ICmpPredicate::ne:
+            predicate = LLVM::ICmpPredicate::eq;
+            break;
+          case LLVM::ICmpPredicate::slt:
+            predicate = LLVM::ICmpPredicate::sge;
+            break;
+          case LLVM::ICmpPredicate::sgt:
+            predicate = LLVM::ICmpPredicate::sle;
+            break;
+          case LLVM::ICmpPredicate::sge:
+            predicate = LLVM::ICmpPredicate::slt;
+            break;
+          case LLVM::ICmpPredicate::sle:
+            predicate = LLVM::ICmpPredicate::sgt;
+            break;
+          case LLVM::ICmpPredicate::ult:
+            predicate = LLVM::ICmpPredicate::uge;
+            break;
+          case LLVM::ICmpPredicate::ugt:
+            predicate = LLVM::ICmpPredicate::ule;
+            break;
+          case LLVM::ICmpPredicate::uge:
+            predicate = LLVM::ICmpPredicate::ult;
+            break;
+          case LLVM::ICmpPredicate::ule:
+            predicate = LLVM::ICmpPredicate::ugt;
+            break;
+          }
+        }
+
         auto condBrArgs = isTrueDest ? condBrOp.getTrueDestOperands()
                                      : condBrOp.getFalseDestOperands();
 
         // Add a new basic block after the beq, bne, blt, bge, block as the
         // false branch rewriter.
-
         Block *jumpBlock =
             isTrueDest ? condBrOp.getFalseDest() : condBrOp.getTrueDest();
         auto jumpArgs = isTrueDest ? condBrOp.getFalseDestOperands()
                                    : condBrOp.getTrueDestOperands();
+
         //  get type range of jumpArgs
         auto jumpArgsType = jumpArgs.getTypes();
-        auto newDefaltBlk =
-            rewriter.createBlock(brOp->getBlock()->getNextNode(), jumpArgsType);
+        // Create a vector of locations and fill it with the location of the
+        // terminator
+        std::vector<mlir::Location> locs(jumpArgsType.size(),
+                                         condBrOp->getLoc());
+
+        auto newDefaltBlk = rewriter.createBlock(
+            brOp->getBlock()->getNextNode(), jumpArgsType, locs);
+        llvm::errs() << "Debug\n";
 
         switch (predicate) {
           Operation *op;
@@ -415,8 +460,8 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
 
         // insert branch operation to the new block
         rewriter.setInsertionPointToStart(newDefaltBlk);
-        auto defaultBr =
-            rewriter.create<LLVM::BrOp>(brOp->getLoc(), jumpArgs, jumpBlock);
+        auto defaultBr = rewriter.create<LLVM::BrOp>(
+            brOp->getLoc(), newDefaltBlk->getArguments(), jumpBlock);
         defaultBr->moveAfter(&newDefaltBlk->getOperations().front());
       }
     }
@@ -620,8 +665,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       LLVM::ConstantOp baseOp = rewriter.create<LLVM::ConstantOp>(
           entryOp->getLoc(), rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(memInterface.startAddr[argIndex]));
-      baseOp->setAttr("returnValue", rewriter.getStringAttr(
-                                          "arg" + std::to_string(argIndex)));
+      baseOp->setAttr("returnValue",
+                      rewriter.getStringAttr("arg" + std::to_string(argIndex)));
       rewriter.setInsertionPoint(storeOp);
       LLVM::MulOp offsetOp = rewriter.create<LLVM::MulOp>(
           storeOp.getLoc(), rewriter.getI32Type(), gepOp.getOperand(1),
@@ -644,8 +689,7 @@ LogicalResult
 CgraLowering::removeUnusedOps(ConversionPatternRewriter &rewriter) {
   SmallVector<Operation *> eraseOps;
   for (auto &op : region.getOps()) {
-    if (isa<cgra::BeqOp>(op) || isa<cgra::BneOp>(op) || isa<cgra::BgeOp>(op) ||
-        isa<cgra::BltOp>(op) || isa<LLVM::ReturnOp>(op) || isa<cgra::SwiOp>(op))
+    if (op.getBlock()->getTerminator() == &op || isa<cgra::SwiOp>(op))
       continue;
 
     if (op.use_empty()) {
@@ -694,8 +738,8 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
     return failure();
   llvm::errs() << "raiseConstOnlyUse success\n";
 
-  // if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
-  //   return failure();
+  if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
+    return failure();
 
   return success();
 }
