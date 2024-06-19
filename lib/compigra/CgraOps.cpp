@@ -403,14 +403,14 @@ void BzfaOp::print(OpAsmPrinter &p) {
 }
 
 ParseResult BsfaOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand jumpOperand;
+  OpAsmParser::UnresolvedOperand flagOperand;
   Type selectType, dataType;
   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
   if (failed(
-          parseSelLikeOp(parser, jumpOperand, dataType, allOperands, result)))
+          parseSelLikeOp(parser, flagOperand, dataType, allOperands, result)))
     return failure();
 
-  allOperands.push_back(jumpOperand);
+  allOperands.insert(allOperands.begin(), flagOperand);
 
   // assign the same type to all operands
   SmallVector<Type, 3> dataOperandsTypes;
