@@ -62,13 +62,11 @@ static cgra::LwiOp convertImmToLwi(LLVM::ConstantOp constOp, int *constBase,
       constOp->setAttr("value", rewriter.getI32IntegerAttr(*constBase));
     });
   }
-
   // insert a lwi operation to load the constant value
   rewriter.setInsertionPoint(constOp->getBlock()->getTerminator());
   auto lwiOp = rewriter.create<cgra::LwiOp>(
       constOp->getBlock()->getTerminator()->getLoc(), constOp.getType(),
       constOp.getResult());
-  lwiOp->setAttr("stage", constOp->getAttr("stage"));
 
   *constBase += 4;
 
