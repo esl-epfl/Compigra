@@ -31,27 +31,27 @@
 using namespace mlir;
 using namespace compigra;
 
-static bool hasOnlyUser(LLVM::ConstantOp constOp) {
-  // Check if the constant operation is used by multiple operations
-  auto distance =
-      std::distance(constOp->getUsers().begin(), constOp->getUsers().end());
-  return distance == 1;
+static bool isValidImmAddr(LLVM::ConstantOp constOp) {
+  // Address can not exceeds 13 bits
+  int maxAddr = 0b1111111111111;
+  auto value = constOp.getValue().cast<IntegerAttr>().getInt();
+  return value <= maxAddr;
 }
 
 static bool isAddrConstOp(LLVM::ConstantOp constOp) {
-  // if (constOp->getAttrDictionary().contains("base"))
-  //   return true;
-  for (auto user : constOp->getUsers())
-    if (isa<cgra::LwiOp, cgra::SwiOp>(user))
+  for (auto &use : constOp->getUses()) {
+    if (isa<cgra::LwiOp>(use.getOwner()))
       return true;
+    // Only address can be used as Imm field of swi operation
+    if (use.getOperandNumber() == 1 && isa<cgra::SwiOp>(use.getOwner()))
+      return true;
+  }
 
   return false;
 }
 
 static cgra::LwiOp convertImmToLwi(LLVM::ConstantOp constOp, int *constBase,
                                    PatternRewriter &rewriter) {
-  // auto userOps = constOp->getUsers();
-  // rewriter.setInsertionPoint(constOp);
   // host processor value are specified in the hostValue StringAttr
   auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>();
   if (intAttr) {
@@ -88,6 +88,8 @@ static LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
   auto addOp = rewriter.create<LLVM::AddOp>(
       constOp->getBlock()->getTerminator()->getLoc(), constOp.getType(),
       zeroConst.getResult(), immConst.getResult());
+  // set the imm attribute of the operation
+  addOp->setAttr("val", intAttr);
   return addOp;
 }
 
@@ -102,20 +104,28 @@ struct ConstTarget : public ConversionTarget {
     // add the operation to the target
     addDynamicallyLegalOp<LLVM::ConstantOp>([&](LLVM::ConstantOp constOp) {
       auto value = constOp.getValue().cast<IntegerAttr>().getInt();
-      bool isAddrOnly = isAddrConstOp(constOp) && hasOnlyUser(constOp);
+      bool isAddr = isAddrConstOp(constOp);
+      bool validAddr = isValidImmAddr(constOp);
+      if (isAddr && !validAddr)
+        return false;
 
       // if the value exceed the Imm range
-      if (!isAddrOnly)
+      if (!isAddr || (isAddr && !constOp->hasOneUse()))
         if (value < -4097 || value > 4096)
           return false;
 
-      // if the constant is used by beq, bne, blt, bge, it is not legal
-      for (auto user : constOp->getUsers())
+      for (auto user : constOp->getUsers()) {
         if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user))
-          // if it is used for comparison, it is not legal
+          //  if the constant is used by beq, bne, blt, bge, and is used for
+          //  comparison, it is not legal
           if (user->getOperand(0).getDefiningOp() == constOp ||
               user->getOperand(1).getDefiningOp() == constOp)
             return false;
+        // if the constant is used by swi for imm store, it is not legal
+        if (isa<cgra::SwiOp>(user) &&
+            user->getOperand(0).getDefiningOp() == constOp)
+          return false;
+      }
 
       return true;
     });
@@ -124,8 +134,9 @@ struct ConstTarget : public ConversionTarget {
 
 struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
 
-  ConstantOpRewrite(MLIRContext *ctx, int *constBase)
-      : OpRewritePattern(ctx), constBase(constBase) {}
+  ConstantOpRewrite(MLIRContext *ctx, int *constBase,
+                    SmallVector<Operation *> &insertedOps)
+      : OpRewritePattern(ctx), constBase(constBase), insertedOps(insertedOps) {}
 
   LogicalResult matchAndRewrite(LLVM::ConstantOp constOp,
                                 PatternRewriter &rewriter) const override {
@@ -134,6 +145,15 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
     rewriter.modifyOpInPlace(constOp, [&] {
       constOp->setAttr("value", rewriter.getI32IntegerAttr(value));
     });
+
+    // indirectly load & store cannot exceed reserved address range
+    // if the constant is used as immediate for address
+    if (isAddrConstOp(constOp) && !isValidImmAddr(constOp)) {
+      llvm::errs() << "FAILED: The address exceeds the range\n";
+      return failure();
+    }
+
+    llvm::errs() << constOp << "\n";
 
     // rewrite the constant operation if the value exceed the range
     if (value < -4097 || value > 4096) {
@@ -144,22 +164,41 @@ struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
       rewriter.replaceOpUsesWithIf(
           constOp, lwiOp.getResult(),
           [&](OpOperand &operand) { return operand.getOwner() != lwiOp; });
+      insertedOps.push_back(lwiOp);
     }
 
-    for (auto user : constOp->getUsers())
-      // rewrite the constant operation if it is used by beq, bne, blt, bge,
-      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user)) {
-        // Only rewrite if the constant operation is used by the compare
-        // operation, otherwise propagate the branch arguments
-        auto addOp = generateImmAddOp(constOp, rewriter);
-        user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
+    for (auto user : constOp->getUsers()) {
+      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp, cgra::SwiOp>(
+              user)) {
+        // First seek whether exists operation produce the same result
+        Operation *reUseOp = nullptr;
+        for (auto &op : insertedOps) {
+          if (!op->getAttrDictionary().contains("val"))
+            continue;
+          auto produceVal = op->getAttr("val").dyn_cast<IntegerAttr>().getInt();
+          if (produceVal == value) {
+            reUseOp = op;
+            break;
+          }
+        }
+        // If exists, replace the use of the constant operation
+        if (reUseOp) {
+          user->replaceUsesOfWith(constOp.getResult(), reUseOp->getResult(0));
+        } else {
+          // If not, create a new operation
+          auto addOp = generateImmAddOp(constOp, rewriter);
+          user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
+          insertedOps.push_back(addOp);
+        }
       }
+    }
 
     return success();
   }
 
 protected:
   int *constBase;
+  SmallVector<Operation *> &insertedOps;
 };
 
 static LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
@@ -233,7 +272,8 @@ struct CgraFitToOpenEdgePass
     ConstTarget target(ctx);
 
     int BaseAddr = 64;
-    patterns.add<ConstantOpRewrite>(ctx, &BaseAddr);
+    SmallVector<Operation *> insertedOps;
+    patterns.add<ConstantOpRewrite>(ctx, &BaseAddr, insertedOps);
 
     // adapt the constant operation to meet the requirement of Imm field of
     // openedge CGRA
@@ -255,12 +295,13 @@ struct CgraFitToOpenEdgePass
           isPath ? outputDAG.substr(lastSlashPos + 1) : outputDAG;
 
       for (auto funcOp :
-           llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
+           llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>())) {
+        llvm::errs() << funcOp << "\n";
         if (funcName == funcOp.getName() &&
-            failed(outputDATE2023DAG(funcOp, outputDAG))) {
-          llvm::errs() << funcOp << "\n";
+            failed(outputDATE2023DAG(funcOp, outputDAG)))
+
           return signalPassFailure();
-        }
+      }
     }
   }
 };

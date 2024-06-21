@@ -891,10 +891,6 @@ void LLVMToCgraConversionPass::runOnOperation() {
       return signalPassFailure();
   }
 
-  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>())) {
-    // Not lower the function if it is not required
-    llvm::errs() << "funcOp: " << funcOp << "\n";
-  }
 };
 
 namespace compigra {
