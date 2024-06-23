@@ -15,3 +15,4 @@ add_dependencies(compigra-headers MLIRCgraAttributesIncGen)
 
 add_subdirectory(Conversion)
 add_subdirectory(Transforms)
+add_subdirectory(ASMGen)

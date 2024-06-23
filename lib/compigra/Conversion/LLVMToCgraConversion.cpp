@@ -522,22 +522,6 @@ compigra::partiallyLowerRegion(const RegionLoweringFunc &loweringFunc,
       partialLoweringSuccessfull.succeeded());
 }
 
-/// Get the address of the integer variable with the given index.
-// static int getCgraIntVarAddress(MemoryInterface &memInterface, int idx) {
-//   int addr = memInterface.intHeadAddr + idx * 4;
-//   if (addr >= memInterface.intTailAddr)
-//     return -1;
-//   return addr;
-// }
-
-// /// Get the base address of the data array variable with the given index.
-// static int getCgraArrVarBaseAddress(MemoryInterface &memInterface, size_t
-// idx) {
-//   if (idx == 0)
-//     return memInterface.arrHeadAddr;
-//   return memInterface.activeArrTail[idx - 1];
-// }
-
 static std::string getFileNameFromPath(const std::string &filePath) {
   size_t lastSlash = filePath.find_last_of("/\\");
   if (lastSlash != std::string::npos) {
@@ -890,7 +874,6 @@ void LLVMToCgraConversionPass::runOnOperation() {
         failed(lowerFuncOp(funcOp, funcName, memInterface, &getContext())))
       return signalPassFailure();
   }
-
 };
 
 namespace compigra {

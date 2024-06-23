@@ -405,3 +405,67 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
 
   return success();
 }
+
+void satmapit::parseLine(const std::string &line,
+                         std::map<int, Instruction> &instMap,
+                         const unsigned maxReg) {
+
+  std::istringstream lineStream(line);
+  std::string idStr, nameStr, timeStr, peStr, RoutStr, opAStr, opBStr, immStr;
+  std::string idVal, nameVal, timeVal, peVal, RoutVal, opAVal, opBVal, immVal;
+  // Read Id token
+  std::getline(lineStream, idStr, ' ');
+  std::getline(lineStream, idVal, ' ');
+  int id = std::stoi(idVal.substr(idVal.find(":") + 1));
+
+  // Read name
+  std::getline(lineStream, nameStr, ' ');
+  std::getline(lineStream, nameVal, ' ');
+  nameVal = nameVal.substr(nameVal.find(":") + 1);
+
+  // Read time
+  std::getline(lineStream, timeStr, ' ');
+  std::getline(lineStream, timeVal, ' ');
+  timeVal = timeVal.substr(timeVal.find(":") + 1);
+
+  // Read pe
+  std::getline(lineStream, peStr, ' ');
+  std::getline(lineStream, peVal, ' ');
+  peVal = peVal.substr(peVal.find(":") + 1);
+
+  // Read Rout
+  std::getline(lineStream, RoutStr, ' ');
+  std::getline(lineStream, RoutVal, ' ');
+  RoutVal = RoutVal.substr(RoutVal.find(":") + 1);
+  // if RoutVal = Ri:i, else RoutVal = Rout(mexReg)
+  // Find substr after R, if it is out, then it is Rout, else it is Ri
+  auto reg = RoutVal.substr(RoutVal.find("R") + 1);
+  RoutVal = reg== "OUT" ? std::to_string(maxReg) : reg;
+
+  // Read opA
+  std::getline(lineStream, opAStr, ' ');
+  std::getline(lineStream, opAVal, ' ');
+  opAVal = opAVal.substr(opAVal.find(":") + 1);
+
+  // Read opB
+  std::getline(lineStream, opBStr, ' ');
+  std::getline(lineStream, opBVal, ' ');
+  opBVal = opBVal.substr(opBVal.find(":") + 1);
+
+  // Read immediate
+  std::getline(lineStream, immStr, ' ');
+  std::getline(lineStream, immVal, ' ');
+  immVal = immVal.substr(immVal.find(":") + 1);
+
+  // Create and insert the Inst object
+  Instruction inst;
+  inst.name = nameVal;
+  inst.time = std::stoi(timeVal);
+  inst.pe = std::stoi(peVal);
+  inst.Rout = std::stoi(RoutVal);
+  inst.opA = opAVal;
+  inst.opB = opBVal;
+  inst.immediate = std::stoi(immVal);
+
+  instMap[id] = inst;
+}

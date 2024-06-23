@@ -15,12 +15,14 @@
 
 #include "compigra/Conversion/Passes.h"
 #include "compigra/Transforms/Passes.h"
+#include "compigra/ASMGen/Passes.h"
 
 namespace compigra {
 
 inline void registerAllPasses() {
   registerConversionPasses();
   registerPasses();
+  registerASMGenPasses();
 }
 } // namespace compigra
 

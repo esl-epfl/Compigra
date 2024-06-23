@@ -7,6 +7,7 @@ set(LIBS
         MLIRCompigraTransforms
         MLIRCompigraConversion
         MLIRCompigraSatMapPrint
+        MLIRCompigraASMGen
         
         MLIRIR
         MLIROptLib
@@ -34,3 +35,4 @@ add_llvm_tool(compigra-opt
 
 llvm_update_compile_flags(compigra-opt)
 target_link_libraries(compigra-opt PRIVATE ${LIBS})
+

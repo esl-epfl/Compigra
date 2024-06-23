@@ -18,8 +18,19 @@
 using namespace mlir;
 
 namespace compigra {
-namespace satmapit {
+// Struct to hold the data for each instruction
+struct Instruction {
+  std::string name;
+  int time;
+  int pe;
+  // register to store the result, R0:0, R1:1,..., Rout: maxReg
+  int Rout;
+  std::string opA;
+  std::string opB;
+  int immediate;
+};
 
+namespace satmapit {
 class PrintSatMapItDAG {
 public:
   // initialization
@@ -89,6 +100,10 @@ private:
       {"phi", 40},     {"ble", 41},     {"bge", 42},     {"ashr", 44},
       {"mv", 45}};
 };
+
+/// Parse the produced map and register allocation result produced by Sat-MapIt.
+void parseLine(const std::string &line, std::map<int, Instruction> &instMap,
+               const unsigned maxReg);
 
 } // namespace satmapit
 } // namespace compigra
