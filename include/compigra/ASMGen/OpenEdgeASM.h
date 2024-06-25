@@ -16,6 +16,7 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
+#include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
@@ -29,11 +30,6 @@ namespace compigra {
 #include "compigra/ASMGen/Passes.h.inc"
 
 // Schedule unit is a pair of time and PE, and the register to store the result
-struct ScheduleUnit {
-  int time;
-  int pe;
-  int reg;
-};
 
 class OpenEdgeASMGen {
 public:
@@ -52,51 +48,18 @@ public:
   /// Get the earliest execution time of operations in the block
   int getEarliestExecutionTime(Block *block);
 
-  int getConnectedBlock(int block, std::string direction);
 
-  /// Assign the schedule results from SAT-MapIt printout to the operations
-  LogicalResult assignSchedule(mlir::Block::OpListType &ops,
-                               std::map<int, Instruction> instructions);
 
-  void writeOpResult(Operation *op, int time, int pe, int reg) {
-    ScheduleUnit unit = {time, pe, reg};
-    solution[op] = unit;
-  }
+
+
+
 
   const std::map<Operation *, ScheduleUnit> getCurrSolution() {
     return solution;
   }
 
-  /// Struct to hold the data for each instruction
-#ifdef HAVE_GUROBI
-  LogicalResult createSchedulerAndSolve();
-
-  void initObjectiveFunction(GRBModel &model, GRBVar &funcStartT,
-                             GRBVar &funcEndT,
-                             std::map<Operation *, GRBVar> &timeOpVar,
-                             std::map<Block *, GRBVar> &timeBlkEntry,
-                             std::map<Block *, GRBVar> &timeBlkExit);
-  void initVariables(GRBModel &model, std::map<Block *, GRBVar> &timeBlkEntry,
-                     std::map<Block *, GRBVar> &timeBlkExit,
-                     std::map<Operation *, GRBVar> &timeOpVar,
-                     std::map<Operation *, GRBVar> &spaceOpVar);
-  void initKnownSchedule(GRBModel &model,
-                         std::map<Operation *, GRBVar> &timeOpVar,
-                         std::map<Operation *, GRBVar> &spaceOpVar);
-  void initOpTimeConstraints(GRBModel &model,
-                             std::map<Operation *, GRBVar> &timeOpVar,
-                             std::map<Block *, GRBVar> &timeBlkEntry,
-                             std::map<Block *, GRBVar> &timeBlkExit);
-  void initOpSpaceConstraints(GRBModel &model,
-                              std::map<Operation *, GRBVar> &spaceOpVar);
-  void initOpTimeSpaceConstraints(GRBModel &model,
-                                  std::map<Operation *, GRBVar> &timeOpVar,
-                                  std::map<Operation *, GRBVar> &spaceOpVar);
-
   // void printKownSchedule();
   std::map<Operation *, Instruction> knownRes;
-
-#endif
 
 protected:
   Region &region;

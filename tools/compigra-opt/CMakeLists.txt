@@ -8,6 +8,7 @@ set(LIBS
         MLIRCompigraConversion
         MLIRCompigraSatMapPrint
         MLIRCompigraASMGen
+        MLIRCompigraKernelSchedule
         
         MLIRIR
         MLIROptLib
