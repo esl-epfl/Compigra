@@ -465,7 +465,6 @@ void satmapit::parseLine(const std::string &line,
   inst.Rout = std::stoi(RoutVal);
   inst.opA = opAVal;
   inst.opB = opBVal;
-  inst.immediate = std::stoi(immVal);
 
   instMap[id] = inst;
 }

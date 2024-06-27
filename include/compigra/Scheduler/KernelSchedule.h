@@ -25,6 +25,15 @@ using namespace mlir;
 /// of the operation.
 namespace compigra {
 
+/// Functions to get the operation that is connected to the user operation via
+/// branch.
+Operation *getCntOpIndirectly(Operation *userOp, Operation *op);
+
+/// Functions to get the operation that is connected to the value via branch.
+/// If the value has definition, return the operation that defines the value.
+/// Otherwise, return the producer operations that propagate to the value.
+SmallVector<Operation *, 4> getCntOpIndirectly(Value val);
+
 template <typename T> class CGRAKernelScheduler {
 public:
   CGRAKernelScheduler(unsigned maxReg, unsigned nRow, unsigned nCol)
@@ -48,6 +57,7 @@ protected:
   std::map<Operation *, T> solution;
 };
 
+// Schedule unit is a pair of time and PE, and the register to store the result
 struct ScheduleUnit {
   int time;
   int pe;

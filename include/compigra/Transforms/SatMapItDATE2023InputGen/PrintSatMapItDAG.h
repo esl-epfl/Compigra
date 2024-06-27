@@ -27,7 +27,7 @@ struct Instruction {
   int Rout;
   std::string opA;
   std::string opB;
-  int immediate;
+  // int immediate;
 };
 
 namespace satmapit {

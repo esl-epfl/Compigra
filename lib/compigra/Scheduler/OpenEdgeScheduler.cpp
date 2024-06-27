@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "compigra/CgraDialect.h"
+#include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
@@ -19,19 +21,8 @@
 using namespace mlir;
 using namespace compigra;
 
-static Instruction initVoidInstruction(std::string name) {
-  Instruction inst;
-  inst.name = name;
-  inst.time = INT_MAX;
-  inst.pe = -1;
-  inst.Rout = -1;
-  inst.opA = "Unkown";
-  inst.opB = "Unkown";
-  inst.immediate = 0;
-  return inst;
-}
-
-static Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
+namespace compigra {
+Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
   Operation *cntOp = userOp;
   // If the userOp is branchOp or conditionalOp, analyze which operation uses
   // the block argument
@@ -43,7 +34,6 @@ static Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
         std::distance(userOp->getOperands().begin(),
                       std::find(userOp->getOperands().begin(),
                                 userOp->getOperands().end(), op->getResult(0)));
-    llvm::errs() << "correspond argIndex: " << argIndex << "\n";
     Operation *useOp = nullptr;
     for (auto &op : userBlock->getOperations()) {
       if (op.getOperand(0) == userBlock->getArgument(argIndex)) {
@@ -55,6 +45,57 @@ static Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
   }
 
   return cntOp;
+}
+
+SmallVector<Operation *, 4> getCntOpIndirectly(Value val) {
+  SmallVector<Operation *, 4> cntOps;
+  if (val.getDefiningOp()) {
+    cntOps.push_back(val.getDefiningOp());
+    return cntOps;
+  }
+
+  // if the value is not block argument, return empty vector
+  if (!val.isa<BlockArgument>())
+    return cntOps;
+
+  Block *block = val.getParentBlock();
+  Value propVal;
+
+  int argInd = val.cast<BlockArgument>().getArgNumber();
+  for (auto pred : block->getPredecessors()) {
+    Operation *termOp = pred->getTerminator();
+    // Return operation does not propagate block argument
+    if (isa<LLVM::ReturnOp>(termOp))
+      continue;
+
+    if (isa<LLVM::BrOp>(termOp)) {
+      // the corresponding block argument is the argInd'th operator
+      propVal = termOp->getOperand(argInd);
+      auto defOps = getCntOpIndirectly(propVal);
+      cntOps.append(defOps.begin(), defOps.end());
+    } else if (isa<cgra::BneOp, cgra::BeqOp, cgra::BltOp, cgra::BgeOp>(
+                   termOp)) {
+      // The terminator would be beq, bne, blt, bge, etc, the propagated value
+      // is counted from 2nd operand.
+      propVal = termOp->getOperand(argInd + 2);
+      auto defOps = getCntOpIndirectly(propVal);
+      cntOps.append(defOps.begin(), defOps.end());
+    }
+  }
+
+  return cntOps;
+}
+} // namespace compigra
+
+static Instruction initVoidInstruction(std::string name) {
+  Instruction inst;
+  inst.name = name;
+  inst.time = INT_MAX;
+  inst.pe = -1;
+  inst.Rout = -1;
+  inst.opA = "Unknown";
+  inst.opB = "Unknown";
+  return inst;
 }
 
 static Value getCorrelatedVal(Value val) {
@@ -139,7 +180,6 @@ void OpenEdgeKernelScheduler::initVariables(
       //  Add constraints with entry and exit time
       model.addConstr(timeBlkEntry[&block] <= timeOpVar[&op]);
       model.addConstr(timeOpVar[&op] <= timeBlkExit[&block]);
-      llvm::errs() << "init: " << bbId << "_" << opId << " : " << op << "\n";
       spaceOpVar[&op] = model.addVar(0.0, nCol * nRow - 1, 0.0, GRB_INTEGER,
                                      "pe_" + std::to_string(bbId) + "_" +
                                          std::to_string(opId));
@@ -160,7 +200,11 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
     GRBModel &model, std::map<Operation *, GRBVar> &timeOpVar,
     std::map<Block *, GRBVar> &timeBlkEntry,
     std::map<Block *, GRBVar> &timeBlkExit) {
+  Operation *returnOp = nullptr;
   for (auto [op, var] : timeOpVar) {
+    if (isa<LLVM::ReturnOp>(op)) {
+      returnOp = op;
+    }
     // Add the constraint based on the successor
     // constraints  for the successor
     if (op->getBlock()->getTerminator() == op) {
@@ -174,6 +218,7 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
     for (Operation *userOp : op->getUsers())
       model.addConstr(var + 1 <= timeOpVar[userOp]);
   }
+
   // Add the constraint based on the block
   for (auto &blk : region.getBlocks()) {
     for (auto sucBlk : blk.getSuccessors()) {
@@ -182,6 +227,13 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
         continue;
       model.addConstr(timeBlkExit[&blk] + 1 == timeBlkEntry[sucBlk]);
     }
+  }
+
+  // The returnOp is mapped to be EXIT, and must be execute alone
+  for (auto [op, var] : timeOpVar) {
+    if (op == returnOp)
+      continue;
+    model.addConstr(var <= timeOpVar[returnOp] - 1);
   }
 }
 
@@ -280,7 +332,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
     for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
       if (isa<LLVM::ConstantOp>(opVal.getDefiningOp()))
         continue;
-      // TODO: consider the effect of branchOp and conditionalOp
+      // TODO[@Yuxuan]: consider the effect of branchOp and conditionalOp
       auto cntOp = opVal.getDefiningOp();
       auto cntPE = spaceOpVar[cntOp];
       // Get the left, right, top, bottom PE
@@ -367,16 +419,12 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   std::map<Block *, GRBVar> timeBlkEntry;
   std::map<Block *, GRBVar> timeBlkExit;
   initVariables(model, timeBlkEntry, timeBlkExit, timeVarMap, peVarMap);
-  llvm::errs() << "initVariables\n";
   // assign the known schedule
   initKnownSchedule(model, timeVarMap, peVarMap);
-  llvm::errs() << "initKnownSchedule\n";
   // create time constraints
   initOpTimeConstraints(model, timeVarMap, timeBlkEntry, timeBlkExit);
-  llvm::errs() << "initOpTimeConstraints\n";
   // create space constraints
   initOpSpaceConstraints(model, peVarMap);
-  llvm::errs() << "initOpSpaceConstraints\n";
   // create time and space constraints
   initOpTimeSpaceConstraints(model, timeVarMap, peVarMap);
 
