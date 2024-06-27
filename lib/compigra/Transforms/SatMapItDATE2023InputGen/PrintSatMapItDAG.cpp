@@ -159,15 +159,12 @@ LogicalResult PrintSatMapItDAG::init() {
   if (auto beqOp = dyn_cast<cgra::BeqOp>(terminator)) {
     getFalseDestOperands<cgra::BeqOp>(beqOp, liveOutArgs);
   } else if (auto bneOp = dyn_cast<cgra::BneOp>(terminator)) {
-    llvm::errs() << bneOp.getFalseDestOperands().size() << "\n";
     getFalseDestOperands<cgra::BneOp>(bneOp, liveOutArgs);
   } else if (auto bltOp = dyn_cast<cgra::BltOp>(terminator)) {
     getFalseDestOperands<cgra::BltOp>(bltOp, liveOutArgs);
   } else if (auto bgeOp = dyn_cast<cgra::BgeOp>(terminator)) {
     getFalseDestOperands<cgra::BgeOp>(bgeOp, liveOutArgs);
   }
-  llvm::errs() << "The number of liveOut arguments: " << liveOutArgs.size()
-               << "\n";
 
   // init constant, liveIn, and liveOut operations
   for (auto [ind, arg] : llvm::enumerate(BlockArgs)) {
