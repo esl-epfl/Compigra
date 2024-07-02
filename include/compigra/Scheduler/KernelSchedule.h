@@ -84,7 +84,8 @@ public:
                              GRBVar &funcEndT,
                              std::map<Operation *, GRBVar> &timeOpVar,
                              std::map<Block *, GRBVar> &timeBlkEntry,
-                             std::map<Block *, GRBVar> &timeBlkExit);
+                             std::map<Block *, GRBVar> &timeBlkExit,
+                             GRBLinExpr &objExpr);
   void initVariables(GRBModel &model, std::map<Block *, GRBVar> &timeBlkEntry,
                      std::map<Block *, GRBVar> &timeBlkExit,
                      std::map<Operation *, GRBVar> &timeOpVar,
@@ -97,7 +98,8 @@ public:
                              std::map<Block *, GRBVar> &timeBlkEntry,
                              std::map<Block *, GRBVar> &timeBlkExit);
   void initOpSpaceConstraints(GRBModel &model,
-                              std::map<Operation *, GRBVar> &spaceOpVar);
+                              std::map<Operation *, GRBVar> &spaceOpVar,
+                              std::map<Operation *, GRBVar> &timeOpVar);
   void initOpTimeSpaceConstraints(GRBModel &model,
                                   std::map<Operation *, GRBVar> &timeOpVar,
                                   std::map<Operation *, GRBVar> &spaceOpVar);

@@ -24,9 +24,9 @@ struct Instruction {
   int time;
   int pe;
   // register to store the result, R0:0, R1:1,..., Rout: maxReg
-  int Rout;
-  std::string opA;
-  std::string opB;
+  int Rout = -1;
+  std::string opA = "Unknown";
+  std::string opB = "Unknown";
   // int immediate;
 };
 

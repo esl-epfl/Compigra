@@ -18,16 +18,71 @@
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
+#include <unordered_set>
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
 #endif
 
 using namespace mlir;
+using namespace compigra;
 
 namespace compigra {
 #define GEN_PASS_DEF_OPENEDGEASMGEN
 #define GEN_PASS_DECL_OPENEDGEASMGEN
 #include "compigra/ASMGen/Passes.h.inc"
+
+template <typename T> class InterferenceGraph {
+public:
+  InterferenceGraph() {}
+
+  void addVertex(T v) {
+    // Check if the vertex is already in the graph
+    if (adjList.find(v) == adjList.end()) {
+      adjList[v]; // add an empty set
+    }
+  }
+
+  // Initialize the vertex, which is the vertex that belongs to this PE and need
+  // to be considered for register allocation.
+  void initVertex(T v) { vertices.push_back(v); }
+
+  void addEdge(T v1, T v2) {
+    addVertex(v1);
+    addVertex(v2);
+    adjList[v1].insert(v2);
+    adjList[v2].insert(v1);
+  }
+
+  void printGraph() {
+    for (auto &v : adjList) {
+      llvm::errs() << "Vertex " << v.first << " -> ";
+      for (auto &u : v.second) {
+        llvm::errs() << u << " ";
+      }
+      llvm::errs() << "\n";
+    }
+  }
+
+  bool interference(T v1, T v2);
+
+  bool needColor(T v) {
+    if (std::find(vertices.begin(), vertices.end(), v) != vertices.end())
+      return true;
+    return false;
+  }
+  // Vertices of the graph are interferring with other nodes, but does not
+  // necessary belong to this PE. vertices records the vertices in the graph and
+  // belong to this PE which need to be considered for register allocation.
+  std::vector<T> vertices;
+  std::map<T, std::unordered_set<T>> adjList;
+  std::map<T, char> colorMap;
+};
+
+///  Allocate registers for the operations in the PE. The register allocation is
+///  conducted under the pre-colored constraints of `solution`.
+LogicalResult allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
+                                 std::map<Operation *, ScheduleUnit> &solution,
+                                 unsigned maxReg);
 
 class OpenEdgeASMGen {
 public:
@@ -61,7 +116,8 @@ public:
 
   // Output the ASM code to the file, if gridLike is true, the output is in the
   // format of CGRA grid, otherwise, the output is put sequentially.
-  void printKnownSchedule(bool GridLIke = false, int startPC = 0);
+  void printKnownSchedule(bool GridLIke = false, int startPC = 0,
+                          std::string outDir = "");
 
   // Schedule result with register allocation for ISA format adaptation
   std::map<Operation *, Instruction> instSolution;

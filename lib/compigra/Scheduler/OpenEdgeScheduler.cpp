@@ -49,14 +49,12 @@ Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
 
 SmallVector<Operation *, 4> getCntOpIndirectly(Value val) {
   SmallVector<Operation *, 4> cntOps;
-  if (val.getDefiningOp()) {
+  if (!val.isa<BlockArgument>()) {
     cntOps.push_back(val.getDefiningOp());
     return cntOps;
   }
 
   // if the value is not block argument, return empty vector
-  if (!val.isa<BlockArgument>())
-    return cntOps;
 
   Block *block = val.getParentBlock();
   Value propVal;
@@ -237,9 +235,11 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
   }
 }
 
-/// Add constraints to the model that y must be one of the neighbors of x
-static void addNeighborConstraints(GRBModel &model, GRBVar &x, GRBVar &y,
-                                   int nRow, int nCol) {
+static void addNeighborConstraints(GRBModel &model, Operation *consumer,
+                                   std::vector<Operation *> &producers,
+                                   int nRow, int nCol,
+                                   std::map<Operation *, GRBVar> &timeOpVar,
+                                   std::map<Operation *, GRBVar> &spaceOpVar) {
   // Create helper variables for the possible neighbors
   GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
   GRBVar right = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
@@ -250,6 +250,7 @@ static void addNeighborConstraints(GRBModel &model, GRBVar &x, GRBVar &y,
   GRBVar xRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
   GRBVar xCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
 
+  auto x = spaceOpVar[consumer];
   // Constraints to calculate row and column indices of x
   // xRow == x / nCol
   model.addConstr(xRow == (x - xCol) / nCol);
@@ -257,87 +258,139 @@ static void addNeighborConstraints(GRBModel &model, GRBVar &x, GRBVar &y,
   GRBVar u = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
   model.addConstr(x == u * nCol + xCol);
 
-  // Calculate left neighbor (wrap around if needed)
-  GRBVar leftCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
-  GRBVar uLeft = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-  model.addConstr(xCol - 1 == nCol * uLeft + leftCol);
-  model.addConstr(left == xRow * nCol + leftCol);
+  std::vector<GRBVar> leftVars;
+  std::vector<GRBVar> rightVars;
+  std::vector<GRBVar> topVars;
+  std::vector<GRBVar> bottomVars;
+  for (auto prodOp : producers) {
+    auto y = spaceOpVar[prodOp];
+    // Calculate left neighbor (wrap around if needed)
+    GRBVar leftCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
+    GRBVar uLeft = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+    model.addConstr(xCol - 1 == nCol * uLeft + leftCol);
+    model.addConstr(left == xRow * nCol + leftCol);
 
-  // Calculate right neighbor (wrap around if needed)
-  GRBVar rightCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
-  GRBVar uRight = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-  model.addConstr(xCol + 1 == nCol * uRight + rightCol);
-  model.addConstr(right == xRow * nCol + rightCol);
+    // Calculate right neighbor (wrap around if needed)
+    GRBVar rightCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
+    GRBVar uRight = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+    model.addConstr(xCol + 1 == nCol * uRight + rightCol);
+    model.addConstr(right == xRow * nCol + rightCol);
 
-  // Calculate top neighbor (wrap around if needed)
-  GRBVar topRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
-  GRBVar uTop = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-  model.addConstr(xRow - 1 == nRow * uTop + topRow);
-  model.addConstr(top == topRow * nCol + xCol);
+    // Calculate top neighbor (wrap around if needed)
+    GRBVar topRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
+    GRBVar uTop = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+    model.addConstr(xRow - 1 == nRow * uTop + topRow);
+    model.addConstr(top == topRow * nCol + xCol);
 
-  // Calculate bottom neighbor (wrap around if needed)
-  GRBVar bottomRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
-  GRBVar uBottom = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-  model.addConstr(xRow + 1 == nRow * uBottom + bottomRow);
+    // Calculate bottom neighbor (wrap around if needed)
+    GRBVar bottomRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
+    GRBVar uBottom = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+    model.addConstr(xRow + 1 == nRow * uBottom + bottomRow);
+    model.addConstr(bottom == bottomRow * nCol + xCol);
 
-  // Add constraints that y must be one of the neighbors
-  GRBVar chooseLeft = model.addVar(0, 1, 0, GRB_BINARY);
-  GRBVar chooseRight = model.addVar(0, 1, 0, GRB_BINARY);
-  GRBVar chooseTop = model.addVar(0, 1, 0, GRB_BINARY);
-  GRBVar chooseBottom = model.addVar(0, 1, 0, GRB_BINARY);
-  GRBVar chooseSelf = model.addVar(0, 1, 0, GRB_BINARY);
+    // Add constraints that y must be one of the neighbors
+    GRBVar chooseLeft = model.addVar(0, 1, 0, GRB_BINARY);
+    GRBVar chooseRight = model.addVar(0, 1, 0, GRB_BINARY);
+    GRBVar chooseTop = model.addVar(0, 1, 0, GRB_BINARY);
+    GRBVar chooseBottom = model.addVar(0, 1, 0, GRB_BINARY);
+    leftVars.push_back(chooseLeft);
+    rightVars.push_back(chooseRight);
+    topVars.push_back(chooseTop);
+    bottomVars.push_back(chooseBottom);
 
-  model.addQConstr(y == left * chooseLeft + right * chooseRight +
-                            top * chooseTop + bottom * chooseBottom +
-                            x * chooseSelf);
-  model.addConstr(
-      chooseLeft + chooseRight + chooseTop + chooseBottom + chooseSelf == 1);
+    GRBVar chooseSelf = model.addVar(0, 1, 0, GRB_BINARY);
+
+    model.addQConstr(y == left * chooseLeft + right * chooseRight +
+                              top * chooseTop + bottom * chooseBottom +
+                              x * chooseSelf);
+    model.addConstr(
+        chooseLeft + chooseRight + chooseTop + chooseBottom + chooseSelf == 1);
+
+    // Between the time gap of the producer and consumer, the producer PE cannot
+    // execute any other operations
+    auto startT = timeOpVar[prodOp];
+    auto endT = timeOpVar[consumer];
+    for (auto [op, tVar] : timeOpVar) {
+
+      if (op == consumer || op == prodOp)
+        continue;
+      GRBVar pe = spaceOpVar[op];
+      // A helper variable to indicate the time gap between the producer and the
+      // consumer, where helper = 1 means startT <= t <= endT.
+      GRBVar helper = model.addVar(0, 1, 0, GRB_BINARY);
+      model.addConstr(tVar >= startT - 1e9 * (1 - helper));
+      model.addConstr(tVar <= endT + 1e9 * (1 - helper));
+
+      // Set constraints for pe != y if helper == 1
+      GRBVar helper2 = model.addVar(0, 1, 0, GRB_BINARY);
+      model.addQConstr(helper * pe <= helper * (y - 1e-4 + 1e9 * helper2));
+      model.addQConstr(helper * pe >=
+                       helper * (y + 1e-4 - 1e9 * (1 - helper2)));
+    }
+  }
 }
 
 void OpenEdgeKernelScheduler::initOpSpaceConstraints(
-    GRBModel &model, std::map<Operation *, GRBVar> &spaceOpVar) {
+    GRBModel &model, std::map<Operation *, GRBVar> &spaceOpVar,
+    std::map<Operation *, GRBVar> &timeOpVar) {
 
   for (auto [op, var] : spaceOpVar) {
-    // BrOp does not require to consider data dependency; or if found op in
-    // result, the space hase been assigned, continue
-    if (isa<LLVM::BrOp>(op) || knownRes.find(op) != knownRes.end())
+    // BrOp does not require to consider data dependency
+    if (isa<LLVM::BrOp>(op))
       continue;
 
-    knownRes[op] = initVoidInstruction(op->getName().getStringRef().str());
-    // assign the space w.r.t to its successor's PE
-    bool findPE = false;
+    // The operation should be assigned to the PE that is connected to.(PE of
+    // predecessors' neighbor or itself)
+    std::vector<Operation *> producers;
+    for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
+      if (opVal.getDefiningOp() && isa<LLVM::ConstantOp>(opVal.getDefiningOp()))
+        continue;
+
+      // Ignore the propagation of the block argument
+      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(op) &&
+          ind >= 2)
+        break;
+
+      // The getCntOpIndirectly gets definition operations of the operand which
+      // should be unique unless the operand is block argument.
+      auto defOps = getCntOpIndirectly(opVal);
+      auto cntOp = getCntOpIndirectly(opVal)[0];
+      // If the operand is block argument, the defOps must be produced in the
+      // same PE.
+      if (defOps.size() > 1)
+        for (auto defOp : defOps)
+          if (spaceOpVar.find(defOp) != spaceOpVar.end())
+            model.addConstr(spaceOpVar[defOp] == spaceOpVar[cntOp]);
+
+      if (spaceOpVar.find(cntOp) == spaceOpVar.end())
+        continue;
+      producers.push_back(cntOp);
+    }
+    addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
+                           spaceOpVar);
+
+    // The result is known, skip
+    if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
+      continue;
+
+    // assign the space w.r.t to its user's PE if it can be inferred.
     for (auto userOp : op->getUsers()) {
       // Get the real userOp if the userOp is branchOp or conditionalOp
       auto cntOp = getCntOpIndirectly(userOp, op);
       if (knownRes.find(cntOp) != knownRes.end() && knownRes[cntOp].Rout >= 0) {
+        knownRes[op] = initVoidInstruction(op->getName().getStringRef().str());
+
         // If the result is stored in the register, assign the same PE
         bool leftOp =
             cntOp->getOperand(0) == getCorrelatedVal(op->getResult(0));
         std::string direct = leftOp ? knownRes[cntOp].opA : knownRes[cntOp].opB;
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
+
         model.addConstr(var == dstPE);
         knownRes[op].pe = dstPE;
-
-        findPE = true;
         break;
       }
-    }
-
-    // If the PE has been assigned, continue
-    if (findPE)
-      continue;
-
-    // DEBUG: assign around its predecessor
-    for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
-      if (isa<LLVM::ConstantOp>(opVal.getDefiningOp()))
-        continue;
-      // TODO[@Yuxuan]: consider the effect of branchOp and conditionalOp
-      auto cntOp = opVal.getDefiningOp();
-      auto cntPE = spaceOpVar[cntOp];
-      // Get the left, right, top, bottom PE
-
-      addNeighborConstraints(model, cntPE, var, nRow, nCol);
     }
   }
 }
@@ -391,8 +444,8 @@ void OpenEdgeKernelScheduler::initObjectiveFunction(
     GRBModel &model, GRBVar &funcStartT, GRBVar &funcEndT,
     std::map<Operation *, GRBVar> &timeOpVar,
     std::map<Block *, GRBVar> &timeBlkEntry,
-    std::map<Block *, GRBVar> &timeBlkExit) {
-  GRBLinExpr obj = 0;
+    std::map<Block *, GRBVar> &timeBlkExit, GRBLinExpr &objExpr) {
+  GRBLinExpr obj = objExpr;
   for (auto [blk, entry] : timeBlkEntry) {
     model.addConstr(funcStartT <= entry);
   }
@@ -413,6 +466,10 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
+
+  // Objective function
+  GRBLinExpr obj = 0;
+
   std::map<Operation *, GRBVar> timeVarMap;
   std::map<Operation *, GRBVar> peVarMap;
 
@@ -424,23 +481,24 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   // create time constraints
   initOpTimeConstraints(model, timeVarMap, timeBlkEntry, timeBlkExit);
   // create space constraints
-  initOpSpaceConstraints(model, peVarMap);
+  initOpSpaceConstraints(model, peVarMap, peVarMap);
   // create time and space constraints
   initOpTimeSpaceConstraints(model, timeVarMap, peVarMap);
-
   // create the objective function
   GRBVar funcStartT =
       model.addVar(-GRB_INFINITY, GRB_INFINITY, 0.0, GRB_INTEGER, "t0");
   GRBVar funcEndT =
       model.addVar(-GRB_INFINITY, GRB_INFINITY, 0.0, GRB_INTEGER, "t1");
   initObjectiveFunction(model, funcStartT, funcEndT, timeVarMap, timeBlkEntry,
-                        timeBlkExit);
+                        timeBlkExit, obj);
+
   // Optimize the model
   model.optimize();
   model.write("model.lp");
 
   // Check if the optimization status indicates infeasibility
-  if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE) {
+  if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE ||
+      model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD) {
     // Model is infeasible
     return failure();
   }
