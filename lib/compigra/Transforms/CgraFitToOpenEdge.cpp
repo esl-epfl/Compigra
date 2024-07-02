@@ -244,12 +244,11 @@ ConstTarget::ConstTarget(MLIRContext *ctx) : ConversionTarget(*ctx) {
         return false;
 
     for (auto user : constOp->getUsers()) {
-      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user))
-        //  if the constant is used by beq, bne, blt, bge, and is used for
-        //  comparison, it is not legal
-        if (user->getOperand(0).getDefiningOp() == constOp ||
-            user->getOperand(1).getDefiningOp() == constOp)
-          return false;
+      if (isa<LLVM::BrOp, cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
+              user))
+        // The branch operation cannot use immediate values (Imm) for
+        // computation, nor can it propagate constants.
+        return false;
       // if the constant is used by swi for imm store, it is not legal
       if (isa<cgra::SwiOp>(user) &&
           user->getOperand(0).getDefiningOp() == constOp)
@@ -294,8 +293,8 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   }
 
   for (auto user : llvm::make_early_inc_range(constOp->getUsers()))
-    if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp, cgra::SwiOp>(
-            user)) {
+    if (isa<LLVM::BrOp, cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp,
+            cgra::SwiOp>(user)) {
       // First seek whether exists operation produce the same result
       Operation *reUseOp = existsConstant(value, insertedOps);
       // If exists, replace the use of the constant operation
