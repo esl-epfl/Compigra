@@ -587,13 +587,26 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   return opName + ROUT + opA + opB + addition;
 }
 
+void OpenEdgeASMGen::dropTimeFrame(int time) {
+  SmallVector<Operation *> removeOps;
+  for (auto it : llvm::make_early_inc_range(solution)) {
+    if (it.second.time == time)
+      removeOps.push_back(it.first);
+    else if (it.second.time > time)
+      it.second.time--;
+  }
+  for (auto op : removeOps)
+    solution.erase(op);
+}
+
 /// Print the known schedule
 void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
                                         std::string outDir) {
   // For each time step
   initBaseTime(startPC);
   std::vector<std::vector<std::string>> asmCode;
-  for (int t = getKernelStart(); t <= getKernelEnd(); t++) {
+  int endTime = getKernelEnd();
+  for (int t = getKernelStart(); t <= endTime; t++) {
     // Get the operations scheduled at the time step
     auto ops = getOperationsAtTime(t);
     // print ops
@@ -617,8 +630,10 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
     if (!isNOP)
       asmCode.push_back(asmCodeLine);
     // If the time step is empty, skip it and revise the base time
-    else
-      baseTime--;
+    else {
+      dropTimeFrame(t);
+      endTime = getKernelEnd();
+    }
   }
 
   // Write the schedule to the file

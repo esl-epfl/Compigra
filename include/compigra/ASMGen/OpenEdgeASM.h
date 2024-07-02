@@ -114,12 +114,12 @@ public:
     solution = sol;
   }
 
-  // Output the ASM code to the file, if gridLike is true, the output is in the
+  /// Output the ASM code to the file, if gridLike is true, the output is in the
   // format of CGRA grid, otherwise, the output is put sequentially.
   void printKnownSchedule(bool GridLIke = false, int startPC = 0,
                           std::string outDir = "");
 
-  // Schedule result with register allocation for ISA format adaptation
+  /// Schedule result with register allocation for ISA format adaptation
   std::map<Operation *, Instruction> instSolution;
 
   // The start PC of the kernel
@@ -130,6 +130,11 @@ public:
     startPC = time;
     baseTime = time - getKernelStart();
   }
+
+  /// There are some time frames containing only one Br(Jump) operation that
+  /// unconditionally branch to next PC. This time frames are useless and can be
+  /// dropped if required.
+  void dropTimeFrame(int time);
 
 protected:
   Region &region;
