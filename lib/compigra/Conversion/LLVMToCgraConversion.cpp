@@ -220,17 +220,19 @@ CgraLowering::raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
     if (constOp->hasOneUse())
       continue;
 
-    // iterate through the users of the constant operation, and replace the uses
+    // iterate through the uses of the constant operation, and replace the uses
     // from the second one
-    SmallVector<Operation *, 4> users(std::next(constOp->getUsers().begin(), 1),
-                                      constOp->getUsers().end());
-    for (auto [ind, user] : llvm::enumerate(users)) {
-
+    for (auto &use : llvm::make_early_inc_range(constOp->getUses())) {
+      // skip the first use to keep the constant operation
+      // if (ind == 0)
+      //   continue;
+      llvm::errs() << *use.getOwner() << "\n";
+      auto user = use.getOwner();
       rewriter.setInsertionPoint(constOp);
       auto insertCstOp = rewriter.create<LLVM::ConstantOp>(
           constOp.getLoc(), constOp.getType(), constOp.getValue());
       //  replace the user's use of constOp result with insertCstOp result
-      user->replaceUsesOfWith(constOp.getResult(), insertCstOp.getResult());
+     user->setOperand(use.getOperandNumber(), insertCstOp.getResult());
     }
   }
   return success();

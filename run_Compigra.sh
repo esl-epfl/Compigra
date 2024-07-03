@@ -62,6 +62,7 @@ compile() {
 # compile use C->LLVM->MLIR(LLVM)->MLIR(CGRA)
 compile_sat() {
     local bench_name="$1"
+    local config="$2x$2"
     local bench_path="$BENCH_BASE/$bench_name"
     local bench_c="$bench_path/$bench_name.c"
     local bench_ll="$bench_path/$bench_name.ll"
@@ -103,9 +104,40 @@ compile_sat() {
       --convert-llvm-to-cgra="func-name=$bench_name mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
      "$f_llvm" > "$f_cgra"
 
+    # Check whether conversion success
+    if [ $? -ne 0 ]; then
+        echo "FAILED ON CONVERTING LLVM TO CGRA DIALECT."
+        return 1
+    fi
+
     #  convert cgra operations to fit into hardware ISA
     $COMPIGRA_OPT --allow-unregistered-dialect \
       --fit-openedge="out-dag=$f_dag" "$f_cgra" > "$f_hardware"
+
+    # Check whether hardware transformation success
+    if [ $? -ne 0 ]; then
+        echo "FAILED ON HARDWARE TRANSFORMATION."
+        return 1
+    fi
+
+
+    # if not existed $path/$config, mkdir
+    if [ ! -d $path_text/$config ]; then
+        mkdir -p $path_text/$config
+    fi
+
+    # Run SAT-MapIt to schedule the loop block
+    python3 $ASM_GEN --path $path_text --bench $bench_name --unit $2 > $path_text/$config/"out_raw.sat"
+
+    # Check whether loop block scheduling success
+    if [ $? -ne 0 ]; then
+        echo "FAILED ON LOOP BLOCK SCHEDULING."
+        return 1
+    fi
+
+     # Gnerate csv only on 
+    python3 $CONVERTER --infile $path_text/$config/"out_raw.sat" --outfile $path_text/$config/"instructions.csv"
+
 
     # Check if the compilation was successful
     if [ $? -eq 0 ]; then
@@ -114,23 +146,6 @@ compile_sat() {
         echo "Compilation failed."
     fi
     return 0
-}
-
-# Run satmapit to generate assembly code
-gen_asm(){
-    local path=$1
-    local bench=$2
-    local config="$3x$3"
-
-    # if not existed $path/$config, mkdir
-    if [ ! -d $path/$config ]; then
-        mkdir -p $path/$config
-    fi
-
-    # Run SAT-MapIt
-    python3 $ASM_GEN --path $path --bench $bench > $path/$config/"out_raw.sat" --unit $3
-    # Generate instructions
-    python3 $CONVERTER --infile $path/$config/"out_raw.sat" --outfile $path/$config/"instructions.csv"
 }
 
 # Generate binary code for OpenEdge
@@ -153,19 +168,23 @@ asm2bin(){
 
 benchmark=$1
 config=$2
-task=$3
 
+# Check if the second parameter is provided
+if [ -z "$2" ]; then
+    config=4
+else
+    config=$2
+fi
+
+task=$3
 # use absolute path to avoid any confusion
 # $1 /home/yuxuan/Projects/24S/Compigra/benchmarks/BitCount/IR/
 # $2 bitcount BitCount
 BENCH_BASE="/home/yuxuan/Projects/24S/Compigra/benchmarks/"
 ASM_BASE="/home/yuxuan/Projects/24S/Compigra/benchmarks/${benchmark}/IR/SatMapDAG/"
-# generate asembly code
-if [ "$task" == "asm" ]; then
-    gen_asm $ASM_BASE $benchmark $config
-    exit 0
+
 # generate binary code
-elif [ "$task" == "bin" ]; then
+if [ "$task" == "bin" ]; then
     asm2bin $ASM_BASE $benchmark $config
     exit 0
 else
@@ -173,7 +192,7 @@ else
         mkdir "$BENCH_BASE/$benchmark/IR"
     fi
 
-    compile_sat $benchmark
+    compile_sat $benchmark $config
 fi 
 
 

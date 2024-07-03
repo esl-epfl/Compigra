@@ -84,7 +84,7 @@ private:
   SmallVector<LLVM::ConstantOp> constants = {};
 
   // Argument with corresponding definition operations
-  using selectOps = SmallVector<Operation *, 2>;
+  using selectOps = SmallVector<Value, 2>;
   std::map<int, selectOps> argMaps;
 
   llvm::DenseMap<llvm::StringRef, int> CgraInsts = {

@@ -295,17 +295,13 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   for (auto user : llvm::make_early_inc_range(constOp->getUsers()))
     if (isa<LLVM::BrOp, cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp,
             cgra::SwiOp>(user)) {
-      // First seek whether exists operation produce the same result
-      Operation *reUseOp = existsConstant(value, insertedOps);
-      // If exists, replace the use of the constant operation
-      if (reUseOp) {
-        user->replaceUsesOfWith(constOp.getResult(), reUseOp->getResult(0));
-      } else {
-        // If not, create a new operation
-        auto addOp = generateImmAddOp(constOp, rewriter);
-        user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
-        insertedOps.push_back(addOp);
-      }
+
+      // Always create new operation if the constant is used by branch ops,
+      // which would be propagated to multiple operations in the successor
+      // blocks.
+      auto addOp = generateImmAddOp(constOp, rewriter);
+      user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
+      insertedOps.push_back(addOp);
     }
 
   return success();
