@@ -1,0 +1,50 @@
+Time = 0
+NOP                      NOP                      LWI R0, 4096             SADD R0, 4,ZERO          
+NOP                      NOP                      LWI ROUT, 4100           NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      SADD R1, ZERO,2          NOP                      
+Time = 1
+NOP                      NOP                      NOP                      SHL ROUT, R0,12          
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+Time = 2
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      SADD ROUT, ZERO,RCB      
+Time = 3
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      SADD ROUT, ROUT,ZERO     NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      SADD R0, RCR,ZERO        NOP                      
+Time = 4
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      OR ROUT, RCT,RCB         NOP                      
+NOP                      NOP                      NOP                      LSHR ROUT, RCL,1         
+Time = 5
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      SMUL ROUT, RCT,RCT       NOP                      
+Time = 6
+NOP                      NOP                      SUB ROUT, R0,RCT         NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+Time = 7
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      BSFA ROUT, ROUT,RCB      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      BGE R0,R1 4              NOP                      
+Time = 8
+NOP                      NOP                      NOP                      NOP                      
+NOP                      SWI RCR,4100             NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+Time = 9
+EXIT                     NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      

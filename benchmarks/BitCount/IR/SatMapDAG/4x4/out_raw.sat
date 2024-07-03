@@ -29,9 +29,9 @@ KMS
 [(0, 1), (0, 2), (0, 3)]
 [(0, 1), (0, 2), (0, 4)]
 Adding C1...
-Time: 0.14018607139587402
+Time: 0.11706399917602539
 Adding C2...
-Time: 0.010849952697753906
+Time: 0.010315179824829102
 Adding C3...
 [0, 4]
 [0, 3]
@@ -50,9 +50,9 @@ KMS
 [(0, 1), (0, 2), (0, 4)]
 [(0, 2), (0, 5)]
 Adding C1...
-Time: 0.13002228736877441
+Time: 0.11485481262207031
 Adding C2...
-Time: 0.007269144058227539
+Time: 0.006921529769897461
 Adding C3...
 [0, 4]
 [0, 3]
@@ -62,7 +62,7 @@ Adding C3...
 Adding back...
 [2, 1]
 [4, 0]
-Time: 0.09636497497558594
+Time: 0.09546995162963867
 SAT
 Node 4 on PE 15 at time 2 of it 0
 Node 3 on PE 15 at time 1 of it 0
@@ -80,7 +80,7 @@ Schedule
 [3, 1]
 [4, 2]
 [5]
-Time: 0.29677462577819824
+Time: 0.2715582847595215
 
 
 
@@ -159,12 +159,12 @@ NOP
 NOP
 NOP
 NOP
-NOP
+LWD R0
 NOP
 NOP
 NOP
 LWD R0
-NOP
+LWD R1
 T = 1
 NOP
 NOP
@@ -256,9 +256,9 @@ T = 0
 |- - - - - - - - - - - - - - - - - - - - - 
 |  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
 |- - - - - - - - - - - - - - - - - - - - - 
-|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
-|- - - - - - - - - - - - - - - - - - - - - 
 |  |NOP|  ||  |NOP|  ||  |LWD|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |LWD|  ||  |LWD|  |
  - - - - - - - - - - - - - - - - - - - -- -
 
 T = 1
@@ -323,9 +323,9 @@ T = 0
 |- - - - - - - - - - - - - - - - - - - - - 
 |  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
 |- - - - - - - - - - - - - - - - - - - - - 
-|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|  | -1 |  ||  | -1 |  ||  | 39 |  ||  | -1 |  |
 |- - - - - - - - - - - - - - - - - - - - - 
-|  | -1 |  ||  | -1 |  ||  | 49 |  ||  | -1 |  |
+|  | -1 |  ||  | -1 |  ||  | 49 |  ||  | 29 |  |
  - - - - - - - - - - - - - - - - - - - -- -
 
 T = 1
@@ -387,7 +387,7 @@ Id: 4 name: and time: 2 pe: 15 Rout: ROUT opA: ROUT opB: R0 immediate: 0
 
 Id: 3 name: add time: 1 pe: 15 Rout: ROUT opA: R0 opB:  immediate: -1
 
-Id: 0 name: phi time: 0 pe: 15 Rout: R0 opA: ROUT opB: ROUT immediate: 0
+Id: 0 name: phi time: 0 pe: 15 Rout: R0 opA: ROUT opB: R1 immediate: 0
 
 Id: 2 name: add time: 2 pe: 10 Rout: ROUT opA: RCB opB:  immediate: 1
 

@@ -8,7 +8,7 @@ void SHA1(int W[]){
 int main(){
 
 	int W[80];
-	SHA1(W);
-
+	// SHA1(W);
+	return 0;
 
 }

@@ -264,16 +264,15 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
                                    PatternRewriter &rewriter) const {
 
   auto value = constOp.getValue().cast<IntegerAttr>().getInt();
-  rewriter.modifyOpInPlace(constOp, [&] {
-    constOp->setAttr("value", rewriter.getI32IntegerAttr(value));
-  });
 
   // indirectly load & store cannot exceed reserved address range
   // if the constant is used as immediate for address
   if (isAddrConstOp(constOp) && !isValidImmAddr(constOp)) {
     if (auto validOp = existsConstant(value, insertedOps)) {
       // set it to valid range, to be removed later on
-      constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
+      rewriter.modifyOpInPlace(constOp, [&] {
+        constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
+      });
       rewriter.replaceAllOpUsesWith(constOp, validOp);
     } else {
       auto addOp = generateValidConstant(constOp, rewriter);
@@ -295,7 +294,6 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   for (auto user : llvm::make_early_inc_range(constOp->getUsers()))
     if (isa<LLVM::BrOp, cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp,
             cgra::SwiOp>(user)) {
-
       // Always create new operation if the constant is used by branch ops,
       // which would be propagated to multiple operations in the successor
       // blocks.
@@ -303,6 +301,19 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
       user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
       insertedOps.push_back(addOp);
     }
+
+  // if the constant is not replaced by valid operation, return failure
+  if (!constOp->use_empty()) {
+    // print use
+    for (auto user : constOp->getUsers())
+      llvm::errs() << "Failed to replace Op on: " << *user << "\n";
+    return failure();
+  }
+
+  // set the value to 0, to be removed later on
+  rewriter.modifyOpInPlace(constOp, [&] {
+    constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
+  });
 
   return success();
 }

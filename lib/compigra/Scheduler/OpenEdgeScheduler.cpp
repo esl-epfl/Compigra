@@ -132,7 +132,7 @@ int OpenEdgeKernelScheduler::getConnectedBlock(int pe, std::string direction) {
 
   if (direction == "RCT") {
     row = (row - 1 + nRow) % nRow; // Move up, wrap around if needed
-  } else if (direction == "RCT") {
+  } else if (direction == "RCB") {
     row = (row + 1) % nRow; // Move down, wrap around if needed
   } else if (direction == "RCL") {
     col = (col - 1 + nCol) % nCol; // Move left, wrap around if needed
@@ -386,7 +386,6 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         std::string direct = leftOp ? knownRes[cntOp].opA : knownRes[cntOp].opB;
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
-
         model.addConstr(var == dstPE);
         knownRes[op].pe = dstPE;
         break;

@@ -759,7 +759,8 @@ struct OpenEdgeASMGenPass
       // init scheduler
       OpenEdgeKernelScheduler scheduler(r, maxReg, 4);
       scheduler.assignSchedule(getLoopBlock(r)->getOperations(), instructions);
-      scheduler.createSchedulerAndSolve();
+      if (failed(scheduler.createSchedulerAndSolve()))
+        return signalPassFailure();
       // assign schedule
       asmGen.setSolution(scheduler.getSolution());
       llvm::errs() << "Allocate Register...\n";
