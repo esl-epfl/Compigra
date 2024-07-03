@@ -80,26 +80,52 @@ protected:
 public:
 #ifdef HAVE_GUROBI
 
+  /// Initialize the optimization objective function, which is to minimize the
+  /// kernel total PCs size.
   void initObjectiveFunction(GRBModel &model, GRBVar &funcStartT,
                              GRBVar &funcEndT,
                              std::map<Operation *, GRBVar> &timeOpVar,
                              std::map<Block *, GRBVar> &timeBlkEntry,
                              std::map<Block *, GRBVar> &timeBlkExit,
                              GRBLinExpr &objExpr);
+
+  /// Initialize the variables for the optimization model, including the time
+  /// variables: operation execution time(timeOpVar), block execution start and
+  /// end time(BlkEntry, timeBlkExit), and the space variables: spaceOpVar to
+  /// indicate which PE executes the operation. The time and space variables
+  /// ensures the execution of the operations in the correct order.
   void initVariables(GRBModel &model, std::map<Block *, GRBVar> &timeBlkEntry,
                      std::map<Block *, GRBVar> &timeBlkExit,
                      std::map<Operation *, GRBVar> &timeOpVar,
                      std::map<Operation *, GRBVar> &spaceOpVar);
+
+  /// Assume the loop basic block has been scheduled, initialize the known
+  /// results as constraints for the optimization model.
   void initKnownSchedule(GRBModel &model,
                          std::map<Operation *, GRBVar> &timeOpVar,
                          std::map<Operation *, GRBVar> &spaceOpVar);
+
+  /// Initialize the constraints for the optimization model, including the
+  /// successor should always execuated after the predecessor(both operation and
+  /// block). Also, the operation execution time should belong to the range of
+  /// its belonging block.
   void initOpTimeConstraints(GRBModel &model,
                              std::map<Operation *, GRBVar> &timeOpVar,
                              std::map<Block *, GRBVar> &timeBlkEntry,
                              std::map<Block *, GRBVar> &timeBlkExit);
+
+  /// Initialize the constraints for the optimization model.
+  /// 1. Producer operation should be execuated at neighbour PE or the same PE
+  /// of the consumer operation.
+  /// 2. If the producer operation is at the neighbour PE, no other operations
+  /// can be scheduled at this PE before the consumer operation consumes the
+  /// results.
   void initOpSpaceConstraints(GRBModel &model,
                               std::map<Operation *, GRBVar> &spaceOpVar,
                               std::map<Operation *, GRBVar> &timeOpVar);
+
+  /// Initialize the constraints for both time and space. Specifically, the time
+  /// and space scheduling result for one operation should be unique.
   void initOpTimeSpaceConstraints(GRBModel &model,
                                   std::map<Operation *, GRBVar> &timeOpVar,
                                   std::map<Operation *, GRBVar> &spaceOpVar);
