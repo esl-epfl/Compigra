@@ -497,15 +497,14 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
 
   // Check if the optimization status indicates infeasibility
   if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE ||
-      model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD) {
-    // Model is infeasible
+      model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD)
     return failure();
-  }
 
   // If the model is infeasible, write the model to solution
   for (auto [op, var] : timeVarMap) {
     writeOpResult(op, var.get(GRB_DoubleAttr_X),
                   peVarMap[op].get(GRB_DoubleAttr_X), -1);
   }
+  return success();
 }
 #endif

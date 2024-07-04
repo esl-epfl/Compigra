@@ -57,29 +57,29 @@ Time = 11
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      NOP                      SHL ROUT, RCT,1          
+NOP                      NOP                      NOP                      SHL R0, RCT,1            
 Time = 12
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-SADD R0, RCL,RCL         NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      SADD ROUT, R0,Rout       
 Time = 13
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      SADD ROUT, RCB,RCB       
 NOP                      NOP                      NOP                      NOP                      
-SADD ROUT, R0,RCL        NOP                      NOP                      NOP                      
 Time = 14
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-SADD ROUT, RCB,RCL       NOP                      NOP                      NOP                      
+NOP                      NOP                      SADD ROUT, RCR,RCR       NOP                      
 NOP                      NOP                      NOP                      NOP                      
 Time = 15
 NOP                      NOP                      NOP                      NOP                      
-SADD ROUT, RCB,RCL       NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      SADD R0, RCL,RCT         
 NOP                      NOP                      NOP                      NOP                      
 Time = 16
-EXIT                     NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      EXIT                     
 NOP                      NOP                      NOP                      NOP                      

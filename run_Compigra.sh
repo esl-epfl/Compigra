@@ -74,16 +74,15 @@ compile_sat() {
         exit 1
     fi
 
+    # remove the old IR files
+    rm -rf "$bench_path"/IR/*
+
     # Create the directory to store the DAG text files
     if [ ! -d "$BENCH_BASE/$benchmark/IR/SatMapDAG" ]; then
         mkdir "$BENCH_BASE/$benchmark/IR/SatMapDAG"
     fi
     # remove the old DAG text files
     rm -rf "$bench_path/IR/SatMapDAG"/$bench_name*
-    
-    # folder to place the DAG text files
-    local path_text="$bench_path/IR/SatMapDAG/"
-    mkdir -p "$path_text"
 
     # using clang to compile 32-bit system
     local f_ll="$bench_path/IR/llvm.ll"
@@ -91,6 +90,7 @@ compile_sat() {
     local f_cgra="$bench_path/IR/cgra.mlir"
     local f_dag="$bench_path/IR/SatMapDAG/$bench_name"
     local f_hardware="$bench_path/IR/hardware.mlir"
+    local f_sat="$bench_path/IR/sat.mlir"
     
     # Get llvm IR from clang
     $CLANG14 -S -c -emit-llvm -m32 -O3 \
@@ -120,14 +120,19 @@ compile_sat() {
         return 1
     fi
 
+    # folder to place the DAG text files
+    local sat_text="$bench_path/IR/SatMapDAG/"
+    if [ ! -d $sat_text ]; then
+        mkdir -p $sat_text
+    fi
 
     # if not existed $path/$config, mkdir
-    if [ ! -d $path_text/$config ]; then
-        mkdir -p $path_text/$config
+    if [ ! -d $bench_path/$config ]; then
+        mkdir -p $bench_path/$config
     fi
 
     # Run SAT-MapIt to schedule the loop block
-    python3 $ASM_GEN --path $path_text --bench $bench_name --unit $2 > $path_text/$config/"out_raw.sat"
+    python3 $ASM_GEN --path $sat_text --bench $bench_name --unit $2 > $bench_path/$config/"out_raw.sat"
 
     # Check whether loop block scheduling success
     if [ $? -ne 0 ]; then
@@ -135,15 +140,16 @@ compile_sat() {
         return 1
     fi
 
-     # Gnerate csv only on 
-    python3 $CONVERTER --infile $path_text/$config/"out_raw.sat" --outfile $path_text/$config/"instructions.csv"
+    # Generate the scheduled assembly code
+    $COMPIGRA_OPT --allow-unregistered-dialect \
+        --gen-openedge-asm="func-name=$bench_name map-result=$bench_path/$config/out_raw.sat" \
+        "$f_hardware" > $f_sat
 
-
-    # Check if the compilation was successful
+    # Check if the scheduling was successful
     if [ $? -eq 0 ]; then
         echo "Compilation successful."
     else
-        echo "Compilation failed."
+        echo "Kernel schedule failed."
     fi
     return 0
 }
