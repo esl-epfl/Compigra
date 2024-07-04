@@ -6,28 +6,6 @@
 
 #define TEST_LENGTH 10
 
-// uint32_t isqrt(uint32_t* in_ptr, uint32_t *result_ptr) 
-// {
-// 	uint32_t mask = 1<<14;
-	
-// 	uint32_t temp = 0;
-// 	uint32_t result = *result_ptr;
-
-// 	if(*in_ptr < 0) return 0;
-// 	while(mask)
-// 	{
-// 		temp = result | mask;
-// 		if((((uint32_t)temp)*((uint32_t)temp)) <= ((uint32_t)(*in_ptr)))
-// 			result = temp;
-// 		mask >>= 1;
-// 		printf("flga: %d\n", ((uint32_t)temp)*((uint32_t)temp))-((uint32_t)(*in_ptr));
-// 		printf("result: %d\n", result);
-// 		printf("mask: %d\n\n", mask);
-// 	}
-// 	*result_ptr = result;
-// 	return 0;
-// }
-
 int isqrt(unsigned* in_ptr, int *result_ptr) 
 {
 	int mask = 1<<14;
@@ -42,9 +20,6 @@ int isqrt(unsigned* in_ptr, int *result_ptr)
 		if((((int)temp)*((int)temp)) <= ((int)(*in_ptr)))
 			result = temp;
 		mask >>= 1;
-		// printf("flag: %d\n", ((int)temp)*((int)temp))-((int)(*in_ptr));
-		// printf("result: %d\n", result);
-		// printf("mask: %d\n\n", mask);
 	}
 	*result_ptr = result;
 	return 0;

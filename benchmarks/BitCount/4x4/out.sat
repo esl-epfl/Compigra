@@ -1,46 +1,46 @@
 Time = 0
-NOP                      NOP                      LWI R0, 4096             SADD R0, 4,ZERO          
-NOP                      NOP                      LWI ROUT, 4100           NOP                      
+NOP                      NOP                      SADD R0, 12,ZERO         SADD R0, ZERO,ZERO       
+NOP                      NOP                      SADD ROUT, 12,ZERO       NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      SADD R1, ZERO,2          NOP                      
+NOP                      NOP                      SADD R0, ZERO,ZERO       NOP                      
 Time = 1
-NOP                      NOP                      NOP                      SHL ROUT, R0,12          
-NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      SHL ROUT, R0,12          NOP                      
+NOP                      SHL ROUT, RCR,12         NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 Time = 2
+NOP                      NOP                      NOP                      SADD ROUT, 2048,RCL      
+NOP                      NOP                      SADD ROUT, 2052,RCL      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      NOP                      SADD ROUT, ZERO,RCB      
 Time = 3
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      SADD ROUT, ROUT,ZERO     NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      SADD R0, RCR,ZERO        NOP                      
+NOP                      NOP                      LWI ROUT, RCT            NOP                      
+NOP                      NOP                      NOP                      LWI ROUT, RCB            
 Time = 4
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      OR ROUT, RCT,RCB         NOP                      
-NOP                      NOP                      NOP                      LSHR ROUT, RCL,1         
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      SADD R0, ROUT,ZERO       
 Time = 5
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      SMUL ROUT, RCT,RCT       NOP                      
+NOP                      NOP                      SADD ROUT, RCT,ZERO      SADD ROUT, R0,-1         
 Time = 6
-NOP                      NOP                      SUB ROUT, R0,RCT         NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      SADD ROUT, RCB,1         NOP                      
+NOP                      NOP                      NOP                      AND ROUT, ROUT,R0        
 Time = 7
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      BSFA ROUT, ROUT,RCB      NOP                      
 NOP                      NOP                      NOP                      NOP                      
-NOP                      NOP                      BGE R0,R1 4              NOP                      
+NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      BNE RCR,R0 5             NOP                      
 Time = 8
-NOP                      NOP                      NOP                      NOP                      
-NOP                      SWI RCR,4100             NOP                      NOP                      
+NOP                      NOP                      NOP                      SWI R0,Rout              
+NOP                      NOP                      SWI RCB,Rout             NOP                      
 NOP                      NOP                      NOP                      NOP                      
 NOP                      NOP                      NOP                      NOP                      
 Time = 9
