@@ -165,9 +165,19 @@ private:
   /// specifies the operand in corresponding register in its producing PE.
   LogicalResult convertToInstructionMap();
 
-  // Print op to OpenEdge ISA format. If dropNeighbourBr is set, if branch
-  // destination is the next PC below it, it is removed to be NOP;
+  /// Print op to OpenEdge ISA format. If dropNeighbourBr is set, if branch
+  /// destination is the next PC below it, it is removed to be NOP;
   std::string printInstructionToISA(Operation *op, bool dropNeighbourBr = true);
+
+  /// Operation map to fit into OpenEdge ISA format
+  std::map<std::string, std::string> isaMap = {{"ADD", "SADD"},
+                                               {"SUB", "SSUB"},
+                                               {"MUL", "SMUL"},
+                                               {"DIV", "SDIV"},
+                                               {"SHR", "SRT"},
+                                               {"SHL", "SLT"},
+                                               {"AND", "LAND"},
+                                               {"BR", "JUMP"}};
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",

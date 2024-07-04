@@ -532,13 +532,13 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   // Drop the dialect prefix
   size_t pos = op->getName().getStringRef().find(".");
-  auto opName = op->getName().getStringRef().substr(pos + 1).str();
-  if (isa<LLVM::AddOp, LLVM::MulOp>(op))
-    opName = "s" + opName;
+  std::string opName = op->getName().getStringRef().substr(pos + 1).str();
   // make opName capital
   for (auto &c : opName) {
     c = std::toupper(c);
   }
+  if (isaMap.count(opName) > 0)
+    opName = isaMap[opName];
 
   // If the operation is branchOp, find the branch target
   if (auto brOp = dyn_cast<LLVM::BrOp>(op)) {
@@ -547,7 +547,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
     int curTime = getEarliestExecutionTime(op);
     if (sucTime == curTime + 1 && dropNeighbourBr)
       return "NOP";
-    return "BR " + std::to_string(sucTime + baseTime);
+    return "JUMP " + std::to_string(sucTime + baseTime);
   }
 
   std::string ROUT = "";
@@ -589,7 +589,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
 void OpenEdgeASMGen::dropTimeFrame(int time) {
   SmallVector<Operation *> removeOps;
-  for (auto it : llvm::make_early_inc_range(solution)) {
+  for (auto &it : llvm::make_early_inc_range(solution)) {
     if (it.second.time == time)
       removeOps.push_back(it.first);
     else if (it.second.time > time)
@@ -610,10 +610,10 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
     // Get the operations scheduled at the time step
     auto ops = getOperationsAtTime(t);
     // print ops
-    for (auto [pe, op] : ops) {
-      llvm::errs() << "Time = " << t << " PE = " << pe << " ";
-      llvm::errs() << *op << "\n";
-    }
+    // for (auto [pe, op] : ops) {
+    //   llvm::errs() << "Time = " << t << " PE = " << pe << " ";
+    //   llvm::errs() << *op << "\n";
+    // }
     std::vector<std::string> asmCodeLine;
     bool isNOP = true;
     for (int i = 0; i < nRow; i++) {
@@ -633,12 +633,16 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
     else {
       dropTimeFrame(t);
       endTime = getKernelEnd();
+      t--;
     }
   }
 
   // Write the schedule to the file
   if (outDir.empty())
     return;
+
+  std::string gridOut = outDir + "_grid.sat";
+  outDir = outDir + ".sat";
 
   std::ofstream file(outDir);
   if (!file.is_open()) {
@@ -648,13 +652,24 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 
   // Print the instruction for each time step
   for (int t = 0; t < asmCode.size(); t++) {
-    file << "Time = " << startPC + t << "\n";
+    file << "T = " << startPC + t << "\n";
     for (int i = 0; i < asmCode[t].size(); i++) {
       file << padString(asmCode[t][i], 25);
-      if (!GridLIke)
-        file << "\n";
-      else if (i % nCol == nCol - 1)
-        file << "\n";
+      file << "\n";
+    }
+  }
+
+  // Write the grid-like schedule
+  if (!GridLIke)
+    return;
+
+  std::ofstream gridFile(gridOut);
+  for (int t = 0; t < asmCode.size(); t++) {
+    gridFile << "Time = " << startPC + t << "\n";
+    for (int i = 0; i < asmCode[t].size(); i++) {
+      gridFile << padString(asmCode[t][i], 25);
+      if (i % nCol == nCol - 1)
+        gridFile << "\n";
     }
   }
 }
@@ -740,7 +755,7 @@ struct OpenEdgeASMGenPass
     llvm::errs() << mapResult << "\n";
     size_t pos = mapResult.find_last_of("/");
     // Default output file directory
-    std::string outDir = mapResult.substr(0, pos + 1) + "out.sat";
+    std::string outDir = mapResult.substr(0, pos + 1) + "out";
 
     std::map<int, Instruction> instructions;
     if (failed(readMapFile(mapResult, maxReg, instructions)))
