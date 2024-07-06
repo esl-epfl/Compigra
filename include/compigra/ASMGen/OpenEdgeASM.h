@@ -170,15 +170,19 @@ private:
   std::string printInstructionToISA(Operation *op, bool dropNeighbourBr = true);
 
   /// Operation map to fit into OpenEdge ISA format
-  std::map<std::string, std::string> isaMap = {{"ADD", "SADD"},
-                                               {"SUB", "SSUB"},
-                                               {"MUL", "SMUL"},
-                                               {"DIV", "SDIV"},
-                                               {"SHR", "SRT"},
-                                               {"SHL", "SLT"},
-                                               {"AND", "LAND"},
-                                               {"BR", "JUMP"}};
+  std::map<std::string, std::string> isaMap = {
+      {"ADD", "SADD"}, {"SUB", "SSUB"}, {"MUL", "SMUL"}, {"DIV", "SDIV"},
+      {"SHR", "SRT"},  {"SHL", "SLT"},  {"AND", "LAND"}, {"BR", "JUMP"}};
 };
+
+/// The modulo scheduler might generate efficient schedule result by overlapping
+/// loop with prolog and epilog that does not exist in current CFG. This
+/// function adapts the CFG to the schedule result for further whole kernel
+/// function scheduling.
+LogicalResult
+adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
+                   std::map<int, std::unordered_set<int>> &opTimeMap,
+                   std::vector<std::unordered_set<int>> &bbTimeMap);
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",
                                                  StringRef mapResult = "");

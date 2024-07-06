@@ -464,6 +464,45 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
   return success();
 }
 
+/// Function to split a string by whitespace
+static std::unordered_set<int> getOpIdSplit(std::istringstream &stream) {
+  std::unordered_set<int> tokens;
+
+  int number;
+  while (stream >> number) {
+    llvm::errs() << number << " ";
+    tokens.insert(number);
+  }
+  return tokens;
+}
+
+void satmapit::parsePKE(const std::string &line, unsigned termId,
+                        std::vector<std::unordered_set<int>> &bbTimeMap,
+                        std::map<int, std::unordered_set<int>> &opTimeMap) {
+  std::istringstream lineStream(line);
+  // first parse t: time
+  std::string token, tStr;
+  // Read the first part (t: t)
+  std::getline(lineStream, token, ' ');
+  std::getline(lineStream, token, ' ');
+  int tVal = std::stoi(token.substr(token.find(":") + 1));
+  bbTimeMap.back().insert(tVal);
+
+  // Initialize the set for the values
+  std::unordered_set<int> values;
+
+  // Read the remaining parts (values)
+  while (std::getline(lineStream, token, ' ')) {
+    if (!token.empty()) {
+      values.insert(std::stoi(token));
+      if (std::stoi(token) == termId)
+        // push back a new set for the new basic block
+        bbTimeMap.push_back({});
+    }
+  }
+  opTimeMap[tVal] = values;
+}
+
 void satmapit::parseLine(const std::string &line,
                          std::map<int, Instruction> &instMap,
                          const unsigned maxReg) {

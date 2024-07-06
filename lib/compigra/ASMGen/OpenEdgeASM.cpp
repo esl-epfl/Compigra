@@ -17,6 +17,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
+#include <set>
 
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
@@ -37,6 +38,22 @@ static bool equalValueSet(std::unordered_set<int> set1,
   return true;
 }
 
+static std::set<int>
+getUnionSet(std::map<int, std::unordered_set<int>> opTimeMap,
+            std::unordered_set<int> keys) {
+  // Get the index in ascending order
+  std::set<int> unionSet;
+  if (keys.empty())
+    return unionSet;
+
+  for (auto [key, vals] : opTimeMap) {
+    if (std::find(keys.begin(), keys.end(), key) != keys.end())
+      for (auto val : vals)
+        unionSet.insert(val);
+  }
+  return unionSet;
+}
+
 static int getValueIndex(Value val, std::map<int, Value> opResult) {
   for (auto [ind, res] : opResult)
     if (res.getDefiningOp() == val.getDefiningOp())
@@ -44,8 +61,106 @@ static int getValueIndex(Value val, std::map<int, Value> opResult) {
   return -1;
 }
 
+/// Get the loop block of the region
+static Block *getLoopBlock(Region &region) {
+  for (auto &block : region)
+    for (auto suc : block.getSuccessors())
+      if (suc == &block)
+        return &block;
+  return nullptr;
+}
+
+/// Get the init block of the region
+static Block *getInitBlock(Block *loopBlk) {
+
+  for (auto pred : loopBlk->getPredecessors())
+    if (pred != loopBlk)
+      return pred;
+  return nullptr;
+}
+
+static Block *getFiniBlock(Block *blk) {
+  for (auto succ : blk->getSuccessors())
+    if (succ != blk)
+      return succ;
+  return nullptr;
+}
+
+static void getReplicatedOp(Operation *op, OpBuilder &builder) {}
+
+/// Determine whether a  basic block is the loop kernel by counting the
+/// operation Id is equal to the number of operations in the block.
+static bool isKernel(unsigned endId,
+                     std::map<int, std::unordered_set<int>> &opTimeMap,
+                     std::vector<std::unordered_set<int>> &bbTimeMap) {
+  auto u = getUnionSet(opTimeMap, bbTimeMap[endId]);
+  for (size_t i = 0; i < endId; i++)
+    if (u.find(i) == u.end())
+      return false;
+  return true;
+}
+
+static LogicalResult replaceSucBlock(Operation *term, Block *prevBlock,
+                                     Block *newBlock) {
+  if (auto br = dyn_cast<LLVM::BrOp>(term)) {
+  }
+  return success();
+}
+
+LogicalResult
+compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
+                             std::map<int, std::unordered_set<int>> &opTimeMap,
+                             std::vector<std::unordered_set<int>> &bbTimeMap) {
+  // Get related basic blocks
+  Block *loopBlock = getLoopBlock(region);
+  unsigned numOp = loopBlock->getOperations().size();
+  Block *initBlock = getInitBlock(loopBlock);
+  Block *finiBlock = getFiniBlock(loopBlock);
+
+  // Create a temporal constant operation for CFG adaptation
+
+  auto tmpConst = builder.create<LLVM::ConstantOp>(
+      initBlock->getTerminator()->getLoc(), builder.getI32IntegerAttr(0));
+
+  // init before and afer node for the new created basic block
+  Block *beforeNode = initBlock;
+  Block *afterNode = loopBlock;
+
+  SmallVector<Block *> newBlks = {initBlock};
+  // init basic blocks first
+  for (auto u : bbTimeMap) {
+    if (isKernel(numOp, opTimeMap, bbTimeMap)) {
+      // if the basic block is kernel, the before node should be loop block, the
+      // after node should be finiblock
+      beforeNode = loopBlock;
+      afterNode = finiBlock;
+      newBlks.push_back(loopBlock);
+      continue;
+    }
+    auto opsInd = getUnionSet(opTimeMap, u);
+    // Create a block before its afterNode
+    auto newBlk = builder.createBlock(afterNode);
+    newBlks.push_back(newBlk);
+  }
+  newBlks.push_back(finiBlock);
+  // connect the new initialized basic blocks to the CFG
+  for (size_t i = 0; i < newBlks.size() - 1; ++i) {
+    Block *cur = newBlks[i];
+    Block *next = newBlks[i + 1];
+    // if the terminator exists, change the successor block of the terminator to
+    // next;
+    if (cur->getTerminator())
+      // connect to the next node to
+      if (next == loopBlock) {
+      }
+  }
+
+  return success();
+}
+
 /// Create the interference graph for the operations in the PE, the
-/// corresponding relations with the abstract operands are stored in the opMap.
+/// corresponding relations with the abstract operands are stored in the
+/// opMap.
 static InterferenceGraph<int>
 createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
                         std::map<int, Value> &opMap) {
@@ -338,17 +453,13 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
         }
       }
     }
-    // Allocate register for the operations in the PE
+
+    // allocate register for the operations in the PE
     llvm::errs() << "\nPE = " << pe << "\n";
     if (failed(allocateOutRegInPE(ops, solution, maxReg)))
       return failure();
-
-    // General register allocation for each PE, and check the validity of
-    // previous inference.
   }
 
-  // TODO[@Yuxuan]: Register allocation algorithm required for operations
-  // cannot derived from restrictions.
   for (auto [op, sol] : solution) {
     if (op->getNumResults() > 0 && sol.reg == -1)
       llvm::errs() << "Failed" << *op << " " << sol.pe << "\n";
@@ -392,15 +503,6 @@ int OpenEdgeASMGen::getEarliestExecutionTime(Block *block) {
     time = std::min(time, getEarliestExecutionTime(&op));
   }
   return time;
-}
-
-/// Get the loop block of the region
-static Block *getLoopBlock(Region &region) {
-  for (auto &block : region)
-    for (auto suc : block.getSuccessors())
-      if (suc == &block)
-        return &block;
-  return nullptr;
 }
 
 std::map<int, Operation *> OpenEdgeASMGen::getOperationsAtTime(int time) {
@@ -676,8 +778,11 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 
 /// Function to parse the scheduled results produced by SAT-MapIt line by line
 /// and store the instruction in the map.
-static LogicalResult readMapFile(std::string mapResult, unsigned maxReg,
-                                 std::map<int, Instruction> &instructions) {
+static LogicalResult
+readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
+            std::map<int, std::unordered_set<int>> &opTimeMap,
+            std::vector<std::unordered_set<int>> &bbTimeMap,
+            std::map<int, Instruction> &instructions) {
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open file\n";
@@ -687,16 +792,43 @@ static LogicalResult readMapFile(std::string mapResult, unsigned maxReg,
   std::string line;
 
   bool parsing = false;
+  bool cfgParse = false;
 
   // Read each line and parse it into the map
   while (std::getline(file, line)) {
     parsing = false;
+    // find PKE, parse the modulo schedule
+    if (line.find("PKE") != std::string::npos) {
+      cfgParse = true;
+      continue;
+    }
+    // end of the modulo schedule result
+    if (cfgParse)
+      if (line.find("t:") == std::string::npos)
+        cfgParse = false;
+
     if (line.find("Id:") != std::string::npos) {
       parsing = true;
     }
 
+    if (cfgParse)
+      satmapit::parsePKE(line, numOps, bbTimeMap, opTimeMap);
+
     if (parsing)
       satmapit::parseLine(line, instructions, maxReg);
+  }
+  // print opTimeMap and bbTimeMap
+  for (auto [key, vals] : opTimeMap) {
+    llvm::errs() << key << ": ";
+    for (auto val : vals)
+      llvm::errs() << val << " ";
+    llvm::errs() << "\n";
+  }
+  for (auto vals : bbTimeMap) {
+    llvm::errs() << "{";
+    for (auto val : vals)
+      llvm::errs() << val << " ";
+    llvm::errs() << "}\n";
   }
 
   return success();
@@ -741,6 +873,16 @@ static LogicalResult initBlockArgs(Block *block,
   return success();
 }
 
+/// Determine whether the loop execution time of operations belonging to
+/// different loop overlapped. `bbTimeMap` records the time of prolog, loop
+/// kernel, and epilog. If the end of the `bbTimeMap` which is the epilog are
+/// empty, the loop execution time does not overlap.
+static bool kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap) {
+  if (bbTimeMap.empty())
+    return false;
+  return !bbTimeMap.back().empty();
+}
+
 namespace {
 struct OpenEdgeASMGenPass
     : public compigra::impl::OpenEdgeASMGenBase<OpenEdgeASMGenPass> {
@@ -757,23 +899,33 @@ struct OpenEdgeASMGenPass
     // Default output file directory
     std::string outDir = mapResult.substr(0, pos + 1) + "out";
 
-    std::map<int, Instruction> instructions;
-    if (failed(readMapFile(mapResult, maxReg, instructions)))
-      return signalPassFailure();
-
     for (auto funcOp :
          llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>())) {
       if (funcOp.getName() != funcName)
         continue;
-      auto &r = funcOp.getBody();
-      // init block arguments to be SADD
-      if (failed(initBlockArgs(getLoopBlock(r), instructions, builder)))
+      Region &r = funcOp.getBody();
+      auto loopBlock = getLoopBlock(r);
+      int opSize = loopBlock->getOperations().size();
+
+      // read the loop basic block modulo schedule result
+      std::map<int, Instruction> instructions;
+      std::map<int, std::unordered_set<int>> opTimeMap;
+      std::vector<std::unordered_set<int>> bbTimeMap = {{}};
+      if (failed(readMapFile(mapResult, maxReg,
+                             opSize + loopBlock->getNumArguments() - 1,
+                             opTimeMap, bbTimeMap, instructions)))
         return signalPassFailure();
+      // init block arguments to be SADD
+      if (failed(initBlockArgs(loopBlock, instructions, builder)))
+        return signalPassFailure();
+      // init modulo schedule result
+      if (kernelOverlap(bbTimeMap))
+        adaptCFGWithLoopMS(r, builder, opTimeMap, bbTimeMap);
       // init OpenEdgeASMGen
       OpenEdgeASMGen asmGen(r, maxReg, 4);
       // init scheduler
       OpenEdgeKernelScheduler scheduler(r, maxReg, 4);
-      scheduler.assignSchedule(getLoopBlock(r)->getOperations(), instructions);
+      scheduler.assignSchedule(loopBlock->getOperations(), instructions);
       if (failed(scheduler.createSchedulerAndSolve())) {
         llvm::errs() << "Failed to create scheduler and solve\n";
         return signalPassFailure();
