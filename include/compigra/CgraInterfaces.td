@@ -14,6 +14,8 @@
 #define CGRA_OP_INTERFACES
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/EnumAttr.td"
+
 
 def SOSTInterface : OpInterface<"SOSTInterface"> {
   let cppNamespace = "::cgra";

@@ -244,7 +244,7 @@ ConstTarget::ConstTarget(MLIRContext *ctx) : ConversionTarget(*ctx) {
         return false;
 
     for (auto user : constOp->getUsers()) {
-      if (isa<LLVM::BrOp, cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
+      if (isa<LLVM::BrOp, cgra::ConditionalBranchOp>(
               user))
         // The branch operation cannot use immediate values (Imm) for
         // computation, nor can it propagate constants.
@@ -292,7 +292,7 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   }
 
   for (auto user : llvm::make_early_inc_range(constOp->getUsers()))
-    if (isa<LLVM::BrOp, cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp,
+    if (isa<LLVM::BrOp, cgra::ConditionalBranchOp,
             cgra::SwiOp>(user)) {
       // Always create new operation if the constant is used by branch ops,
       // which would be propagated to multiple operations in the successor

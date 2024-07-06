@@ -19,15 +19,24 @@
 #define CGRA_DIALECT_TD
 
 include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
+include "mlir/IR/RegionKindInterface.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/PatternBase.td"
 include "mlir/IR/SymbolInterfaces.td"
-include "mlir/IR/RegionKindInterface.td"
-include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "compigra/CgraInterfaces.td"
+
+def Cgra_CondBrIPredicateAttr : I32EnumAttr<"CondBrPredicate", "", [
+  I32EnumAttrCase<"eq", 0>,
+  I32EnumAttrCase<"ne", 1>,
+  I32EnumAttrCase<"lt", 2>,
+  I32EnumAttrCase<"ge", 3>,
+]> {
+  let cppNamespace = "::cgra";
+}
 
 def Cgra_Dialect : Dialect {
   let name = "cgra";

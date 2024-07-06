@@ -19,17 +19,17 @@ T = 1
 NOP                      
 NOP                      
 NOP                      
-SHL ROUT, RCT,12         
+SLT ROUT, RCT,12         
 NOP                      
 NOP                      
-SHL R0, RCB,12           
-NOP                      
-NOP                      
-NOP                      
+SLT R0, RCB,12           
 NOP                      
 NOP                      
 NOP                      
-SHL ROUT, RCB,12         
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCB,12         
 NOP                      
 NOP                      
 T = 2
@@ -73,6 +73,23 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, ROUT,ZERO     
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD R0, RCR,ZERO        
+NOP                      
+T = 5
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
 NOP                      
 NOP                      
 NOP                      
@@ -83,7 +100,7 @@ NOP
 NOP                      
 NOP                      
 LSHR ROUT, RCL,1         
-T = 5
+T = 6
 NOP                      
 NOP                      
 NOP                      
@@ -100,24 +117,24 @@ NOP
 NOP                      
 SMUL ROUT, RCT,RCT       
 NOP                      
-T = 6
-NOP                      
-NOP                      
-SUB ROUT, R0,RCT         
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
 T = 7
+NOP                      
+NOP                      
+SSUB ROUT, R0,RCT        
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 8
 NOP                      
 NOP                      
 NOP                      
@@ -134,7 +151,24 @@ NOP
 NOP                      
 BGE R0,R1 4              
 NOP                      
-T = 8
+T = 9
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SWI Rout,R0              
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 10
 EXIT                     
 NOP                      
 NOP                      

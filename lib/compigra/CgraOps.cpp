@@ -304,7 +304,7 @@ LogicalResult MergeOp::verify() {
   return success();
 }
 
-ParseResult BranchOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult JumpOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
   Type type;
   ArrayRef<Type> operandTypes(type);
@@ -322,9 +322,7 @@ ParseResult BranchOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
-void BranchOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
-
-bool BeqOp::isControl() { return true; }
+void JumpOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
 /// Parse the cgra branch-like operation such as beq, bne., blt, and bge.
 static ParseResult
@@ -340,11 +338,7 @@ parseBranchLikeOp(OpAsmParser &parser,
   return success();
 }
 
-bool BneOp::isControl() { return true; }
-
-bool BltOp::isControl() { return true; }
-
-bool BgeOp::isControl() { return true; }
+bool ConditionalBranchOp::isControl() { return true; }
 
 /// Parse the cgra select-like operation such as bzfa and bsfa.
 static ParseResult

@@ -192,8 +192,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
       if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand)[0]))
         continue;
       // Skip the branch operator
-      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(op) &&
-          opInd == 2)
+      if (isa<cgra::ConditionalBranchOp>(op) && opInd == 2)
         break;
 
       if (getValueIndex(operand, opMap) == -1) {
@@ -635,6 +634,22 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   // Drop the dialect prefix
   size_t pos = op->getName().getStringRef().find(".");
   std::string opName = op->getName().getStringRef().substr(pos + 1).str();
+  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(op)) {
+    switch (condBr.getPredicate()) {
+    case cgra::CondBrPredicate::eq:
+      opName = "beq";
+      break;
+    case cgra::CondBrPredicate::ne:
+      opName = "bne";
+      break;
+    case cgra::CondBrPredicate::ge:
+      opName = "bge";
+      break;
+    case cgra::CondBrPredicate::lt:
+      opName = "blt";
+      break;
+    }
+  }
   // make opName capital
   for (auto &c : opName) {
     c = std::toupper(c);
@@ -680,7 +695,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   }
 
   std::string addition = "";
-  if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(op)) {
+  if (isa<cgra::ConditionalBranchOp>(op)) {
     auto block = op->getSuccessor(0);
     int sucTime = getEarliestExecutionTime(block);
     addition = " " + std::to_string(sucTime + baseTime);

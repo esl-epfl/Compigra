@@ -51,8 +51,9 @@ static void getTrueDestOperands(T branchOp,
 /// branch operation. If block is the true branch, then the operand is the
 /// index-th of trueDestOperands. Otherwise, the operand is the index-th of the
 /// falseDestOperands.
-template <typename T>
-static Value getCondBranchOperand(unsigned ind, T *termOp, Block *block) {
+static Value getCondBranchOperand(unsigned ind,
+                                  cgra::ConditionalBranchOp *termOp,
+                                  Block *block) {
   bool targetBlk = termOp->getTrueDest() == block;
 
   if (targetBlk)
@@ -126,21 +127,15 @@ void PrintSatMapItDAG::addNodes(Operation *op) {
   }
 }
 
-/// Get the corresponding value of the block argument.
 static Value getCntBlockArgInPredcessor(unsigned ind, Block *pred,
                                         Block *block) {
   auto termOp = pred->getTerminator();
   if (auto brOp = dyn_cast<LLVM::BrOp>(termOp))
     return brOp->getOperand(ind);
-  if (auto beqOp = dyn_cast<cgra::BeqOp>(termOp))
-    return getCondBranchOperand<cgra::BeqOp>(ind, &beqOp, block);
-  if (auto bneOp = dyn_cast<cgra::BneOp>(termOp))
-    return getCondBranchOperand<cgra::BneOp>(ind, &bneOp, block);
-  if (auto bneOp = dyn_cast<cgra::BgeOp>(termOp))
-    return getCondBranchOperand<cgra::BgeOp>(ind, &bneOp, block);
-  if (auto bneOp = dyn_cast<cgra::BltOp>(termOp))
-    return getCondBranchOperand<cgra::BltOp>(ind, &bneOp, block);
-  return nullptr;
+  if (auto condBrOp = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
+    return getCondBranchOperand(ind, &condBrOp, block);
+  }
+  return NULL;
 }
 
 LogicalResult PrintSatMapItDAG::init() {
@@ -156,15 +151,18 @@ LogicalResult PrintSatMapItDAG::init() {
                << "\n";
   // The liveOut arguments are the false branch arguments
 
-  if (auto beqOp = dyn_cast<cgra::BeqOp>(terminator)) {
-    getFalseDestOperands<cgra::BeqOp>(beqOp, liveOutArgs);
-  } else if (auto bneOp = dyn_cast<cgra::BneOp>(terminator)) {
-    getFalseDestOperands<cgra::BneOp>(bneOp, liveOutArgs);
-  } else if (auto bltOp = dyn_cast<cgra::BltOp>(terminator)) {
-    getFalseDestOperands<cgra::BltOp>(bltOp, liveOutArgs);
-  } else if (auto bgeOp = dyn_cast<cgra::BgeOp>(terminator)) {
-    getFalseDestOperands<cgra::BgeOp>(bgeOp, liveOutArgs);
+  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(terminator)) {
+    liveOutArgs = condBr.getFalseDestOperands();
   }
+  // if (auto beqOp = dyn_cast<cgra::BeqOp>(terminator)) {
+  //   getFalseDestOperands<cgra::BeqOp>(beqOp, liveOutArgs);
+  // } else if (auto bneOp = dyn_cast<cgra::BneOp>(terminator)) {
+  //   getFalseDestOperands<cgra::BneOp>(bneOp, liveOutArgs);
+  // } else if (auto bltOp = dyn_cast<cgra::BltOp>(terminator)) {
+  //   getFalseDestOperands<cgra::BltOp>(bltOp, liveOutArgs);
+  // } else if (auto bgeOp = dyn_cast<cgra::BgeOp>(terminator)) {
+  //   getFalseDestOperands<cgra::BgeOp>(bgeOp, liveOutArgs);
+  // }
 
   // init constant, liveIn, and liveOut operations
   for (auto [ind, arg] : llvm::enumerate(BlockArgs)) {
@@ -176,8 +174,7 @@ LogicalResult PrintSatMapItDAG::init() {
     for (auto pred : loopBlock->getPredecessors()) {
       // Get the value that is passed to the loop block
       Value corrArg = pred->getTerminator()->getOperand(ind);
-      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
-              pred->getTerminator()))
+      if (isa<cgra::ConditionalBranchOp>(pred->getTerminator()))
         corrArg = getCntBlockArgInPredcessor(ind, pred, loopBlock);
       parameters.push_back(corrArg);
       auto defOp = corrArg.getDefiningOp();
@@ -244,6 +241,22 @@ LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
     size_t namePos = node->getName().getStringRef().str().find(".");
     std::string nodeName =
         node->getName().getStringRef().str().substr(namePos + 1);
+    if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(node)) {
+      switch (condBr.getPredicate()) {
+      case cgra::CondBrPredicate::eq:
+        nodeName = "beq";
+        break;
+      case cgra::CondBrPredicate::ne:
+        nodeName = "bne";
+        break;
+      case cgra::CondBrPredicate::ge:
+        nodeName = "bge";
+        break;
+      case cgra::CondBrPredicate::lt:
+        nodeName = "blt";
+        break;
+      }
+    }
 
     int predicateSel = -1;
     int leftOpInd = -1;
@@ -328,8 +341,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
         if (brOp->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber();
       } else if (use.getOperandNumber() > 1 &&
-                 isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
-                     user)) {
+                 isa<cgra::ConditionalBranchOp>(user)) {
         // if it is propagated to the successor block through bne, beq, blt, bge
         if (user->getBlock()->getSuccessor(0) == loopBlock) {
           // LLVM to CGRA conversion should adapt the loopblock to be the first
@@ -350,7 +362,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
   }
 
   for (auto *node : nodes) {
-    if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(node))
+    if (isa<cgra::ConditionalBranchOp>(node))
       continue;
     for (auto &use : node->getUses()) {
       // ignore the cgra branch operation's destination
@@ -358,7 +370,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
       // if user does not belong to loop stage, it should be live-out
       if (user->getBlock() != loopBlock)
         continue;
-      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(user))
+      if (isa<cgra::ConditionalBranchOp>(user))
         // If it is for operand propagation through, where the two operands of
         // branch operations are for comparison flag generation
         if (use.getOperandNumber() > 1) {
@@ -408,8 +420,7 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
       if (auto brOp = dyn_cast<LLVM::BrOp>(user)) {
         if (brOp->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber();
-      } else if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(
-                     user) &&
+      } else if (isa<cgra::ConditionalBranchOp>(user) &&
                  use.getOperandNumber() > 1) {
         // if it is propagated to the successor block through bne, beq, blt, bge
         if (user->getBlock()->getSuccessor(0) == loopBlock) {

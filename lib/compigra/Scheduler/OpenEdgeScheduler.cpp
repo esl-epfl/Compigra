@@ -71,7 +71,7 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val) {
       propVal = termOp->getOperand(argInd);
       auto defOps = getCntOpIndirectly(propVal);
       cntOps.append(defOps.begin(), defOps.end());
-    } else if (isa<cgra::BneOp, cgra::BeqOp, cgra::BltOp, cgra::BgeOp>(
+    } else if (isa<cgra::ConditionalBranchOp>(
                    termOp)) {
       // The terminator would be beq, bne, blt, bge, etc, the propagated value
       // is counted from 2nd operand.
@@ -347,7 +347,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         continue;
 
       // Ignore the propagation of the block argument
-      if (isa<cgra::BeqOp, cgra::BneOp, cgra::BltOp, cgra::BgeOp>(op) &&
+      if (isa<cgra::ConditionalBranchOp>(op) &&
           ind >= 2)
         break;
 
