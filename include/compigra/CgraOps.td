@@ -18,8 +18,6 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/RegionKindInterface.td"
 
-
-
 /// Base class for Cgra dialect operations.
 class Cgra_Op<string mnemonic, list<Trait> traits = []>
     : Op<Cgra_Dialect, mnemonic, traits> {
@@ -235,6 +233,12 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
       setOperand(getTrueDestOperandIndex() + idx, value);
     }
 
+    void setTrueDest(::mlir::Block * block) { setSuccessor(block, trueIndex); }
+
+    void setFalseDest(::mlir::Block * block) {
+      setSuccessor(block, falseIndex);
+    }
+
     unsigned getNumTrueOperands() { return getTrueOperands().size(); }
 
     /// Erase the operand at 'index' from the true operand list.
@@ -273,7 +277,7 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
   }];
 
   let assemblyFormat = [{
-     $predicate
+    `<`$predicate`>`
       ` ` `[` $cmpOperand1 `:` type($cmpOperand1) `,` 
       $cmpOperand2 `:` type($cmpOperand2) `]` `,`
       $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`

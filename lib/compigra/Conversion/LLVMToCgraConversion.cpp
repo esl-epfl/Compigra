@@ -412,57 +412,61 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
 
         auto newDefaltBlk = rewriter.createBlock(
             brOp->getBlock()->getNextNode(), jumpArgsType, locs);
-        llvm::errs() << "Debug\n";
 
         switch (predicate) {
-          Operation *op;
-        case LLVM::ICmpPredicate::eq:
+        case LLVM::ICmpPredicate::eq: {
           rewriter.setInsertionPoint(brOp);
-          op = rewriter.create<cgra::ConditionalBranchOp>(
+          auto op = rewriter.create<cgra::ConditionalBranchOp>(
               brOp->getLoc(), cgra::CondBrPredicate::eq, cmpOp.getOperand(0),
               cmpOp.getOperand(1), condBrBlock, condBrArgs, newDefaltBlk,
               jumpArgs);
           break;
-        case LLVM::ICmpPredicate::ne:
+        }
+        case LLVM::ICmpPredicate::ne: {
           rewriter.setInsertionPoint(brOp);
-          op = rewriter.create<cgra::ConditionalBranchOp>(
+          auto op = rewriter.create<cgra::ConditionalBranchOp>(
               brOp->getLoc(), cgra::CondBrPredicate::ne, cmpOp.getOperand(0),
               cmpOp.getOperand(1), condBrBlock, condBrArgs, newDefaltBlk,
               jumpArgs);
 
           break;
+        }
         case LLVM::ICmpPredicate::slt:
-        case LLVM::ICmpPredicate::ult:
+        case LLVM::ICmpPredicate::ult: {
           rewriter.setInsertionPoint(brOp);
-          op = rewriter.create<cgra::ConditionalBranchOp>(
+          auto op = rewriter.create<cgra::ConditionalBranchOp>(
               brOp->getLoc(), cgra::CondBrPredicate::lt, cmpOp.getOperand(0),
               cmpOp.getOperand(1), condBrBlock, condBrArgs, newDefaltBlk,
               jumpArgs);
           break;
+        }
         case LLVM::ICmpPredicate::sgt:
-        case LLVM::ICmpPredicate::ugt:
+        case LLVM::ICmpPredicate::ugt: {
           rewriter.setInsertionPoint(brOp);
-          op = rewriter.create<cgra::ConditionalBranchOp>(
+          auto op = rewriter.create<cgra::ConditionalBranchOp>(
               brOp->getLoc(), cgra::CondBrPredicate::lt, cmpOp.getOperand(1),
               cmpOp.getOperand(0), condBrBlock, condBrArgs, newDefaltBlk,
               jumpArgs);
           break;
+        }
         case LLVM::ICmpPredicate::sge:
-        case LLVM::ICmpPredicate::uge:
+        case LLVM::ICmpPredicate::uge: {
           rewriter.setInsertionPoint(brOp);
-          op = rewriter.create<cgra::ConditionalBranchOp>(
+          auto op = rewriter.create<cgra::ConditionalBranchOp>(
               brOp->getLoc(), cgra::CondBrPredicate::ge, cmpOp.getOperand(0),
               cmpOp.getOperand(1), condBrBlock, condBrArgs, newDefaltBlk,
               jumpArgs);
           break;
+        }
         case LLVM::ICmpPredicate::sle:
-        case LLVM::ICmpPredicate::ule:
+        case LLVM::ICmpPredicate::ule: {
           rewriter.setInsertionPoint(brOp);
-          op = rewriter.create<cgra::ConditionalBranchOp>(
+          auto op = rewriter.create<cgra::ConditionalBranchOp>(
               brOp->getLoc(), cgra::CondBrPredicate::ge, cmpOp.getOperand(1),
               cmpOp.getOperand(0), condBrBlock, condBrArgs, newDefaltBlk,
               jumpArgs);
           break;
+        }
         default:
           return failure();
         }

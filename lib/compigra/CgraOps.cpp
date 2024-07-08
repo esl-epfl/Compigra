@@ -324,20 +324,6 @@ ParseResult JumpOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void JumpOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
-/// Parse the cgra branch-like operation such as beq, bne., blt, and bge.
-static ParseResult
-parseBranchLikeOp(OpAsmParser &parser,
-                  OpAsmParser::UnresolvedOperand &jumpOperand,
-                  SmallVector<OpAsmParser::UnresolvedOperand, 4> &allOperands,
-                  Type &dataType, OperationState &result) {
-  if (parser.parseLSquare() || parser.parseOperandList(allOperands) ||
-      parser.parseRSquare() || parser.parseOperand(jumpOperand) ||
-      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
-      parser.parseType(dataType))
-    return failure();
-  return success();
-}
-
 bool ConditionalBranchOp::isControl() { return true; }
 
 /// Parse the cgra select-like operation such as bzfa and bsfa.

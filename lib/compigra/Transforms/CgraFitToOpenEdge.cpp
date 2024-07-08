@@ -349,10 +349,8 @@ void CgraFitToOpenEdgePass::runOnOperation() {
 
     for (auto funcOp :
          llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>())) {
-      llvm::errs() << funcOp << "\n";
       if (funcName == funcOp.getName() &&
           failed(outputDATE2023DAG(funcOp, outputDAG)))
-
         return signalPassFailure();
     }
   }
