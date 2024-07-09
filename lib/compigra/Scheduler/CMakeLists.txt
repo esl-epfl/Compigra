@@ -1,6 +1,6 @@
 add_compigra_library(MLIRCompigraKernelSchedule
   OpenEdgeScheduler.cpp
-
+  ModuloScheduleAdapter.cpp
 
   LINK_LIBS PUBLIC
   MLIRIR

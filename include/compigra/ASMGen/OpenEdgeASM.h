@@ -175,15 +175,6 @@ private:
       {"SHR", "SRT"},  {"SHL", "SLT"},  {"AND", "LAND"}, {"BR", "JUMP"}};
 };
 
-/// The modulo scheduler might generate efficient schedule result by overlapping
-/// loop with prolog and epilog that does not exist in current CFG. This
-/// function adapts the CFG to the schedule result for further whole kernel
-/// function scheduling.
-LogicalResult
-adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
-                   std::map<int, std::unordered_set<int>> &opTimeMap,
-                   std::vector<std::unordered_set<int>> &bbTimeMap);
-
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",
                                                  StringRef mapResult = "");
 } // end namespace compigra
