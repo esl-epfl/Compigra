@@ -197,42 +197,43 @@ static unsigned getOpId(Block::OpListType &opList, Operation *search) {
   return -1;
 }
 
-static LogicalResult setCloneOpOperands(Operation *cloneOp, Operation *op) {
-  for (auto [ind, opr] : llvm::enumerate(op->getOperands()))
-    // Determine whether the operands is block arguments
-
-    return success();
-}
-
 static void addBranchArgument(Operation *term, Operation *producer, Block *dest,
-                              OpBuilder *builder) {
+                              OpBuilder *builder, bool insertBefore = false) {
   // need to create a new terminator to replace the old one
   builder->setInsertionPoint(term);
   if (auto br = dyn_cast<LLVM::BrOp>(term)) {
-    SmallVector<Value> operands;
-    for (auto opr : br->getOperands())
-      operands.push_back(opr);
-    operands.push_back(producer->getResult(0));
+    SmallVector<Value> operands{br.getOperands().begin(),
+                                br.getOperands().end()};
+    if (insertBefore)
+      operands.insert(operands.begin(), producer->getResult(0));
+    else
+      operands.push_back(producer->getResult(0));
     builder->create<LLVM::BrOp>(term->getLoc(), operands, dest);
     term->erase();
     return;
   }
 
   if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(term)) {
-    SmallVector<Value> trueOperands;
-    for (auto opr : condBr.getTrueDestOperands())
-      trueOperands.push_back(opr);
-    SmallVector<Value> falseOperands;
-    for (auto opr : condBr.getFalseDestOperands())
-      falseOperands.push_back(opr);
+    SmallVector<Value> trueOperands{condBr.getTrueDestOperands().begin(),
+                                    condBr.getTrueDestOperands().end()};
+
+    SmallVector<Value> falseOperands{condBr.getFalseDestOperands().begin(),
+                                     condBr.getFalseDestOperands().end()};
+
     if (condBr.getTrueDest() == dest) {
-      trueOperands.push_back(producer->getResult(0));
+      if (insertBefore)
+        trueOperands.insert(trueOperands.begin(), producer->getResult(0));
+      else
+        trueOperands.push_back(producer->getResult(0));
       builder->create<cgra::ConditionalBranchOp>(
           term->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
           condBr.getOperand(1), dest, trueOperands, condBr.getFalseDest(),
           falseOperands);
     } else {
-      falseOperands.push_back(producer->getResult(0));
+      if (insertBefore)
+        falseOperands.insert(falseOperands.begin(), producer->getResult(0));
+      else
+        falseOperands.push_back(producer->getResult(0));
       builder->create<cgra::ConditionalBranchOp>(
           term->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
           condBr.getOperand(1), condBr.getTrueDest(), trueOperands, dest,
@@ -281,6 +282,9 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk, Block *prevNode,
                                OpBuilder &builder, bool isKernel = false) {
   auto &opList = templateBlk->getOperations();
   unsigned totalOpNum = opList.size();
+  auto loopBlkArgs =
+      dyn_cast<cgra::ConditionalBranchOp>(templateBlk->getTerminator())
+          .getTrueDestOperands();
   std::map<int, Operation *> curGenOps;
 
   std::vector<int> argIds;
@@ -299,14 +303,26 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk, Block *prevNode,
       else
         builder.setInsertionPointToStart(blk);
 
-      Operation *repOp = builder.clone(*op);
+      Operation *repOp;
+      if (ind == totalOpNum - 1) {
+        if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(op))
+          repOp = builder.create<cgra::ConditionalBranchOp>(
+              lastOp->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
+              condBr.getOperand(1), condBr.getTrueDest(),
+              condBr.getFalseDest());
+      } else
+        repOp = builder.clone(*op);
 
-      for (auto [oprId, opr] : llvm::enumerate(op->getOperands())) {
-        if (isa<BlockArgument>(opr)) {
+      for (auto [oprId, opr] : llvm::enumerate(repOp->getOperands())) {
+        if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
+          auto *corOp = loopBlkArgs[blockArg.getArgNumber()].getDefiningOp();
           // insert block argument for this op
-          auto arg = blk->addArgument(
-              opr.getType(), prevNode->getOperations().back().getLoc());
-          repOp->setOperand(oprId, arg);
+
+          auto newArg = blk->addArgument(opr.getType(),
+                                         blk->getOperations().front().getLoc());
+          repOp->setOperand(oprId, blk->getArguments().back());
+          argIds.push_back(getOpId(opList, corOp));
+
           continue;
         }
 
@@ -315,6 +331,7 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk, Block *prevNode,
         if (defOp)
           if (defOp->getBlock() == templateBlk) {
             unsigned opId = getOpId(opList, defOp);
+
             // use current generated operations
             if (curGenOps.count(opId) > 0) {
               auto corOp = curGenOps[opId];
@@ -329,13 +346,9 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk, Block *prevNode,
               // the prolog or itself
               if (isKernel) {
                 argTypes.push_back(corOp->getResult(0).getType());
-                auto arg =
-                    blk->addArgument(corOp->getResult(0).getType(),
-                                     prevNode->getOperations().back().getLoc());
-                repOp->setOperand(oprId, arg);
-                // revise the predecessor terminator to propagate corOp result
-                addBranchArgument(corOp->getBlock()->getTerminator(), corOp,
-                                  blk, &builder);
+                blk->addArgument(corOp->getResult(0).getType(),
+                                 blk->getOperations().front().getLoc());
+                repOp->setOperand(oprId, blk->getArguments().back());
                 // the loop takes preGenOps[opId] and curGenOps[opId] as
                 // operands
                 argIds.push_back(opId);
@@ -355,20 +368,32 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk, Block *prevNode,
       curGenOps[ind] = repOp;
       lastOp = repOp;
     }
-  // replace curGenOps with preGenOps
-  preGenOps = curGenOps;
 
   // add branch arguments for the kernel block
-  if (isKernel) {
-    // the loop block must have a conditional terminator
+  // the loop block must have a conditional terminator
+  if (isKernel)
     if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(blk->getTerminator()))
       condBr.setTrueDest(blk);
     else
       return failure();
-    for (auto argId : argIds)
-      addBranchArgument(blk->getTerminator(), curGenOps[argId], blk, &builder);
-  }
 
+  // add block arguments for all predecessors
+  auto ll = lastOp->getBlock()->getPredecessors();
+  for (auto pred : lastOp->getBlock()->getPredecessors())
+    for (auto argId : argIds) {
+      if (pred == blk)
+        addBranchArgument(pred->getTerminator(), curGenOps[argId], blk,
+                          &builder);
+      else {
+        if (preGenOps.count(argId) > 0)
+          addBranchArgument(pred->getTerminator(), preGenOps[argId], blk,
+                            &builder);
+      }
+    }
+
+  // update preGenOps with curGenOps
+  for (auto [ind, op] : curGenOps)
+    preGenOps[ind] = op;
   return success();
 }
 
@@ -406,15 +431,14 @@ static void reverseCondBrFlag(cgra::ConditionalBranchOp condBr,
 }
 
 static LogicalResult removeUselessBlockArg(Region &region, OpBuilder &builder) {
-  unsigned num = 0;
   for (auto &block : region) {
-    num++;
     if (block.isEntryBlock())
       continue;
     if (block.getArguments().size() == 0 ||
         std::distance(block.getPredecessors().begin(),
                       block.getPredecessors().end()) > 1)
       continue;
+
     // the block has only one predecessor and have arguments
     // get the corresponding value in the predecessor
     auto prevTerm = (*block.getPredecessors().begin())->getTerminator();
