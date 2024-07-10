@@ -12,13 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
-#include "compigra/CgraDialect.h"
-#include "compigra/CgraOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "unordered_set"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
-#include <set>
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -26,7 +22,7 @@ using namespace mlir;
 using namespace compigra;
 
 /// Get the loop block of the region
-static Block *getLoopBlock(Region &region) {
+Block *ModuloScheduleAdapter::getLoopBlock(Region &region) {
   for (auto &block : region)
     for (auto suc : block.getSuccessors())
       if (suc == &block)
@@ -35,7 +31,7 @@ static Block *getLoopBlock(Region &region) {
 }
 
 /// Get the init block of the region
-static Block *getInitBlock(Block *loopBlk) {
+Block *ModuloScheduleAdapter::getInitBlock(Block *loopBlk) {
   for (auto pred : loopBlk->getPredecessors())
     if (pred != loopBlk)
       return pred;
@@ -44,7 +40,7 @@ static Block *getInitBlock(Block *loopBlk) {
 
 /// the conditional branch block has two successors, for the loop the true
 /// points to the entry of the loop by default, get the false block
-static Block *getCondBrFalseDest(Block *blk) {
+Block *ModuloScheduleAdapter::getCondBrFalseDest(Block *blk) {
   for (auto succ : blk->getSuccessors())
     if (succ != blk)
       return succ;
@@ -203,8 +199,9 @@ static void reverseCondBrFlag(cgra::ConditionalBranchOp condBr,
 /// add producer result as the branch argument for the dest block on the
 /// terminator(term) of predesesor block, insertBefore indicates whether insert
 /// the argument before the original arguments or not
-static void addBranchArgument(Operation *term, Operation *producer, Block *dest,
-                              OpBuilder &builder, bool insertBefore = false) {
+void ModuloScheduleAdapter::addBranchArgument(Operation *term,
+                                              Operation *producer, Block *dest,
+                                              bool insertBefore) {
   // need to create a new terminator to replace the old one
   builder.setInsertionPoint(term);
   if (auto br = dyn_cast<LLVM::BrOp>(term)) {
@@ -252,8 +249,9 @@ static void addBranchArgument(Operation *term, Operation *producer, Block *dest,
 
 /// Remove the block arguments from the terminator of the term specified by
 /// argId, dest is the block to be connected.
-static void removeBlockArgs(Operation *term, std::vector<unsigned> argId,
-                            OpBuilder &builder, Block *dest = nullptr) {
+void ModuloScheduleAdapter::removeBlockArgs(Operation *term,
+                                            std::vector<unsigned> argId,
+                                            Block *dest = nullptr) {
   builder.setInsertionPoint(term);
   if (auto br = dyn_cast<LLVM::BrOp>(term)) {
     SmallVector<Value> operands;
@@ -283,7 +281,7 @@ static void removeBlockArgs(Operation *term, std::vector<unsigned> argId,
   }
 }
 
-static void removeUselessBlockArg(Region &region, OpBuilder &builder) {
+void ModuloScheduleAdapter::removeUselessBlockArg() {
   for (auto &block : region) {
     if (block.isEntryBlock())
       continue;
@@ -314,19 +312,18 @@ static void removeUselessBlockArg(Region &region, OpBuilder &builder) {
     // remove all block arguments
     llvm::BitVector bitVec(argId.size(), true);
     block.eraseArguments(bitVec);
-    removeBlockArgs(prevTerm, argId, builder, &block);
+    removeBlockArgs(prevTerm, argId, &block);
   }
 }
 
 /// Initialize the DFG within the blk with the operations in the opSet
-static LogicalResult initDFGBB(Block *blk, Block *templateBlk,
-                               std::vector<std::set<int>> &opSets,
-                               mapId2Op &preGenOps, OpBuilder &builder,
-                               bool isKernel = false) {
-  auto &opList = templateBlk->getOperations();
+LogicalResult
+ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
+                                 mapId2Op &preGenOps, bool isKernel) {
+  auto &opList = templateBlock->getOperations();
   unsigned totalOpNum = opList.size();
   auto loopBlkArgs =
-      dyn_cast<cgra::ConditionalBranchOp>(templateBlk->getTerminator())
+      dyn_cast<cgra::ConditionalBranchOp>(templateBlock->getTerminator())
           .getTrueDestOperands();
   mapId2Op curGenOps;
 
@@ -370,7 +367,7 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk,
         // Determine whether defined by operation produced in the loop
         auto defOp = opr.getDefiningOp();
         if (defOp)
-          if (defOp->getBlock() == templateBlk) {
+          if (defOp->getBlock() == templateBlock) {
             unsigned opId = getOpId(opList, defOp);
 
             // use current generated operations
@@ -422,12 +419,10 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk,
   for (auto pred : lastOp->getBlock()->getPredecessors())
     for (auto argId : argIds) {
       if (pred == blk)
-        addBranchArgument(pred->getTerminator(), curGenOps[argId], blk,
-                          builder);
+        addBranchArgument(pred->getTerminator(), curGenOps[argId], blk);
       else {
         if (preGenOps.count(argId) > 0)
-          addBranchArgument(pred->getTerminator(), preGenOps[argId], blk,
-                            builder);
+          addBranchArgument(pred->getTerminator(), preGenOps[argId], blk);
       }
     }
 
@@ -439,19 +434,17 @@ static LogicalResult initDFGBB(Block *blk, Block *templateBlk,
 
 /// Generate operations in a basic that if the loop is terminated in the prolog
 /// phase.
-static Block *createExitBlock(cgra::ConditionalBranchOp condBr,
-                              std::vector<std::set<int>> &existOps,
-                              mapId2Op &preGenOps, Block *finiBlock,
-                              Block *templateBlk, OpBuilder &builder,
-                              bool isKernel = false) {
+Block *
+ModuloScheduleAdapter::createExitBlock(cgra::ConditionalBranchOp condBr,
+                                       std::vector<std::set<int>> &existOps,
+                                       mapId2Op &preGenOps, bool isKernel) {
   std::vector<mlir::Location> loc1(condBr.getFalseDestOperands().size(),
                                    condBr->getLoc());
 
   // full Set is the operation index from 0 to
   // templateBlk->getOperations().size() - 1
   std::set<int> fullSet;
-  const int totalNum = templateBlk->getOperations().size();
-  for (int i = 0; i < totalNum; ++i) {
+  for (int i = 0; i < loopOpNum; ++i) {
     fullSet.insert(i);
   }
 
@@ -477,8 +470,7 @@ static Block *createExitBlock(cgra::ConditionalBranchOp condBr,
     }
     //   create DFG within the basic block
     if (!exitOps.empty())
-      if (failed(initDFGBB(connBB, templateBlk, exitOps, preGenOps, builder,
-                           false)))
+      if (failed(initDFGBB(connBB, exitOps, preGenOps, false)))
         return nullptr;
 
     // insert an unconditional branch to terminate the block
@@ -493,18 +485,52 @@ static Block *createExitBlock(cgra::ConditionalBranchOp condBr,
   return connBB;
 }
 
-LogicalResult
-compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
-                             std::map<int, std::unordered_set<int>> &opTimeMap,
-                             std::vector<std::unordered_set<int>> &bbTimeMap) {
+LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath() {
+  // check whether operations in the fini phase use the operations in the loop
+  for (auto &op : finiBlock->getOperations()) {
+    for (auto opr : op.getOperands()) {
+      if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
+        // TODO[@Yuxuan]: general method to handle block arguments
+        return failure();
+      }
+      if (opr.getDefiningOp()) {
+        auto defOp = opr.getDefiningOp();
+        if (defOp->getBlock() != templateBlock)
+          continue;
+        unsigned opId = getOpId(loopOpList, defOp);
+        // insert branch arguments for the terminators of the predecessors
+        // stored in insertOpsList
+        auto blockArg = finiBlock->addArgument(
+            opr.getType(), finiBlock->getOperations().front().getLoc());
+        // replace the use of opr to arg;
+        op.replaceUsesOfWith(opr, blockArg);
+        for (auto opList : insertOpsList)
+          addBranchArgument(opList[opId]->getBlock()->getTerminator(),
+                            opList[opId], finiBlock);
+      }
+    }
+  }
+  return success();
+}
 
-  // Get related basic blocks
-  Block *loopBlock = getLoopBlock(region);
-  auto &loopOpList = loopBlock->getOperations();
-  unsigned numOp = loopOpList.size();
-  Block *initBlock = getInitBlock(loopBlock);
-  Block *loopFalseBlk = getCondBrFalseDest(loopBlock);
-  Block *finiBlock = loopFalseBlk->getSuccessor(0);
+void ModuloScheduleAdapter::removeTempletBlock() {
+  // delete the origianl loop block
+  // collect all operations in reverse order in a temporary vector.
+
+  std::vector<Operation *> toErase;
+  for (auto &op : llvm::reverse(loopOpList)) {
+    toErase.push_back(&op);
+  }
+  // use llvm::make_early_inc_range to erase safely.
+  for (auto *op : llvm::make_early_inc_range(toErase))
+    op->erase();
+
+  templateBlock->erase();
+  // erase loopFalseBlk
+  loopFalseBlk->erase();
+}
+
+LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
 
   SmallVector<Block *> newBlks = {initBlock};
   //   init has been pushed into newBlks, step to prolog
@@ -513,7 +539,7 @@ compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
   // get the union of operations within a basic block
   mapId2Op insertOps = {};
   // the CFG could have multiple path to the fini block,
-  std::vector<mapId2Op> insertOpsList = {};
+  // std::vector<mapId2Op> insertOpsList = {};
   std::vector<std::set<int>> opSet = {};
   std::vector<std::set<int>> opSetPrev = {};
   for (auto [ind, s] : llvm::enumerate(bbTimeMap)) {
@@ -531,11 +557,12 @@ compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
     }
     llvm::errs() << "\n";
 
-    if (isKernel(numOp, getUnionSet(opSet))) {
+    if (isKernel(loopOpNum, getUnionSet(opSet))) {
       phase = loop;
     }
 
-    auto newBlk = builder.createBlock(loopBlock);
+    // insert a new block before the template block
+    auto newBlk = builder.createBlock(templateBlock);
     newBlks.push_back(newBlk);
 
     // connect the current block to the CFG
@@ -555,8 +582,8 @@ compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
         //  enter the loop. here opSetPrev is the operations in the block, and
         //  phase == epilog indicates the block to be created is loop or not.
         auto preGenOps = insertOps;
-        auto connBB = createExitBlock(condBr, opSetPrev, preGenOps, finiBlock,
-                                      loopBlock, builder, phase == epilog);
+        auto connBB =
+            createExitBlock(condBr, opSetPrev, preGenOps, phase == epilog);
         //   put the generated operations on different paths into the list
         insertOpsList.push_back(preGenOps);
         if (!connBB)
@@ -596,8 +623,7 @@ compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
     }
 
     // init DFG in the new created basic block
-    if (failed(initDFGBB(newBlk, loopBlock, opSet, insertOps, builder,
-                         phase == 2)))
+    if (failed(initDFGBB(newBlk, opSet, insertOps, phase == 2)))
       return failure();
   }
 
@@ -610,57 +636,12 @@ compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
   // add the operatons generated in the loop path
   insertOpsList.push_back(insertOps);
 
-  // check whether operations in the fini phase use the operations in the loop
-  for (auto &op : finiBlock->getOperations()) {
-    for (auto opr : op.getOperands()) {
-      if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
-        // TODO[@Yuxuan]: general method to handle block arguments
-        return failure();
-      }
-      if (opr.getDefiningOp()) {
-        auto defOp = opr.getDefiningOp();
-        if (defOp->getBlock() != loopBlock)
-          continue;
-        unsigned opId = getOpId(loopOpList, defOp);
-        // insert branch arguments for the terminators of the predecessors
-        // stored in insertOpsList
-        auto blockArg = finiBlock->addArgument(
-            opr.getType(), finiBlock->getOperations().front().getLoc());
-        // replace the use of opr to arg;
-        op.replaceUsesOfWith(opr, blockArg);
-        for (auto opList : insertOpsList)
-          addBranchArgument(opList[opId]->getBlock()->getTerminator(),
-                            opList[opId], finiBlock, builder);
-      }
-    }
-  }
-
-  // delete the origianl loop block
-  // collect all operations in reverse order in a temporary vector.
-  std::vector<Operation *> toErase;
-  for (auto &op : llvm::reverse(loopOpList)) {
-    toErase.push_back(&op);
-  }
-  // use llvm::make_early_inc_range to erase safely.
-  for (auto *op : llvm::make_early_inc_range(toErase)) {
-    // if op is in use by other operations outside the loop block, replace with
-    // the updated value
-    for (auto user : op->getUsers()) {
-      if (user->getBlock() == loopBlock)
-        continue;
-      user->replaceUsesOfWith(op->getResult(0),
-                              insertOps[getOpId(loopOpList, op)]->getResult(0));
-    }
-    op->erase();
-  }
-  loopBlock->erase();
-
-  // erase loopFalseBlk
-  loopFalseBlk->getTerminator()->erase();
-  loopFalseBlk->erase();
-
+  if (failed(replaceLiveOutWithNewPath()))
+    return failure();
+  // remove the template block in the region
+  removeTempletBlock();
   // remove the block arguments if it is not used
-  removeUselessBlockArg(region, builder);
+  // removeUselessBlockArg();
 
   return success();
 }
