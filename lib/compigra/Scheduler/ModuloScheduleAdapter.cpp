@@ -532,7 +532,6 @@ compigra::adaptCFGWithLoopMS(Region &region, OpBuilder &builder,
     llvm::errs() << "\n";
 
     if (isKernel(numOp, getUnionSet(opSet))) {
-      llvm::errs() << ind << " is kernel\n";
       phase = loop;
     }
 
