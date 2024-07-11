@@ -90,12 +90,31 @@ static bool isLoopBlock(Block *blk) {
   return false;
 }
 
-// TODO[@Yuxuan]: check the signess of the produced operations
 Operation *generateValidConstant(LLVM::ConstantOp constOp,
                                  PatternRewriter &rewriter) {
   int32_t valAttr =
       (int32_t)constOp->getAttr("value").dyn_cast<IntegerAttr>().getInt();
-  // Get the lowest 0-11 bits
+
+  Location loc = constOp->getLoc();
+  // check whether all the user of the consOp is in exit block, if true, set the
+  // insertion location to the exit block
+  bool allExit = true;
+  for (auto user : constOp->getUsers())
+    if (!isa<LLVM::ReturnOp>(user->getBlock()->getTerminator())) {
+      allExit = false;
+      break;
+    }
+  if (allExit) {
+    llvm::errs()
+        << "All the users of the constant operation are in exit block\n";
+    auto firstOp = *constOp->getUsers().begin();
+    rewriter.setInsertionPoint(firstOp);
+    loc = firstOp->getLoc();
+  } else {
+    rewriter.setInsertionPoint(constOp);
+  }
+
+  // get the lowest 0-11 bits
   const int32_t mask0 = 0b111111111111;
   const int32_t mask1 = 0b111111111111000000000000;
   const int32_t mask2 = 0b11111111000000000000000000000000;
@@ -103,10 +122,9 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
     return nullptr;
 
   int32_t part0 = mask0 & valAttr;
-  rewriter.setInsertionPoint(constOp);
+
   auto lowerBits = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(part0));
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part0));
   rewriter.modifyOpInPlace(constOp, [&] {
     constOp->setAttr("value", rewriter.getI32IntegerAttr(part0));
   });
@@ -114,25 +132,22 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
   int32_t part1 = mask1 & valAttr;
   part1 = part1 >> 12;
   auto midBitVal = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(part1));
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part1));
   auto zeroOp = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(0));
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(0));
   // Generate midBits through add operation
-  auto midBits = rewriter.create<LLVM::AddOp>(
-      constOp->getLoc(), constOp.getResult().getType(), midBitVal.getResult(),
-      zeroOp.getResult());
+  auto midBits =
+      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
+                                   midBitVal.getResult(), zeroOp.getResult());
 
   auto shiftImm1 = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(12));
-  auto shiftOp1 = rewriter.create<LLVM::ShlOp>(
-      constOp->getLoc(), constOp.getResult().getType(), midBits.getResult(),
-      shiftImm1.getResult());
-  auto addOp = rewriter.create<LLVM::AddOp>(
-      constOp->getLoc(), constOp.getResult().getType(), lowerBits.getResult(),
-      shiftOp1.getResult());
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(12));
+  auto shiftOp1 =
+      rewriter.create<LLVM::ShlOp>(loc, constOp.getResult().getType(),
+                                   midBits.getResult(), shiftImm1.getResult());
+  auto addOp =
+      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
+                                   lowerBits.getResult(), shiftOp1.getResult());
 
   // If the higher bits are zero
   if (!(mask2 & valAttr)) {
@@ -146,24 +161,21 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
   int32_t part2 = mask2 & valAttr;
   part2 = part2 >> 24;
   auto highBitVal = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(part2));
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part2));
   auto zeroOp2 = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(0));
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(0));
   // Generate highBits through add operation
-  auto highBits = rewriter.create<LLVM::AddOp>(
-      constOp->getLoc(), constOp.getResult().getType(), highBitVal.getResult(),
-      zeroOp2.getResult());
+  auto highBits =
+      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
+                                   highBitVal.getResult(), zeroOp2.getResult());
   auto shiftImm2 = rewriter.create<LLVM::ConstantOp>(
-      constOp->getLoc(), constOp.getResult().getType(),
-      rewriter.getI32IntegerAttr(24));
-  auto shiftOp2 = rewriter.create<LLVM::ShlOp>(
-      constOp->getLoc(), constOp.getResult().getType(), highBits.getResult(),
-      shiftImm2.getResult());
-  auto sumOp = rewriter.create<LLVM::AddOp>(
-      constOp->getLoc(), constOp.getResult().getType(), addOp.getResult(),
-      shiftOp2.getResult());
+      loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(24));
+  auto shiftOp2 =
+      rewriter.create<LLVM::ShlOp>(loc, constOp.getResult().getType(),
+                                   highBits.getResult(), shiftImm2.getResult());
+  auto sumOp =
+      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
+                                   addOp.getResult(), shiftOp2.getResult());
 
   sumOp->setAttr("constant", rewriter.getI32IntegerAttr(valAttr));
   rewriter.replaceOpUsesWithIf(
@@ -267,13 +279,14 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   // indirectly load & store cannot exceed reserved address range
   // if the constant is used as immediate for address
   if (isAddrConstOp(constOp) && !isValidImmAddr(constOp)) {
-    if (auto validOp = existsConstant(value, insertedOps)) {
-      // set it to valid range, to be removed later on
-      rewriter.modifyOpInPlace(constOp, [&] {
-        constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
-      });
-      rewriter.replaceAllOpUsesWith(constOp, validOp);
-    } else {
+    // if (auto validOp = existsConstant(value, insertedOps)) {
+    //   // set it to valid range, to be removed later on
+    //   rewriter.modifyOpInPlace(constOp, [&] {
+    //     constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
+    //   });
+    //   rewriter.replaceAllOpUsesWith(constOp, validOp);
+    // } else
+    {
       auto addOp = generateValidConstant(constOp, rewriter);
       insertedOps.push_back(addOp);
     }
@@ -282,9 +295,10 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
 
   // rewrite the constant operation if the value exceed the range
   if (value < -4097 || value > 4096) {
-    if (auto validOp = existsConstant(value, insertedOps))
-      rewriter.replaceAllOpUsesWith(constOp, validOp);
-    else {
+    // if (auto validOp = existsConstant(value, insertedOps))
+    //   rewriter.replaceAllOpUsesWith(constOp, validOp);
+    // else
+    {
       auto addOp = generateValidConstant(constOp, rewriter);
       insertedOps.push_back(addOp);
     }

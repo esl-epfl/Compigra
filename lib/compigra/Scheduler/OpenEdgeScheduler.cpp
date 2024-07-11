@@ -465,18 +465,20 @@ void OpenEdgeKernelScheduler::initOpTimeSpaceConstraints(
       GRBVar t_eq = model.addVar(0, 1, 0, GRB_BINARY);
       GRBVar s_eq = model.addVar(0, 1, 0, GRB_BINARY);
 
+      GRBVar diffT = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
       GRBVar diffTAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(diffTAbs >= t1 - t2);
-      model.addConstr(diffTAbs >= t2 - t1);
+      model.addConstr(diffT == t1 - t2);
+      model.addGenConstrAbs(diffTAbs, diffT);
 
+      GRBVar diffS = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
       GRBVar diffSAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(diffSAbs >= s1 - s2);
-      model.addConstr(diffSAbs >= s2 - s1);
+      model.addConstr(diffS == s1 - s2);
+      model.addGenConstrAbs(diffSAbs, diffS);
 
       // If diffAbs is zero, t_eq and s_eq should be one, 1e9 is a selected
       // large number to force the binary variable to be one
-      model.addConstr(t_eq >= 1 - diffTAbs / 1e9);
-      model.addConstr(s_eq >= 1 - diffSAbs / 1e9);
+      model.addConstr(t_eq >= 1 - diffTAbs);
+      model.addConstr(s_eq >= 1 - diffSAbs);
       model.addConstr(t_eq + s_eq <= 1);
     }
   }
@@ -547,6 +549,9 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   for (auto [op, var] : timeVarMap) {
     writeOpResult(op, var.get(GRB_DoubleAttr_X),
                   peVarMap[op].get(GRB_DoubleAttr_X), -1);
+    llvm::errs() << "Operation: " << *op << " is scheduled at "
+                 << (int)var.get(GRB_DoubleAttr_X) << " on PE "
+                 << (int)peVarMap[op].get(GRB_DoubleAttr_X) << "\n";
   }
   return success();
 }

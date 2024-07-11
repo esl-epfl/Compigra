@@ -351,6 +351,7 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
         // stored in Rout.
         if (userPE != pe) {
           solution[op].reg = maxReg;
+          llvm::errs() << "!!!!!!!!Allocate ROUT for " << *op << "\n";
           // Found the assigned register, stop seeking from other users
           break;
         }
@@ -836,7 +837,7 @@ struct OpenEdgeASMGenPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-    unsigned maxReg = 3;
+    unsigned maxReg = 4;
     // initial interval
     int II;
 
@@ -917,11 +918,11 @@ struct OpenEdgeASMGenPass
         return signalPassFailure();
       }
 
-      // // assign schedule results and produce assembly
-      // asmGen.setSolution(scheduler.getSolution());
-      // llvm::errs() << "Allocate Register...\n";
-      // asmGen.allocateRegisters(scheduler.knownRes);
-      // asmGen.printKnownSchedule(true, 0, outDir);
+      // assign schedule results and produce assembly
+      asmGen.setSolution(scheduler.getSolution());
+      llvm::errs() << "Allocate Register...\n";
+      asmGen.allocateRegisters(scheduler.knownRes);
+      asmGen.printKnownSchedule(true, 0, outDir);
     }
     // Assign operations in the init phase
   }
