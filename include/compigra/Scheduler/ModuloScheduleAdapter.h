@@ -25,13 +25,16 @@ using namespace mlir;
 namespace compigra {
 /// Data structure to map the operation id to the operation
 using mapId2Op = std::map<int, Operation *>;
-enum loopStage { init, prolog, loop, epilog, fini };
+///
+using opWithId = std::pair<Operation *, int>;
 
 /// The modulo scheduler might generate efficient schedule result by overlapping
 /// loop with prolog and epilog that does not exist in current CFG. This
 /// function adapts the CFG to the schedule result for further whole kernel
 /// function scheduling.
 class ModuloScheduleAdapter {
+  enum loopStage { prolog, loop, epilog };
+
 private:
   Block *getLoopBlock(Region &region);
   Block *getInitBlock(Block *loopBlk);
@@ -96,7 +99,9 @@ private:
   /// The kernel could take operators from prolog and the loop kernel block
   /// itself, which must be processed with block arguments.
   LogicalResult initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
-                          mapId2Op &preGenOps, bool isKernel = false);
+                          mapId2Op &preGenOps, bool isKernel = false,
+                          bool exit = false);
+  ;
 
   /// Generate operations in a basic that if the loop is terminated in the
   /// prolog phase.
@@ -112,14 +117,34 @@ private:
 
   /// Replace liveOut arguments from original loop(templateBlock) to
   /// corresponding value in the CFG.
-  LogicalResult replaceLiveOutWithNewPath();
+  // `insertOpsList` stores the operations which CFG could have multiple path to
+  // propagate to the fini block,
+  LogicalResult replaceLiveOutWithNewPath(std::vector<mapId2Op> insertOpsList);
 
   /// Remove the useless block arguments in the CFG for the prolog stage which
   /// takes the operands from initBlock unconditionally.
   void removeUselessBlockArg();
 
+public:
+  /// Return created DFG in the CFG, this is the
+  /// aggregation of enterDFGs and exitDFGs
+  std::vector<std::vector<opWithId>> getCreatedDFGs() {
+    std::vector<std::vector<opWithId>> createdDFGs;
+    createdDFGs.insert(createdDFGs.end(), enterDFGs.begin(), enterDFGs.end());
+    createdDFGs.insert(createdDFGs.end(), exitDFGs.begin(), exitDFGs.end());
+    return createdDFGs;
+  }
+
+public:
+  /// Data structure to store the enterDFGs(prolog, loop,epilog) and
+  /// exitDFGs(complement of prolog)
+  std::vector<std::vector<opWithId>> enterDFGs = {};
+  std::vector<std::vector<opWithId>> exitDFGs = {};
+
 private:
-  std::vector<mapId2Op> insertOpsList = {};
+  /// Store the operations in preBlocks to enterDFGs and postBlocks to exitDFGs
+  LogicalResult saveDFGs(SmallVector<Block *> preBlocks,
+                SmallVector<Block *> postBlocks);
 };
 
 } // namespace compigra

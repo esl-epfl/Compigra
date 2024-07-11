@@ -71,8 +71,7 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val) {
       propVal = termOp->getOperand(argInd);
       auto defOps = getCntOpIndirectly(propVal);
       cntOps.append(defOps.begin(), defOps.end());
-    } else if (isa<cgra::ConditionalBranchOp>(
-                   termOp)) {
+    } else if (isa<cgra::ConditionalBranchOp>(termOp)) {
       // The terminator would be beq, bne, blt, bge, etc, the propagated value
       // is counted from 2nd operand.
       propVal = termOp->getOperand(argInd + 2);
@@ -146,9 +145,53 @@ int OpenEdgeKernelScheduler::getConnectedBlock(int pe, std::string direction) {
 }
 
 void OpenEdgeKernelScheduler::assignSchedule(
-    mlir::Block::OpListType &ops, std::map<int, Instruction> instructions) {
+    mlir::Block::OpListType &ops,
+    const std::map<int, Instruction> instructions) {
   for (auto [ind, op] : llvm::enumerate(ops)) {
-    knownRes[&op] = instructions[ind];
+    knownRes[&op] = instructions.at(ind);
+  }
+}
+
+void OpenEdgeKernelScheduler::assignSchedule(
+    std::vector<opWithId> &ops, const bool epilog, const int II, int &curPC,
+    std::map<int, int> opExec, const std::map<int, Instruction> instructions,
+    std::vector<int> &totalExec) {
+  std::vector<int> exitExec = totalExec;
+  if (epilog) {
+    int updatePC = curPC;
+    int curRound = -1;
+    int gap = 0;
+    for (auto [op, opId] : ops) {
+      if (exitExec[opId] != curRound) {
+        // update current round
+        gap = opExec.at(opId);
+        curRound = exitExec[opId];
+        // llvm::errs() << "Gap at: " << opId << "is updated by " << curRound
+        //              << " to " << gap << "\n";
+      }
+      knownRes[op] = instructions.at(opId);
+      // llvm::errs() << curPC << " + " << opExec.at(opId) << " - " << gap <<
+      // "\n";
+      knownRes[op].time = curPC + opExec.at(opId) - gap;
+      exitExec[opId]++;
+      if (knownRes[op].time > updatePC)
+        updatePC = knownRes[op].time;
+      llvm::errs() << *op << "[" << opId << ": " << knownRes[op].time << "  "
+                   << knownRes[op].pe << "]\n";
+    }
+    curPC = updatePC;
+    return;
+  }
+
+  for (auto [op, opId] : ops) {
+    knownRes[op] = instructions.at(opId);
+
+    knownRes[op].time = opExec.at(opId) + II * totalExec[opId];
+    curPC = std::max(curPC, knownRes[op].time);
+
+    totalExec[opId]++;
+    llvm::errs() << *op << "[" << opId << ": " << knownRes[op].time << "  "
+                 << knownRes[op].pe << "]\n";
   }
 }
 
@@ -347,8 +390,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         continue;
 
       // Ignore the propagation of the block argument
-      if (isa<cgra::ConditionalBranchOp>(op) &&
-          ind >= 2)
+      if (isa<cgra::ConditionalBranchOp>(op) && ind >= 2)
         break;
 
       // The getCntOpIndirectly gets definition operations of the operand which
@@ -366,6 +408,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         continue;
       producers.push_back(cntOp);
     }
+
     addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
                            spaceOpVar);
 

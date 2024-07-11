@@ -49,7 +49,7 @@ Block *ModuloScheduleAdapter::getCondBrFalseDest(Block *blk) {
 
 /// Determine whether a  basic block is the loop kernel by counting the
 /// operation Id is equal to the number of operations in the block.
-static bool isKernel(unsigned endId, const std::set<int> bb) {
+static bool isLoopKernel(unsigned endId, const std::set<int> bb) {
   for (size_t i = 0; i < endId; i++)
     if (std::find(bb.begin(), bb.end(), i) == bb.end())
       return false;
@@ -223,6 +223,11 @@ void ModuloScheduleAdapter::addBranchArgument(Operation *term,
     SmallVector<Value> falseOperands{condBr.getFalseDestOperands().begin(),
                                      condBr.getFalseDestOperands().end()};
 
+    // if (producer->getResults().size() == 1) {
+    //   llvm::errs() << "add branch argument for " << *term << "\n";
+    // } else
+    //   llvm::errs() << "invalid " << *producer << "\n";
+
     if (condBr.getTrueDest() == dest) {
       if (insertBefore)
         trueOperands.insert(trueOperands.begin(), producer->getResult(0));
@@ -232,7 +237,8 @@ void ModuloScheduleAdapter::addBranchArgument(Operation *term,
           term->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
           condBr.getOperand(1), dest, trueOperands, condBr.getFalseDest(),
           falseOperands);
-    } else {
+
+    } else if (condBr.getFalseDest() == dest) {
       if (insertBefore)
         falseOperands.insert(falseOperands.begin(), producer->getResult(0));
       else
@@ -241,6 +247,8 @@ void ModuloScheduleAdapter::addBranchArgument(Operation *term,
           term->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
           condBr.getOperand(1), condBr.getTrueDest(), trueOperands, dest,
           falseOperands);
+    } else {
+      llvm::errs() << "\nfailed on " << *term << "\n";
     }
     term->erase();
     return;
@@ -319,13 +327,15 @@ void ModuloScheduleAdapter::removeUselessBlockArg() {
 /// Initialize the DFG within the blk with the operations in the opSet
 LogicalResult
 ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
-                                 mapId2Op &preGenOps, bool isKernel) {
+                                 mapId2Op &preGenOps, bool isKernel,
+                                 bool exit) {
   auto &opList = templateBlock->getOperations();
   unsigned totalOpNum = opList.size();
   auto loopBlkArgs =
       dyn_cast<cgra::ConditionalBranchOp>(templateBlock->getTerminator())
           .getTrueDestOperands();
   mapId2Op curGenOps;
+  std::vector<opWithId> createdDFG;
 
   std::vector<int> argIds;
   SmallVector<Type> argTypes;
@@ -344,12 +354,11 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
         builder.setInsertionPointToStart(blk);
 
       Operation *repOp;
-      if (ind == totalOpNum - 1) {
-        if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(op))
-          repOp = builder.create<cgra::ConditionalBranchOp>(
-              lastOp->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
-              condBr.getOperand(1), condBr.getTrueDest(),
-              condBr.getFalseDest());
+
+      if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(op)) {
+        repOp = builder.create<cgra::ConditionalBranchOp>(
+            lastOp->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
+            condBr.getOperand(1), condBr.getTrueDest(), condBr.getFalseDest());
       } else
         repOp = builder.clone(*op);
 
@@ -403,6 +412,7 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
       }
 
       curGenOps[ind] = repOp;
+      createdDFG.push_back({repOp, ind});
       lastOp = repOp;
     }
 
@@ -416,7 +426,8 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
   }
 
   // add block arguments for all predecessors
-  for (auto pred : lastOp->getBlock()->getPredecessors())
+  for (auto pred :
+       llvm::make_early_inc_range(lastOp->getBlock()->getPredecessors()))
     for (auto argId : argIds) {
       if (pred == blk)
         addBranchArgument(pred->getTerminator(), curGenOps[argId], blk);
@@ -429,6 +440,14 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
   // update preGenOps with curGenOps
   for (auto [ind, op] : curGenOps)
     preGenOps[ind] = op;
+
+  // store curGenOps
+  if (exit)
+    exitDFGs.push_back(createdDFG);
+  else
+    enterDFGs.push_back(createdDFG);
+
+  // createdDFGs.push_back(curGenOps);
   return success();
 }
 
@@ -461,16 +480,12 @@ ModuloScheduleAdapter::createExitBlock(cgra::ConditionalBranchOp condBr,
           std::vector<std::set<int>>(existOps.begin() + i, existOps.end()));
       // get the difference between unionSet and full set;
       auto exitLoopOps = getDiffSet(fullSet, unionSet);
-      llvm::errs() << "[ ";
-      for (auto i : exitLoopOps)
-        llvm::errs() << i << " ";
-      llvm::errs() << "]\n";
       if (!exitLoopOps.empty())
         exitOps.push_back(exitLoopOps);
     }
     //   create DFG within the basic block
     if (!exitOps.empty())
-      if (failed(initDFGBB(connBB, exitOps, preGenOps, false)))
+      if (failed(initDFGBB(connBB, exitOps, preGenOps, false, true)))
         return nullptr;
 
     // insert an unconditional branch to terminate the block
@@ -485,7 +500,8 @@ ModuloScheduleAdapter::createExitBlock(cgra::ConditionalBranchOp condBr,
   return connBB;
 }
 
-LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath() {
+LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
+    std::vector<mapId2Op> insertOpsList) {
   // check whether operations in the fini phase use the operations in the loop
   for (auto &op : finiBlock->getOperations()) {
     for (auto opr : op.getOperands()) {
@@ -513,6 +529,32 @@ LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath() {
   return success();
 }
 
+LogicalResult ModuloScheduleAdapter::saveDFGs(SmallVector<Block *> preBlocks,
+                                              SmallVector<Block *> postBlocks) {
+  // save the enter DFGs
+  for (auto [i, blk] : llvm::enumerate(preBlocks)) {
+    if (enterDFGs[i].size() != blk->getOperations().size()) {
+      return failure();
+    }
+    for (auto [j, op] : llvm::enumerate(blk->getOperations())) {
+      auto &corrDFG = enterDFGs[i];
+      corrDFG[j].first = &op;
+    }
+  }
+
+  // save the exit DFGs
+  for (auto [i, blk] : llvm::enumerate(postBlocks)) {
+    if (exitDFGs[i].size() != blk->getOperations().size()) {
+      return failure();
+    }
+    for (auto [j, op] : llvm::enumerate(blk->getOperations())) {
+      auto &corrDFG = exitDFGs[i];
+      corrDFG[j].first = &op;
+    }
+  }
+  return success();
+}
+
 void ModuloScheduleAdapter::removeTempletBlock() {
   // delete the origianl loop block
   // collect all operations in reverse order in a temporary vector.
@@ -531,15 +573,16 @@ void ModuloScheduleAdapter::removeTempletBlock() {
 }
 
 LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
-
+  /// Data structure to store the liveOut arguments in different loop iterations
+  std::vector<mapId2Op> insertOpsList = {};
   SmallVector<Block *> newBlks = {initBlock};
+  SmallVector<Block *> preParts;
+  SmallVector<Block *> postParts;
   //   init has been pushed into newBlks, step to prolog
   loopStage phase = prolog;
 
   // get the union of operations within a basic block
   mapId2Op insertOps = {};
-  // the CFG could have multiple path to the fini block,
-  // std::vector<mapId2Op> insertOpsList = {};
   std::vector<std::set<int>> opSet = {};
   std::vector<std::set<int>> opSetPrev = {};
   for (auto [ind, s] : llvm::enumerate(bbTimeMap)) {
@@ -548,27 +591,24 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
       phase = epilog;
 
     opSetPrev = opSet;
-    opSet = getOperationSet(opTimeMap, s, opSet, phase == 3);
-    for (auto u : opSet) {
-      llvm::errs() << "{";
-      for (auto i : u)
-        llvm::errs() << i << " ";
-      llvm::errs() << "} ";
-    }
-    llvm::errs() << "\n";
+    opSet = getOperationSet(opTimeMap, s, opSet, phase == epilog);
 
-    if (isKernel(loopOpNum, getUnionSet(opSet))) {
+    if (isLoopKernel(loopOpNum, getUnionSet(opSet))) {
       phase = loop;
     }
 
     // insert a new block before the template block
     auto newBlk = builder.createBlock(templateBlock);
     newBlks.push_back(newBlk);
+    if (phase == epilog)
+      postParts.push_back(newBlk);
+    else
+      preParts.push_back(newBlk);
 
     // connect the current block to the CFG
     switch (phase) {
-    case 1:
-    case 2: {
+    case prolog:
+    case loop: {
       // if it is prolog, connect the block with block before it
       auto predBlk = newBlks.rbegin()[1];
       auto termOp = predBlk->getTerminator();
@@ -577,17 +617,21 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
         // the fini block
         std::vector<mlir::Location> loc1(condBr.getFalseDestOperands().size(),
                                          condBr->getLoc());
-        //  the false dest is created in the successor block generation stage so
-        //  the predecessors' condition branch can determine whether quit or
-        //  enter the loop. here opSetPrev is the operations in the block, and
-        //  phase == epilog indicates the block to be created is loop or not.
+        // generate true and false successors for last block,
+        // suppose last block is BB0, the terminator decides to re-enter the
+        // loop(newBlk) or quit the loop(connBB)
+        //  ^BB0:
+        //  %flag, if true, go to ^newBlk, else go to ^connBB
+        //   `opSetPrev` is the operations in the BB0, and phase == epilog
+        //   indicates whether BB0 is loop
         auto preGenOps = insertOps;
         auto connBB =
             createExitBlock(condBr, opSetPrev, preGenOps, phase == epilog);
         //   put the generated operations on different paths into the list
-        insertOpsList.push_back(preGenOps);
         if (!connBB)
           return failure();
+        insertOpsList.push_back(preGenOps);
+        postParts.push_back(connBB);
 
         // create a new condBr op to switch the false and true dest
         builder.setInsertionPoint(termOp);
@@ -604,7 +648,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
       }
       break;
     }
-    case 3: {
+    case epilog: {
       auto predBlk = newBlks.rbegin()[1];
       auto termOp = predBlk->getTerminator();
       if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
@@ -623,25 +667,32 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     }
 
     // init DFG in the new created basic block
-    if (failed(initDFGBB(newBlk, opSet, insertOps, phase == 2)))
+    if (failed(initDFGBB(newBlk, opSet, insertOps, phase == loop,
+                         phase == epilog)))
       return failure();
-  }
+
+  } // end of the prolog-loop-epilog creation
 
   // create a jump to the fini block
-  auto epilog = newBlks.rbegin()[0];
-  builder.setInsertionPointToEnd(epilog);
-  builder.create<LLVM::BrOp>(epilog->getOperations().back().getLoc(),
+  auto epilogBlk = newBlks.rbegin()[0];
+  builder.setInsertionPointToEnd(epilogBlk);
+  builder.create<LLVM::BrOp>(epilogBlk->getOperations().back().getLoc(),
                              finiBlock);
 
   // add the operatons generated in the loop path
   insertOpsList.push_back(insertOps);
 
-  if (failed(replaceLiveOutWithNewPath()))
+  if (failed(replaceLiveOutWithNewPath(insertOpsList)))
     return failure();
   // remove the template block in the region
   removeTempletBlock();
   // remove the block arguments if it is not used
-  // removeUselessBlockArg();
+  removeUselessBlockArg();
+
+  if (failed(saveDFGs(preParts, postParts)))
+    return failure();
+
+  llvm::errs() << "FINISH SUCCESSFULLY\n";
 
   return success();
 }

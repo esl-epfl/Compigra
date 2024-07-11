@@ -74,8 +74,6 @@ static LogicalResult replaceSucBlock(Operation *term, Block *newBlock,
   return failure();
 }
 
-
-
 /// Create the interference graph for the operations in the PE, the
 /// corresponding relations with the abstract operands are stored in the
 /// opMap.
@@ -718,7 +716,7 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 /// Function to parse the scheduled results produced by SAT-MapIt line by
 /// line and store the instruction in the map.
 static LogicalResult
-readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
+readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps, int &II,
             std::map<int, std::unordered_set<int>> &opTimeMap,
             std::vector<std::unordered_set<int>> &bbTimeMap,
             std::map<int, Instruction> &instructions) {
@@ -748,6 +746,11 @@ readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
 
     if (line.find("Id:") != std::string::npos) {
       parsing = true;
+    }
+
+    if (line.find("II: ") != std::string::npos) {
+      II = std::stoi(line.substr(4));
+      continue;
     }
 
     if (cfgParse)
@@ -809,6 +812,21 @@ static bool kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap) {
   return !bbTimeMap.back().empty();
 }
 
+/// Get the execution time of operations in one loop iteration
+static std::map<int, int>
+getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap) {
+  std::map<int, int> opExecT;
+  std::set<int> opIds;
+  for (auto &timeSet : opTimeMap) {
+    for (auto opId : timeSet.second)
+      if (opIds.count(opId) == 0) {
+        opIds.insert(opId);
+        opExecT[opId] = timeSet.first;
+      }
+  }
+  return opExecT;
+}
+
 namespace {
 struct OpenEdgeASMGenPass
     : public compigra::impl::OpenEdgeASMGenBase<OpenEdgeASMGenPass> {
@@ -819,6 +837,8 @@ struct OpenEdgeASMGenPass
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
     unsigned maxReg = 3;
+    // initial interval
+    int II;
 
     llvm::errs() << mapResult << "\n";
     size_t pos = mapResult.find_last_of("/");
@@ -838,26 +858,64 @@ struct OpenEdgeASMGenPass
       std::map<int, std::unordered_set<int>> opTimeMap;
       std::vector<std::unordered_set<int>> bbTimeMap = {{}};
       if (failed(readMapFile(mapResult, maxReg,
-                             opSize + loopBlock->getNumArguments() - 1,
+                             opSize + loopBlock->getNumArguments() - 1, II,
                              opTimeMap, bbTimeMap, instructions)))
         return signalPassFailure();
+
       // init block arguments to be SADD
       if (failed(initBlockArgs(loopBlock, instructions, builder)))
         return signalPassFailure();
+      // update the operation size if the block argument is considered
+      opSize = loopBlock->getOperations().size();
+
+      // init scheduler
+      OpenEdgeKernelScheduler scheduler(r, maxReg, 4);
+
       // init modulo schedule result
-      if (kernelOverlap(bbTimeMap))
-        adaptCFGWithLoopMS(r, builder, opTimeMap, bbTimeMap);
-      llvm::errs() << funcOp << "\n";
+      if (kernelOverlap(bbTimeMap)) {
+        ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(),
+                                      opTimeMap, bbTimeMap);
+        adapter.adaptCFGWithLoopMS();
+        // llvm::errs() << funcOp << "\n";
+
+        // hash map to store the total round of operation execution, where
+        // totalRound[ind] represents ind-th operation's in the loop has been
+        // executed totalRound[ind] times
+        std::vector<int> totalRound(opSize, 0);
+        std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
+
+        int curPC = 0;
+        llvm::errs() << "opSize: " << opSize << "\n";
+        llvm::errs() << "totalRound: " << totalRound.size() << "\n";
+
+        auto preParts = adapter.enterDFGs;
+        auto postParts = adapter.exitDFGs;
+        std::vector<std::vector<int>> preOpIds;
+        for (size_t i = 0; i < preParts.size(); i++) {
+          scheduler.assignSchedule(preParts[i], false, II, curPC, execTime,
+                                   instructions, totalRound);
+          curPC++;
+          preOpIds.push_back(totalRound);
+          llvm::errs() << "-----------------------\n";
+        }
+
+        for (int i = postParts.size() - 1; i >= 0; i--) {
+          scheduler.assignSchedule(postParts[i], true, II, curPC, execTime,
+                                   instructions, preOpIds[i]);
+          curPC++;
+          llvm::errs() << "-----------------------\n";
+        }
+
+      } else {
+        scheduler.assignSchedule(loopBlock->getOperations(), instructions);
+      }
 
       // init OpenEdgeASMGen
-      // OpenEdgeASMGen asmGen(r, maxReg, 4);
-      // // init scheduler
-      // OpenEdgeKernelScheduler scheduler(r, maxReg, 4);
-      // scheduler.assignSchedule(loopBlock->getOperations(),
-      // instructions); if (failed(scheduler.createSchedulerAndSolve())) {
-      //   llvm::errs() << "Failed to create scheduler and solve\n";
-      //   return signalPassFailure();
-      // }
+      OpenEdgeASMGen asmGen(r, maxReg, 4);
+      if (failed(scheduler.createSchedulerAndSolve())) {
+        llvm::errs() << "Failed to create scheduler and solve\n";
+        return signalPassFailure();
+      }
 
       // // assign schedule results and produce assembly
       // asmGen.setSolution(scheduler.getSolution());

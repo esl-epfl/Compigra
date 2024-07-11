@@ -13,6 +13,7 @@
 #ifndef KERNEL_SCHEDULE_H
 #define KERNEL_SCHEDULE_H
 
+#include "compigra/Scheduler/ModuloScheduleAdapter.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 using namespace mlir;
@@ -141,7 +142,12 @@ private:
 public:
   /// Assign the schedule results from SAT-MapIt printout to the operations
   void assignSchedule(mlir::Block::OpListType &ops,
-                      std::map<int, Instruction> instructions);
+                      const std::map<int, Instruction> instructions);
+
+  void assignSchedule(std::vector<opWithId> &ops, const bool epilog,
+                      const int II, int &curPC, std::map<int, int> opExec,
+                      const std::map<int, Instruction> instructions,
+                      std::vector<int> &totalExec);
 
   // void printKownSchedule();
   std::map<Operation *, Instruction> knownRes;
