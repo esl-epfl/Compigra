@@ -214,18 +214,35 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
 LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
                              PatternRewriter &rewriter) {
   auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>();
+
+  Location loc = constOp->getLoc();
+  // check whether all the user of the consOp is in exit block, if true, set the
+  // insertion location to the exit block
+  bool allExit = true;
+  for (auto user : constOp->getUsers())
+    if (!isa<LLVM::ReturnOp>(user->getBlock()->getTerminator())) {
+      allExit = false;
+      break;
+    }
+  if (allExit) {
+    llvm::errs()
+        << "All the users of the constant operation are in exit block\n";
+    auto firstOp = *constOp->getUsers().begin();
+    rewriter.setInsertionPoint(firstOp);
+    loc = firstOp->getLoc();
+  } else {
+    rewriter.setInsertionPoint(constOp);
+  }
   // insert a new zero constant operation
   rewriter.setInsertionPoint(constOp);
   auto zeroConst = rewriter.create<LLVM::ConstantOp>(
-      constOp.getLoc(), constOp.getType(), rewriter.getI32IntegerAttr(0));
+      loc, constOp.getType(), rewriter.getI32IntegerAttr(0));
   rewriter.setInsertionPoint(constOp->getBlock()->getTerminator());
   // replicate the constant operation in case it is used by multiple operations
   auto immConst = rewriter.create<LLVM::ConstantOp>(
-      constOp.getLoc(), constOp.getType(),
-      rewriter.getI32IntegerAttr(intAttr.getInt()));
+      loc, constOp.getType(), rewriter.getI32IntegerAttr(intAttr.getInt()));
   auto addOp = rewriter.create<LLVM::AddOp>(
-      constOp->getBlock()->getTerminator()->getLoc(), constOp.getType(),
-      zeroConst.getResult(), immConst.getResult());
+      loc, constOp.getType(), zeroConst.getResult(), immConst.getResult());
   // set the imm attribute of the operation
   addOp->setAttr("constant", intAttr);
   return addOp;

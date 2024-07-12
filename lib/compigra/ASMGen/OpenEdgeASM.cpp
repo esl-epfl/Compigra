@@ -105,6 +105,8 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
   // Add operands to the graph
   for (auto it = opList.rbegin(); it != opList.rend(); ++it) {
     Operation *op = it->second;
+    if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
+      continue;
     for (auto [opInd, operand] : llvm::enumerate(op->getOperands())) {
       if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand)[0]))
         continue;
@@ -121,18 +123,30 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     }
   }
 
+  std::vector<Operation *> sortedOps;
+  for (auto [t, op] : opList) {
+    sortedOps.push_back(op);
+    llvm::errs() << "put: " << *op << "\n";
+  }
+  llvm::errs() << "sortedOps size: " << sortedOps.size() << "\n";
   std::map<Operation *, std::unordered_set<int>> liveIn;
   std::map<Operation *, std::unordered_set<int>> liveOut;
   while (true) {
     bool changed = false;
-    for (auto [t, op] : opList) {
-      // Calculate liveOut
-      for (auto succ : op->getUsers())
+    for (int i = sortedOps.size() - 1; i >= 0; i--) {
+      auto op = sortedOps[i];
+      if (i < sortedOps.size() - 1) {
+        auto succ = sortedOps[i + 1];
+        // Calculate liveOut
+        // if liveIn is empty, continue
+        if (liveIn.find(succ) == liveIn.end())
+          continue;
         for (auto live : liveIn[succ])
           if (liveOut[op].find(live) == liveOut[op].end()) {
             changed = true;
             liveOut[op].insert(live);
           }
+      }
 
       // Calculate liveIn
       std::unordered_set<int> newLiveIn = use[op];
@@ -151,7 +165,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
   }
 
   // create interference graph with defOp and liveOut
-  for (auto [t, op] : opList) {
+  for (auto op : sortedOps) {
     if (op->getNumResults() == 0)
       continue;
     auto defOp = getValueIndex(op->getResult(0), opMap);
@@ -234,7 +248,7 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
   //                              ind) == graph.vertices.end())
   //                << "\n";
   // }
-  // graph.printGraph();
+  graph.printGraph();
 
   // allocate register using graph coloring
   // TODO[@Yuxuan]: Spill the graph if the number of registers is not
@@ -351,7 +365,6 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
         // stored in Rout.
         if (userPE != pe) {
           solution[op].reg = maxReg;
-          llvm::errs() << "!!!!!!!!Allocate ROUT for " << *op << "\n";
           // Found the assigned register, stop seeking from other users
           break;
         }
@@ -897,14 +910,12 @@ struct OpenEdgeASMGenPass
                                    instructions, totalRound);
           curPC++;
           preOpIds.push_back(totalRound);
-          llvm::errs() << "-----------------------\n";
         }
 
         for (int i = postParts.size() - 1; i >= 0; i--) {
           scheduler.assignSchedule(postParts[i], true, II, curPC, execTime,
                                    instructions, preOpIds[i]);
           curPC++;
-          llvm::errs() << "-----------------------\n";
         }
 
       } else {

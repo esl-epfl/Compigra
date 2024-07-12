@@ -293,7 +293,7 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
   GRBVar xRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
   GRBVar xCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
 
-  auto x = spaceOpVar[consumer];
+  auto &x = spaceOpVar[consumer];
   // Constraints to calculate row and column indices of x
   // xRow == x / nCol
   model.addConstr(xRow == (x - xCol) / nCol);
@@ -306,7 +306,7 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
   std::vector<GRBVar> topVars;
   std::vector<GRBVar> bottomVars;
   for (auto prodOp : producers) {
-    auto y = spaceOpVar[prodOp];
+    auto &y = spaceOpVar[prodOp];
     // Calculate left neighbor (wrap around if needed)
     GRBVar leftCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
     GRBVar uLeft = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
@@ -351,24 +351,37 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
 
     // Between the time gap of the producer and consumer, the producer PE cannot
     // execute any other operations
-    auto startT = timeOpVar[prodOp];
-    auto endT = timeOpVar[consumer];
+    auto &startT = timeOpVar[prodOp];
+    auto &endT = timeOpVar[consumer];
+    llvm::errs() << "Producer: " << *prodOp << "->Consumer: " << *consumer
+                 << "\n";
     for (auto [op, tVar] : timeOpVar) {
 
       if (op == consumer || op == prodOp)
         continue;
-      GRBVar pe = spaceOpVar[op];
+      GRBVar &pe = spaceOpVar[op];
       // A helper variable to indicate the time gap between the producer and the
       // consumer, where helper = 1 means startT <= t <= endT.
-      GRBVar helper = model.addVar(0, 1, 0, GRB_BINARY);
-      model.addConstr(tVar >= startT - 1e9 * (1 - helper));
-      model.addConstr(tVar <= endT + 1e9 * (1 - helper));
+      GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
+      model.addConstr(tVar >= startT - 1e6 * (1 - h1));
+      model.addConstr(tVar <= startT + 1e6 * h1);
+
+      GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
+      model.addConstr(endT >= tVar - 1e6 * (1 - h2));
+      model.addConstr(endT <= tVar + 1e6 * h2);
+
+      GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
+      // Replace the line with the correct arguments for the addGenConstrAnd
+      // function
+      GRBVar xvars[2] = {h1, h2};
+      model.addGenConstrAnd(h, xvars, 2);
 
       // Set constraints for pe != y if helper == 1
-      GRBVar helper2 = model.addVar(0, 1, 0, GRB_BINARY);
-      model.addQConstr(helper * pe <= helper * (y - 1e-4 + 1e9 * helper2));
-      model.addQConstr(helper * pe >=
-                       helper * (y + 1e-4 - 1e9 * (1 - helper2)));
+      GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+      GRBVar diffAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+      model.addConstr(pe - y == diff);
+      model.addGenConstrAbs(diffAbs, diff);
+      model.addQConstr(h * diffAbs >= h * 1e-4);
     }
   }
 }
@@ -409,12 +422,17 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
       producers.push_back(cntOp);
     }
 
-    addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
-                           spaceOpVar);
+    // llvm::errs() << "Operation: " << *op << " have \n";
+    // for (auto prod : producers) {
+    //   llvm::errs() << "   " << *prod << "\n";
+    // }
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
       continue;
+
+    addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
+                           spaceOpVar);
 
     // assign the space w.r.t to its user's PE if it can be inferred.
     for (auto userOp : op->getUsers()) {
@@ -475,8 +493,7 @@ void OpenEdgeKernelScheduler::initOpTimeSpaceConstraints(
       model.addConstr(diffS == s1 - s2);
       model.addGenConstrAbs(diffSAbs, diffS);
 
-      // If diffAbs is zero, t_eq and s_eq should be one, 1e9 is a selected
-      // large number to force the binary variable to be one
+      // If diffAbs is zero, t_eq and s_eq should be one,
       model.addConstr(t_eq >= 1 - diffTAbs);
       model.addConstr(s_eq >= 1 - diffSAbs);
       model.addConstr(t_eq + s_eq <= 1);
@@ -525,7 +542,7 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   // create time constraints
   initOpTimeConstraints(model, timeVarMap, timeBlkEntry, timeBlkExit);
   // create space constraints
-  initOpSpaceConstraints(model, peVarMap, peVarMap);
+  initOpSpaceConstraints(model, peVarMap, timeVarMap);
   // create time and space constraints
   initOpTimeSpaceConstraints(model, timeVarMap, peVarMap);
   // create the objective function
@@ -549,9 +566,11 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   for (auto [op, var] : timeVarMap) {
     writeOpResult(op, var.get(GRB_DoubleAttr_X),
                   peVarMap[op].get(GRB_DoubleAttr_X), -1);
-    llvm::errs() << "Operation: " << *op << " is scheduled at "
-                 << (int)var.get(GRB_DoubleAttr_X) << " on PE "
-                 << (int)peVarMap[op].get(GRB_DoubleAttr_X) << "\n";
+    llvm::errs() << "Operation: " << *op << ":"
+                 << var.get(GRB_StringAttr_VarName) << " is scheduled at "
+                 << solution[op].time
+                 << peVarMap[op].get(GRB_StringAttr_VarName) << " on PE"
+                 << solution[op].pe << "\n";
   }
   return success();
 }
