@@ -47,7 +47,7 @@ Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
   return cntOp;
 }
 
-SmallVector<Operation *, 4> getCntOpIndirectly(Value val) {
+SmallVector<Operation *, 4> getCntOpIndirectly(Value val, Block *targetBlock) {
   SmallVector<Operation *, 4> cntOps;
   if (!val.isa<BlockArgument>()) {
     cntOps.push_back(val.getDefiningOp());
@@ -69,13 +69,22 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val) {
     if (isa<LLVM::BrOp>(termOp)) {
       // the corresponding block argument is the argInd'th operator
       propVal = termOp->getOperand(argInd);
-      auto defOps = getCntOpIndirectly(propVal);
+      auto defOps = getCntOpIndirectly(propVal, targetBlock);
       cntOps.append(defOps.begin(), defOps.end());
-    } else if (isa<cgra::ConditionalBranchOp>(termOp)) {
+    } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
       // The terminator would be beq, bne, blt, bge, etc, the propagated value
       // is counted from 2nd operand.
-      propVal = termOp->getOperand(argInd + 2);
-      auto defOps = getCntOpIndirectly(propVal);
+      if (targetBlock == condBr.getTrueDest())
+        propVal = condBr.getTrueOperand(argInd);
+      else if (targetBlock == condBr.getFalseDest()) {
+        llvm::errs() << condBr;
+        llvm::errs() << condBr.getOperands().size() << "\n";
+        llvm::errs() << condBr.getFalseDestOperands().size() << "\n";
+        propVal = condBr.getFalseOperand(argInd);
+      } else
+        continue;
+
+      auto defOps = getCntOpIndirectly(propVal, targetBlock);
       cntOps.append(defOps.begin(), defOps.end());
     }
   }
@@ -394,9 +403,10 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
     // BrOp does not require to consider data dependency
     if (isa<LLVM::BrOp>(op))
       continue;
+    llvm::errs() << "Operation: " << *op;
 
-    // The operation should be assigned to the PE that is connected to.(PE of
-    // predecessors' neighbor or itself)
+    // The operation should be assigned to the PE that is connected to.(PE
+    // of predecessors' neighbor or itself)
     std::vector<Operation *> producers;
     for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
       if (opVal.getDefiningOp() && isa<LLVM::ConstantOp>(opVal.getDefiningOp()))
@@ -408,8 +418,8 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
 
       // The getCntOpIndirectly gets definition operations of the operand which
       // should be unique unless the operand is block argument.
-      auto defOps = getCntOpIndirectly(opVal);
-      auto cntOp = getCntOpIndirectly(opVal)[0];
+      auto defOps = getCntOpIndirectly(opVal, op->getBlock());
+      auto cntOp = defOps[0];
       // If the operand is block argument, the defOps must be produced in the
       // same PE.
       if (defOps.size() > 1)
@@ -422,10 +432,10 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
       producers.push_back(cntOp);
     }
 
-    // llvm::errs() << "Operation: " << *op << " have \n";
-    // for (auto prod : producers) {
-    //   llvm::errs() << "   " << *prod << "\n";
-    // }
+    llvm::errs() << " have" << producers.size() << "\n";
+    for (auto prod : producers) {
+      llvm::errs() << "   " << *prod << "\n";
+    }
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
@@ -541,10 +551,13 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   initKnownSchedule(model, timeVarMap, peVarMap);
   // create time constraints
   initOpTimeConstraints(model, timeVarMap, timeBlkEntry, timeBlkExit);
+  llvm::errs() << "Time constraints are initialized\n";
   // create space constraints
   initOpSpaceConstraints(model, peVarMap, timeVarMap);
+  llvm::errs() << "Space constraints are initialized\n";
   // create time and space constraints
   initOpTimeSpaceConstraints(model, timeVarMap, peVarMap);
+  llvm::errs() << "Time and Space constraints are initialized\n";
   // create the objective function
   GRBVar funcStartT =
       model.addVar(-GRB_INFINITY, GRB_INFINITY, 0.0, GRB_INTEGER, "t0");

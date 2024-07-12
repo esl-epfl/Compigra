@@ -324,6 +324,14 @@ void ModuloScheduleAdapter::removeUselessBlockArg() {
   }
 }
 
+static int existBlockArgument(std::vector<int> argIds, int id) {
+  for (auto [blkArg, opId] : llvm::enumerate(argIds)) {
+    if (opId == id)
+      return blkArg;
+  }
+  return -1;
+}
+
 /// Initialize the DFG within the blk with the operations in the opSet
 LogicalResult
 ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
@@ -364,18 +372,31 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
 
       for (auto [oprId, opr] : llvm::enumerate(repOp->getOperands())) {
         if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
-          auto *corOp = loopBlkArgs[blockArg.getArgNumber()].getDefiningOp();
+          auto corOp = loopBlkArgs[blockArg.getArgNumber()].getDefiningOp();
+          int corOpId = getOpId(opList, corOp);
+          // use current generated operations
+          if (curGenOps.count(corOpId) > 0 && preGenOps.count(corOpId) == 0) {
+            repOp->setOperand(oprId, curGenOps[corOpId]->getResult(0));
+            continue;
+          }
           // insert block argument for this op
-          blk->addArgument(opr.getType(),
-                           blk->getOperations().front().getLoc());
-          repOp->setOperand(oprId, blk->getArguments().back());
-          argIds.push_back(getOpId(opList, corOp));
-          continue;
-        }
+          // check whether opr exists in the block arguments
+          // int argId = existBlockArgument(argIds, corOpId);
+          // if (argId >= 0) {
+          //   repOp->setOperand(oprId, blk->getArgument(argId));
 
-        // Determine whether defined by operation produced in the loop
-        auto defOp = opr.getDefiningOp();
-        if (defOp)
+          // } 
+          else {
+            blk->addArgument(opr.getType(),
+                             blk->getOperations().front().getLoc());
+            repOp->setOperand(oprId, blk->getArguments().back());
+            argIds.push_back(getOpId(opList, corOp));
+          }
+          continue;
+        } else if (opr.getDefiningOp()) {
+          // Determine whether defined by operation produced in the loop
+          auto defOp = opr.getDefiningOp();
+
           if (defOp->getBlock() == templateBlock) {
             unsigned opId = getOpId(opList, defOp);
 
@@ -392,6 +413,11 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
               // if the current block is kernel, it has to take arguments from
               // the prolog or itself
               if (isKernel) {
+                // int argId = existBlockArgument(argIds, opId);
+                // if (argId >= 0) {
+                //   repOp->setOperand(oprId, blk->getArgument(argId));
+                //   continue;
+                // }
                 argTypes.push_back(corOp->getResult(0).getType());
                 blk->addArgument(corOp->getResult(0).getType(),
                                  blk->getOperations().front().getLoc());
@@ -406,6 +432,7 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
             }
             return failure();
           }
+        }
 
         // set the same operand with op
         repOp->setOperand(oprId, opr.getDefiningOp()->getResult(0));
@@ -689,6 +716,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   // remove the block arguments if it is not used
   removeUselessBlockArg();
 
+  llvm::errs() << "save DFG\n";
   if (failed(saveDFGs(preParts, postParts)))
     return failure();
 

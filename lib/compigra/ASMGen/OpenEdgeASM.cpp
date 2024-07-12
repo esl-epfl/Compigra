@@ -108,7 +108,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
       continue;
     for (auto [opInd, operand] : llvm::enumerate(op->getOperands())) {
-      if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand)[0]))
+      if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand, op->getBlock())[0]))
         continue;
       // Skip the branch operator
       if (isa<cgra::ConditionalBranchOp>(op) && opInd == 2)
@@ -612,7 +612,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   std::string opA = "";
   if (op->getNumOperands() > 0) {
     // check whether the operand is immediate
-    auto cntOp = getCntOpIndirectly(op->getOperand(0))[0];
+    auto cntOp = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opA = imm ? " " + std::to_string(imm) : " ZERO";
@@ -622,7 +622,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   std::string opB = "";
   if (op->getNumOperands() > 1) {
-    auto cntOp = getCntOpIndirectly(op->getOperand(1))[0];
+    auto cntOp = getCntOpIndirectly(op->getOperand(1), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opB = imm ? "," + std::to_string(imm) : ",ZERO";

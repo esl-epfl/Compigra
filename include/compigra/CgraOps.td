@@ -268,7 +268,7 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
 
   private:
     /// Get the index of the first true destination operand.
-    unsigned getTrueDestOperandIndex() { return 1; }
+    unsigned getTrueDestOperandIndex() { return 2; }
 
     /// Get the index of the first false destination operand.
     unsigned getFalseDestOperandIndex() {

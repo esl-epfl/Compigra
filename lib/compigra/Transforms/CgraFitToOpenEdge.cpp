@@ -105,8 +105,6 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
       break;
     }
   if (allExit) {
-    llvm::errs()
-        << "All the users of the constant operation are in exit block\n";
     auto firstOp = *constOp->getUsers().begin();
     rewriter.setInsertionPoint(firstOp);
     loc = firstOp->getLoc();
@@ -225,8 +223,6 @@ LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
       break;
     }
   if (allExit) {
-    llvm::errs()
-        << "All the users of the constant operation are in exit block\n";
     auto firstOp = *constOp->getUsers().begin();
     rewriter.setInsertionPoint(firstOp);
     loc = firstOp->getLoc();
