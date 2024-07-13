@@ -17,6 +17,9 @@
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
 #endif
+// for schedule result output
+#include "fstream"
+#include <llvm/Support/raw_ostream.h>
 
 using namespace mlir;
 using namespace compigra;
@@ -77,9 +80,6 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val, Block *targetBlock) {
       if (targetBlock == condBr.getTrueDest())
         propVal = condBr.getTrueOperand(argInd);
       else if (targetBlock == condBr.getFalseDest()) {
-        llvm::errs() << condBr;
-        llvm::errs() << condBr.getOperands().size() << "\n";
-        llvm::errs() << condBr.getFalseDestOperands().size() << "\n";
         propVal = condBr.getFalseOperand(argInd);
       } else
         continue;
@@ -166,6 +166,7 @@ void OpenEdgeKernelScheduler::assignSchedule(
     std::map<int, int> opExec, const std::map<int, Instruction> instructions,
     std::vector<int> &totalExec) {
   std::vector<int> exitExec = totalExec;
+
   if (epilog) {
     int updatePC = curPC;
     int curRound = -1;
@@ -185,8 +186,6 @@ void OpenEdgeKernelScheduler::assignSchedule(
       exitExec[opId]++;
       if (knownRes[op].time > updatePC)
         updatePC = knownRes[op].time;
-      llvm::errs() << *op << "[" << opId << ": " << knownRes[op].time << "  "
-                   << knownRes[op].pe << "]\n";
     }
     curPC = updatePC;
     return;
@@ -197,10 +196,7 @@ void OpenEdgeKernelScheduler::assignSchedule(
 
     knownRes[op].time = opExec.at(opId) + II * totalExec[opId];
     curPC = std::max(curPC, knownRes[op].time);
-
     totalExec[opId]++;
-    llvm::errs() << *op << "[" << opId << ": " << knownRes[op].time << "  "
-                 << knownRes[op].pe << "]\n";
   }
 }
 
@@ -275,7 +271,7 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
       // Skip the self-loop
       if (&blk == sucBlk)
         continue;
-      model.addConstr(timeBlkExit[&blk] + 1 == timeBlkEntry[sucBlk]);
+      model.addConstr(timeBlkExit[&blk] + 1 <= timeBlkEntry[sucBlk]);
     }
   }
 
@@ -362,8 +358,6 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
     // execute any other operations
     auto &startT = timeOpVar[prodOp];
     auto &endT = timeOpVar[consumer];
-    llvm::errs() << "Producer: " << *prodOp << "->Consumer: " << *consumer
-                 << "\n";
     for (auto [op, tVar] : timeOpVar) {
 
       if (op == consumer || op == prodOp)
@@ -403,7 +397,6 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
     // BrOp does not require to consider data dependency
     if (isa<LLVM::BrOp>(op))
       continue;
-    llvm::errs() << "Operation: " << *op;
 
     // The operation should be assigned to the PE that is connected to.(PE
     // of predecessors' neighbor or itself)
@@ -432,10 +425,10 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
       producers.push_back(cntOp);
     }
 
-    llvm::errs() << " have" << producers.size() << "\n";
-    for (auto prod : producers) {
-      llvm::errs() << "   " << *prod << "\n";
-    }
+    // llvm::errs() << " have" << producers.size() << "\n";
+    // for (auto prod : producers) {
+    //   llvm::errs() << "   " << *prod << "\n";
+    // }
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
@@ -549,6 +542,7 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   initVariables(model, timeBlkEntry, timeBlkExit, timeVarMap, peVarMap);
   // assign the known schedule
   initKnownSchedule(model, timeVarMap, peVarMap);
+  llvm::errs() << "init known schedule\n";
   // create time constraints
   initOpTimeConstraints(model, timeVarMap, timeBlkEntry, timeBlkExit);
   llvm::errs() << "Time constraints are initialized\n";
@@ -575,16 +569,21 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
       model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD)
     return failure();
 
+  std::ofstream csvFile("output.csv");
+
   // If the model is infeasible, write the model to solution
   for (auto [op, var] : timeVarMap) {
     writeOpResult(op, var.get(GRB_DoubleAttr_X),
                   peVarMap[op].get(GRB_DoubleAttr_X), -1);
-    llvm::errs() << "Operation: " << *op << ":"
-                 << var.get(GRB_StringAttr_VarName) << " is scheduled at "
-                 << solution[op].time
-                 << peVarMap[op].get(GRB_StringAttr_VarName) << " on PE"
-                 << solution[op].pe << "\n";
+    std::string str;
+    llvm::raw_string_ostream rso(str);
+    rso << *op;
+    csvFile << rso.str() << "&" << var.get(GRB_StringAttr_VarName) << "&"
+            << solution[op].time << "&"
+            << peVarMap[op].get(GRB_StringAttr_VarName) << "&"
+            << solution[op].pe << "\n";
   }
+  csvFile.close();
   return success();
 }
 #endif

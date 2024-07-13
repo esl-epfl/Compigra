@@ -110,7 +110,8 @@ private:
   /// fullSet(loopOpList).
   Block *createExitBlock(cgra::ConditionalBranchOp condBr,
                          std::vector<std::set<int>> &existOps,
-                         mapId2Op &preGenOps, bool isKernel = false);
+                         mapId2Op &preGenOps,
+                         cgra::ConditionalBranchOp loopTerm = nullptr);
 
   /// Remove the original loop block (templateblock) and its operations
   void removeTempletBlock();
@@ -144,7 +145,7 @@ public:
 private:
   /// Store the operations in preBlocks to enterDFGs and postBlocks to exitDFGs
   LogicalResult saveDFGs(SmallVector<Block *> preBlocks,
-                SmallVector<Block *> postBlocks);
+                         SmallVector<Block *> postBlocks);
 };
 
 } // namespace compigra

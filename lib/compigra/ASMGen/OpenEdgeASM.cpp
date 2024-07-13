@@ -890,7 +890,6 @@ struct OpenEdgeASMGenPass
         ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(),
                                       opTimeMap, bbTimeMap);
         adapter.adaptCFGWithLoopMS();
-        // llvm::errs() << funcOp << "\n";
 
         // hash map to store the total round of operation execution, where
         // totalRound[ind] represents ind-th operation's in the loop has been
@@ -899,11 +898,12 @@ struct OpenEdgeASMGenPass
         std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
 
         int curPC = 0;
-        llvm::errs() << "opSize: " << opSize << "\n";
-        llvm::errs() << "totalRound: " << totalRound.size() << "\n";
 
         auto preParts = adapter.enterDFGs;
         auto postParts = adapter.exitDFGs;
+
+        llvm::errs() << "preParts size: " << preParts.size() << "\n";
+        llvm::errs() << "postParts size: " << postParts.size() << "\n";
         std::vector<std::vector<int>> preOpIds;
         for (size_t i = 0; i < preParts.size(); i++) {
           scheduler.assignSchedule(preParts[i], false, II, curPC, execTime,
@@ -917,10 +917,8 @@ struct OpenEdgeASMGenPass
                                    instructions, preOpIds[i]);
           curPC++;
         }
-
-      } else {
+      } else
         scheduler.assignSchedule(loopBlock->getOperations(), instructions);
-      }
 
       // init OpenEdgeASMGen
       OpenEdgeASMGen asmGen(r, maxReg, 4);
@@ -935,6 +933,7 @@ struct OpenEdgeASMGenPass
       asmGen.allocateRegisters(scheduler.knownRes);
       asmGen.printKnownSchedule(true, 0, outDir);
     }
+
     // Assign operations in the init phase
   }
 };
