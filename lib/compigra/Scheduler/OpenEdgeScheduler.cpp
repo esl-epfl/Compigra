@@ -229,6 +229,7 @@ void OpenEdgeKernelScheduler::initVariables(
       spaceOpVar[&op] = model.addVar(0.0, nCol * nRow - 1, 0.0, GRB_INTEGER,
                                      "pe_" + std::to_string(bbId) + "_" +
                                          std::to_string(opId));
+      varNamePost[&op] = std::to_string(bbId) + "_" + std::to_string(opId);
     }
   }
 }
@@ -287,7 +288,8 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
                                    std::vector<Operation *> &producers,
                                    int nRow, int nCol,
                                    std::map<Operation *, GRBVar> &timeOpVar,
-                                   std::map<Operation *, GRBVar> &spaceOpVar) {
+                                   std::map<Operation *, GRBVar> &spaceOpVar,
+                                   std::map<Operation *, std::string> varName) {
   // Create helper variables for the possible neighbors
   GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
   GRBVar right = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
@@ -358,10 +360,11 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
     // execute any other operations
     auto &startT = timeOpVar[prodOp];
     auto &endT = timeOpVar[consumer];
+    int constrInd = 0;
     for (auto [op, tVar] : timeOpVar) {
-
       if (op == consumer || op == prodOp)
         continue;
+
       GRBVar &pe = spaceOpVar[op];
       // A helper variable to indicate the time gap between the producer and the
       // consumer, where helper = 1 means startT <= t <= endT.
@@ -374,19 +377,80 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
       model.addConstr(endT <= tVar + 1e6 * h2);
 
       GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
-      // Replace the line with the correct arguments for the addGenConstrAnd
-      // function
-      GRBVar xvars[2] = {h1, h2};
-      model.addGenConstrAnd(h, xvars, 2);
+      // TODO[@Yuxuan]: fix the RA to consider the loop block and remove the
+      // first if here.
+      // theoretically, the constraint should be disable all
+      // operations to be placed at the same PE as the producer if its t:
+      // t_start<=t<=t_end, and producer and consumer are not in the same PE.
+      // if they are in the same PE, the operator liveness should be solved by
+      // the register allocation(RA).
+      // However, to strictly follow the original SAT-MapIt MS result, RA for
+      // the loop block is not considered, so we change the constraints to not
+      // allowed any operation to be placed at the same PE as the producer to
+      // avoid the result of producer is written to Rout, which is consumed in
+      // the loop but could be overwritten in the fini phase.
+      if (isa<LLVM::ReturnOp>(prodOp->getBlock()->getTerminator())) {
+        // if t_start<=t<=t_end
+        GRBVar xvars[2] = {h1, h2};
+        model.addGenConstrAnd(h, xvars, 2);
+      } else {
+        // if t_start<=t<=t_end && x!=y
+        // if x ! = y, consumer and producer are not in the same PE
+        GRBVar diffXY =
+            model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+        model.addConstr(diffXY == x - y);
+        GRBVar diffXYAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+        model.addGenConstrAbs(diffXYAbs, diffXY);
+        GRBVar ifPEEq = model.addVar(0, 1, 0, GRB_BINARY);
+        model.addConstr(ifPEEq >= diffXYAbs / 1e6);
+
+        GRBVar xvars[3] = {h1, h2, ifPEEq};
+        model.addGenConstrAnd(h, xvars, 3);
+      }
 
       // Set constraints for pe != y if helper == 1
       GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
       GRBVar diffAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(pe - y == diff);
+      model.addConstr(diff == pe - y,
+                      "diff" + varName[op] + "_" + varName[consumer] + "_" +
+                          varName[prodOp] + "_" + std::to_string(constrInd));
       model.addGenConstrAbs(diffAbs, diff);
-      model.addQConstr(h * diffAbs >= h * 1e-4);
+
+      model.addGenConstrIndicator(h, 1, diffAbs, GRB_GREATER_EQUAL, 1e-4,
+                                  varName[consumer] + "_" + varName[prodOp] +
+                                      "_" + std::to_string(constrInd));
+
+      constrInd++;
     }
   }
+}
+
+static bool connectOutLoop(Operation *op, std::vector<Operation *> &producers) {
+  if (op->getBlock()->isEntryBlock())
+    return true;
+
+  if (isa<LLVM::ReturnOp>(op->getBlock()->getTerminator()))
+    return true;
+
+  // if op is the loop basic block, check whether the producer is outside the
+  // loop, e.g. in the entry block
+  bool isLoop = false;
+  for (auto it = producers.begin(); it != producers.end();) {
+    if ((*it)->getBlock()->isEntryBlock()) {
+      isLoop = true;
+      ++it;
+    } else {
+      it = producers.erase(it); // Remove the producer and get the next iterator
+    }
+  }
+
+  return isLoop;
+
+  // for (auto blk : op->getBlock()->getPredecessors())
+  //   if (blk->isEntryBlock())
+  //     return true;
+
+  // return false;
 }
 
 void OpenEdgeKernelScheduler::initOpSpaceConstraints(
@@ -412,6 +476,10 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
       // The getCntOpIndirectly gets definition operations of the operand which
       // should be unique unless the operand is block argument.
       auto defOps = getCntOpIndirectly(opVal, op->getBlock());
+      for (auto defOp : defOps) {
+        producers.push_back(defOp);
+      }
+
       auto cntOp = defOps[0];
       // If the operand is block argument, the defOps must be produced in the
       // same PE.
@@ -422,20 +490,22 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
 
       if (spaceOpVar.find(cntOp) == spaceOpVar.end())
         continue;
-      producers.push_back(cntOp);
     }
 
-    // llvm::errs() << " have" << producers.size() << "\n";
-    // for (auto prod : producers) {
-    //   llvm::errs() << "   " << *prod << "\n";
-    // }
+    if (connectOutLoop(op, producers)) {
+      // llvm::errs() << *op << "has " << producers.size()
+      //              << " producers outside the loop\n";
+      // for (auto prod : producers)
+      //   llvm::errs() << "    " << *prod << "\n";
+
+      // llvm::errs() << "\n";
+      addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
+                             spaceOpVar, varNamePost);
+    }
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
       continue;
-
-    addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
-                           spaceOpVar);
 
     // assign the space w.r.t to its user's PE if it can be inferred.
     for (auto userOp : op->getUsers()) {
@@ -445,8 +515,11 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         knownRes[op] = initVoidInstruction(op->getName().getStringRef().str());
 
         // If the result is stored in the register, assign the same PE
+        int leftOpInd = 0;
+        if (isa<cgra::BzfaOp, cgra::BsfaOp>(cntOp))
+          leftOpInd = 1;
         bool leftOp =
-            cntOp->getOperand(0) == getCorrelatedVal(op->getResult(0));
+            cntOp->getOperand(leftOpInd) == getCorrelatedVal(op->getResult(0));
         std::string direct = leftOp ? knownRes[cntOp].opA : knownRes[cntOp].opB;
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
@@ -542,16 +615,20 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   initVariables(model, timeBlkEntry, timeBlkExit, timeVarMap, peVarMap);
   // assign the known schedule
   initKnownSchedule(model, timeVarMap, peVarMap);
-  llvm::errs() << "init known schedule\n";
+  // llvm::errs() << "init known schedule\n";
+
   // create time constraints
   initOpTimeConstraints(model, timeVarMap, timeBlkEntry, timeBlkExit);
-  llvm::errs() << "Time constraints are initialized\n";
+  // llvm::errs() << "Time constraints are initialized\n";
+
   // create space constraints
   initOpSpaceConstraints(model, peVarMap, timeVarMap);
-  llvm::errs() << "Space constraints are initialized\n";
+  // llvm::errs() << "Space constraints are initialized\n";
+
   // create time and space constraints
   initOpTimeSpaceConstraints(model, timeVarMap, peVarMap);
-  llvm::errs() << "Time and Space constraints are initialized\n";
+  // llvm::errs() << "Time and Space constraints are initialized\n";
+
   // create the objective function
   GRBVar funcStartT =
       model.addVar(-GRB_INFINITY, GRB_INFINITY, 0.0, GRB_INTEGER, "t0");
@@ -568,6 +645,8 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE ||
       model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD)
     return failure();
+
+  model.write("solution.sol");
 
   std::ofstream csvFile("output.csv");
 

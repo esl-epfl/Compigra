@@ -97,27 +97,31 @@ compile_sat() {
       -fno-unroll-loops -fno-vectorize -fno-slp-vectorize \
       "$bench_c" -o "$f_ll"
     # Translate llvm to mlir llvm dialect
-    $MLIR_TRANSLATE --import-llvm  "$f_ll" > "$f_llvm"
+    $MLIR_TRANSLATE --import-llvm  "$f_ll" > "$f_llvm" 2> /dev/null
 
     # convert llvm to cgra operation
     $COMPIGRA_OPT --allow-unregistered-dialect \
       --convert-llvm-to-cgra="func-name=$bench_name mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
-     "$f_llvm" > "$f_cgra"
+     "$f_llvm" > "$f_cgra" 2> /dev/null
 
     # Check whether conversion success
     if [ $? -ne 0 ]; then
         echo "FAILED ON CONVERTING LLVM TO CGRA DIALECT."
         return 1
+    else
+        echo "Conversion success."
     fi
 
     #  convert cgra operations to fit into hardware ISA
     $COMPIGRA_OPT --allow-unregistered-dialect \
-      --fit-openedge="out-dag=$f_dag" "$f_cgra" > "$f_hardware"
+      --fit-openedge="out-dag=$f_dag" "$f_cgra" > "$f_hardware" 2> /dev/null
 
     # Check whether hardware transformation success
     if [ $? -ne 0 ]; then
         echo "FAILED ON HARDWARE TRANSFORMATION."
         return 1
+    else
+        echo "Hardware transformation success."
     fi
 
     # folder to place the DAG text files
@@ -132,22 +136,26 @@ compile_sat() {
     fi
 
     # Run SAT-MapIt to schedule the loop block
-    python3 $ASM_GEN --path $sat_text --bench $bench_name --unit $2 > $bench_path/$config/"out_raw.sat"
+    python3 $ASM_GEN --path $sat_text --bench $bench_name --unit $2 --seed 13\
+        > $bench_path/$config/"out_raw.sat" 2> /dev/null
 
     # Check whether loop block scheduling success
     if [ $? -ne 0 ]; then
         echo "FAILED ON LOOP BLOCK SCHEDULING."
         return 1
+    else
+        echo "Loop block scheduling success."
     fi
 
     # Generate the scheduled assembly code
     $COMPIGRA_OPT --allow-unregistered-dialect \
         --gen-openedge-asm="func-name=$bench_name map-result=$bench_path/$config/out_raw.sat" \
-        "$f_hardware" > $f_sat
+        "$f_hardware" > $f_sat 2> /dev/null
 
     # Check if the scheduling was successful
     if [ $? -eq 0 ]; then
-        echo "Compilation successful."
+        echo "Kernel scheduling success."
+        echo "COMPILATION SUCCESS."
     else
         echo "Kernel schedule failed."
     fi

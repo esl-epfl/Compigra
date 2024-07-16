@@ -103,32 +103,32 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
   }
 
   // Add operands to the graph
-  for (auto it = opList.rbegin(); it != opList.rend(); ++it) {
-    Operation *op = it->second;
-    if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
-      continue;
-    for (auto [opInd, operand] : llvm::enumerate(op->getOperands())) {
-      if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand, op->getBlock())[0]))
-        continue;
-      // Skip the branch operator
-      if (isa<cgra::ConditionalBranchOp>(op) && opInd == 2)
-        break;
+  // for (auto it = opList.rbegin(); it != opList.rend(); ++it) {
+  //   Operation *op = it->second;
+  //   if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
+  //     continue;
+  //   for (auto [opInd, operand] : llvm::enumerate(op->getOperands())) {
+  //     if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand,
+  //     op->getBlock())[0]))
+  //       continue;
+  //     // Skip the branch operator
+  //     if (isa<cgra::ConditionalBranchOp>(op) && opInd == 2)
+  //       break;
 
-      if (getValueIndex(operand, opMap) == -1) {
-        opMap[ind] = operand;
-        graph.addVertex(ind);
-        use[op].insert(getValueIndex(operand, opMap));
-        ind++;
-      }
-    }
-  }
+  //     if (getValueIndex(operand, opMap) == -1) {
+  //       opMap[ind] = operand;
+  //       graph.addVertex(ind);
+  //       use[op].insert(getValueIndex(operand, opMap));
+  //       ind++;
+  //     }
+  //   }
+  // }
 
   std::vector<Operation *> sortedOps;
   for (auto [t, op] : opList) {
     sortedOps.push_back(op);
-    llvm::errs() << "put: " << *op << "\n";
+    // llvm::errs() << "put: " << *op << "\n";
   }
-  llvm::errs() << "sortedOps size: " << sortedOps.size() << "\n";
   std::map<Operation *, std::unordered_set<int>> liveIn;
   std::map<Operation *, std::unordered_set<int>> liveOut;
   while (true) {
@@ -240,15 +240,12 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
   auto graph = createInterferenceGraph(opList, opMap);
 
   // print opMap and interference graph
-  llvm::errs() << "OpMap:\n";
+  // llvm::errs() << "OpMap:\n";
   // for (auto [ind, val] : opMap) {
-  //   llvm::errs() << ind << " " << val << " "
-  //                << (std::find(graph.vertices.begin(),
-  //                graph.vertices.end(),
-  //                              ind) == graph.vertices.end())
-  //                << "\n";
+  //   llvm::errs() << ind << " " << val << "\n";
   // }
-  graph.printGraph();
+  // llvm::errs() << "--------------Interference Graph-----------------\n";
+  // graph.printGraph();
 
   // allocate register using graph coloring
   // TODO[@Yuxuan]: Spill the graph if the number of registers is not
@@ -286,7 +283,7 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
     if (!defOp)
       continue;
     if (graph.needColor(v))
-      llvm::errs() << "RA: " << v << " : " << solution[defOp].reg << "\n";
+      llvm::errs() << v << ": " << graph.colorMap[v] << "\n";
     if (graph.needColor(v) && solution[defOp].reg < 0) {
       std::unordered_set<int> usedColors;
       for (auto u : graph.adjList[v]) {
@@ -296,12 +293,13 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
       int color = 0;
       while (usedColors.find(color) != usedColors.end()) {
         color++;
-        if (color >= maxReg)
+        if (color >= maxReg) {
           llvm::errs() << "FAILED ALLOCATE REGISTER\n";
-        // maxReg is Rout. In principle, the register should not be
-        // assigned to Rout if it is used internally.
-        if (color >= maxReg)
+
+          // maxReg is Rout. In principle, the register should not be
+          // assigned to Rout if it is used internally.
           return failure();
+        }
       }
       graph.colorMap[v] = color;
       llvm::errs() << "ALLOCATE REGISTER " << color << " TO " << val << "\n";
@@ -372,15 +370,21 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
         if (solution[user].reg != -1) {
           // The result operand should match with use operand
           unsigned operandIndex = use.getOperandNumber();
-          auto regStr = operandIndex == 0 ? instSolution[user].opA
-                                          : instSolution[user].opB;
+          int leftOpId = 0;
+          if (isa<cgra::BsfaOp, cgra::BzfaOp>(user))
+            leftOpId = 1;
+          auto regStr = operandIndex == leftOpId ? instSolution[user].opA
+                                                 : instSolution[user].opB;
           if (regStr == "ROUT")
             solution[op].reg = maxReg;
           else {
             if (isRegisterDigit(regStr, maxReg))
               solution[op].reg = std::stoi(regStr.substr(1));
-            else
+            else {
+              llvm::errs() << pe << " " << regStr << " " << *op
+                           << "\n   user:" << *user << "\n";
               return failure();
+            }
           }
           // If the correspond PE is set, stop seeking from its other
           // users
@@ -391,8 +395,10 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
     // allocate register for the operations in the PE
     llvm::errs() << "\nPE = " << pe << "\n";
-    if (failed(allocateOutRegInPE(ops, solution, maxReg)))
+    if (failed(allocateOutRegInPE(ops, solution, maxReg))) {
+      llvm::errs() << "Failed to allocate register for PE " << pe << "\n";
       return failure();
+    }
   }
 
   for (auto [op, sol] : solution) {
@@ -600,7 +606,8 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
     int curTime = getEarliestExecutionTime(op);
     if (sucTime == curTime + 1 && dropNeighbourBr)
       return "NOP";
-    return "JUMP " + std::to_string(sucTime + baseTime);
+    return "JUMP " + std::to_string(sucTime + baseTime) + ", " +
+           std::to_string(startPC);
   }
 
   std::string ROUT = "";
@@ -610,9 +617,15 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
                : " R" + std::to_string(instSolution[op].Rout) + ",";
 
   std::string opA = "";
+
+  int leftId = 0;
+  if (isa<cgra::BzfaOp, cgra::BsfaOp>(op)) {
+    leftId = 1;
+  }
+
   if (op->getNumOperands() > 0) {
     // check whether the operand is immediate
-    auto cntOp = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
+    auto cntOp = getCntOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opA = imm ? " " + std::to_string(imm) : " ZERO";
@@ -622,7 +635,8 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   std::string opB = "";
   if (op->getNumOperands() > 1) {
-    auto cntOp = getCntOpIndirectly(op->getOperand(1), op->getBlock())[0];
+    auto cntOp =
+        getCntOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opB = imm ? "," + std::to_string(imm) : ",ZERO";
@@ -634,7 +648,20 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   if (isa<cgra::ConditionalBranchOp>(op)) {
     auto block = op->getSuccessor(0);
     int sucTime = getEarliestExecutionTime(block);
-    addition = " " + std::to_string(sucTime + baseTime);
+    addition = ", " + std::to_string(sucTime + baseTime);
+  }
+
+  if (isa<cgra::BzfaOp, cgra::BsfaOp>(op)) {
+    auto cntOp = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
+    if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
+      int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
+      addition = imm ? " " + std::to_string(imm) : " ZERO";
+    } else {
+      int predicatePE = instSolution[cntOp].pe;
+      addition =
+          ", " + getOperandSrcReg(instSolution[op].pe, instSolution[cntOp].pe,
+                                  0, nRow, nCol, maxReg);
+    }
   }
 
   return opName + ROUT + opA + opB + addition;
@@ -902,8 +929,6 @@ struct OpenEdgeASMGenPass
         auto preParts = adapter.enterDFGs;
         auto postParts = adapter.exitDFGs;
 
-        llvm::errs() << "preParts size: " << preParts.size() << "\n";
-        llvm::errs() << "postParts size: " << postParts.size() << "\n";
         std::vector<std::vector<int>> preOpIds;
         for (size_t i = 0; i < preParts.size(); i++) {
           scheduler.assignSchedule(preParts[i], false, II, curPC, execTime,

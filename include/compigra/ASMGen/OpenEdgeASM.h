@@ -172,7 +172,8 @@ private:
   /// Operation map to fit into OpenEdge ISA format
   std::map<std::string, std::string> isaMap = {
       {"ADD", "SADD"}, {"SUB", "SSUB"}, {"MUL", "SMUL"}, {"DIV", "SDIV"},
-      {"SHR", "SRT"},  {"SHL", "SLT"},  {"AND", "LAND"}, {"BR", "JUMP"}};
+      {"OR", "LOR"},   {"XOR", "LXOR"}, {"LSHR", "SRT"}, {"ASHR", "SRA"},
+      {"SHL", "SLT"},  {"AND", "LAND"}, {"BR", "JUMP"}};
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",

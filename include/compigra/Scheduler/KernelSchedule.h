@@ -152,6 +152,8 @@ public:
 
   // void printKownSchedule();
   std::map<Operation *, Instruction> knownRes;
+
+  std::map<Operation *, std::string> varNamePost;
 };
 } // namespace compigra
 

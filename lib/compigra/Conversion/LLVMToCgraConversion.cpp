@@ -226,7 +226,6 @@ CgraLowering::raiseConstOnlyUse(ConversionPatternRewriter &rewriter) {
       // skip the first use to keep the constant operation
       // if (ind == 0)
       //   continue;
-      llvm::errs() << *use.getOwner() << "\n";
       auto user = use.getOwner();
       rewriter.setInsertionPoint(constOp);
       auto insertCstOp = rewriter.create<LLVM::ConstantOp>(
@@ -725,15 +724,12 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
 
   if (failed(runPartialLowering(cl, &CgraLowering::addMemoryInterface)))
     return failure();
-  llvm::errs() << "addMemoryInterface success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::replaceCmpOps)))
     return failure();
-  llvm::errs() << "replaceCmpOps success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::raiseConstOnlyUse)))
     return failure();
-  llvm::errs() << "raiseConstOnlyUse success\n";
 
   if (failed(runPartialLowering(cl, &CgraLowering::removeUnusedOps)))
     return failure();
