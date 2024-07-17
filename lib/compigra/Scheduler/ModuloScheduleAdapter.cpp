@@ -325,9 +325,6 @@ void ModuloScheduleAdapter::removeUselessBlockArg() {
     llvm::BitVector bitVec(argId.size(), true);
     block.eraseArguments(bitVec);
 
-    for (auto id : argId)
-      llvm::errs() << " " << id;
-    llvm::errs() << "\n";
     removeBlockArgs(prevTerm, argId, &block);
   }
 }

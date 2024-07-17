@@ -124,7 +124,9 @@ public:
   /// results.
   void initOpSpaceConstraints(GRBModel &model,
                               std::map<Operation *, GRBVar> &spaceOpVar,
-                              std::map<Operation *, GRBVar> &timeOpVar);
+                              std::map<Operation *, GRBVar> &timeOpVar,
+                              std::map<Block *, GRBVar> timeBlkEntry,
+                              std::map<Block *, GRBVar> timeBlkExit);
 
   /// Initialize the constraints for both time and space. Specifically, the time
   /// and space scheduling result for one operation should be unique.

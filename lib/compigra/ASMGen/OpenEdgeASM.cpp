@@ -530,7 +530,7 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
     }
 
     if (op->getNumOperands() > 1 && inst.opB == "Unknown") {
-      auto producerB = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
+      auto producerB = getCntOpIndirectly(op->getOperand(1), op->getBlock())[0];
       if (isa<LLVM::ConstantOp>(producerB))
         // assign opA to be Imm
         inst.opB = std::to_string(
@@ -544,6 +544,13 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
     }
 
     instSolution[op] = inst;
+    llvm::errs() << "Op: " << *op << "\n"
+                 << "Name: " << inst.name << " "
+                 << "Time: " << inst.time << " "
+                 << "PE: " << inst.pe << " "
+                 << "Rout: " << inst.Rout << " "
+                 << "OpA: " << inst.opA << " "
+                 << "OpB: " << inst.opB << "\n\n";
   }
   return success();
 }
@@ -930,12 +937,12 @@ struct OpenEdgeASMGenPass
         }
       } else
         scheduler.assignSchedule(loopBlock->getOperations(), instructions);
-      llvm::errs() << funcOp << "\n";
+      // llvm::errs() << funcOp << "\n";
       // init OpenEdgeASMGen
       OpenEdgeASMGen asmGen(r, maxReg, grid);
       if (failed(scheduler.createSchedulerAndSolve())) {
         llvm::errs() << "Failed to create scheduler and solve\n";
-        // return signalPassFailure();
+        return signalPassFailure();
       }
 
       // assign schedule results and produce assembly

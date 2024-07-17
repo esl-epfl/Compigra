@@ -293,11 +293,136 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
   }
 }
 
+/// Determine whether the srcBlk is the predecessor of dstBlk
+static bool isBackEdge(Block *srcBlk, Block *dstBlk) {
+  auto &entryBlock = srcBlk->getParent()->front();
+  // start DFS from entry block, if dstBlk is visited before srcBlk, it is a
+  // back edge
+  std::unordered_set<Block *> visited;
+  std::stack<Block *> stack;
+  stack.push(&entryBlock);
+  while (!stack.empty()) {
+    auto currBlk = stack.top();
+    stack.pop();
+    if (visited.find(currBlk) != visited.end())
+      continue;
+    visited.insert(currBlk);
+    for (auto succBlk : currBlk->getSuccessors()) {
+      if (succBlk == dstBlk)
+        return visited.find(srcBlk) == visited.end();
+      stack.push(succBlk);
+    }
+  }
+  return false;
+}
+
+static bool isBackEdge(Operation *srcOp, Operation *dstOp) {
+  /// if the dstOp directly consumes the result of srcOp, and they are in the
+  /// same block, it is not a back edge
+  if (srcOp->getBlock() == dstOp->getBlock()) {
+    for (auto opr : dstOp->getOperands()) {
+      if (opr == srcOp->getResult(0))
+        return false;
+    }
+    return true;
+  }
+
+  return isBackEdge(srcOp->getBlock(), dstOp->getBlock());
+}
+
+static std::stack<Block *> getBlockPath(Block *srcBlk, Block *dstBlk) {
+  std::stack<Block *> path;
+  std::unordered_set<Block *> visited;
+  std::unordered_map<Block *, Block *>
+      parent; // To store the parent of each block
+
+  std::stack<Block *> dfsStack;
+  dfsStack.push(srcBlk);
+  visited.insert(srcBlk);
+
+  while (!dfsStack.empty()) {
+    Block *current = dfsStack.top();
+    dfsStack.pop();
+
+    // If we reached the destination block, build the path
+    if (current == dstBlk) {
+      while (current != nullptr) {
+        path.push(current);
+        current = parent[current];
+      }
+      return path;
+    }
+
+    for (Block *successor : current->getSuccessors()) {
+      if (visited.find(successor) == visited.end()) {
+        visited.insert(successor);
+        parent[successor] = current;
+        dfsStack.push(successor);
+      }
+    }
+  }
+
+  // If no path found, return an empty stack
+  return std::stack<Block *>();
+}
+
+static std::vector<std::pair<GRBVar, GRBVar>>
+getTimeGapBetween(Operation *srcOp, Operation *dstOp,
+                  std::map<Operation *, GRBVar> &timeOpVar,
+                  std::map<Operation *, GRBVar> &spaceOpVar,
+                  std::map<Block *, GRBVar> timeBlkEntry,
+                  std::map<Block *, GRBVar> timeBlkExit) {
+  if (srcOp->getBlock() == dstOp->getBlock()) {
+    // determine whether operands of dstOp directly produced by srcOp, if yes,
+    // time gap is <TsrcOp, TdstOp>
+    if (!isBackEdge(srcOp, dstOp)) {
+      return {{timeOpVar[srcOp], timeOpVar[dstOp]}};
+    }
+    // if it is a back edge, the time gap is <TsrcOp, TBlockExit>, <TBlockEntry,
+    // TdstOp>
+    return {{timeOpVar[srcOp], timeBlkExit[srcOp->getBlock()]},
+            {timeBlkEntry[dstOp->getBlock()], timeOpVar[dstOp]}};
+  }
+
+  // first seek the block path from srcOp to dstOp
+  auto path = getBlockPath(srcOp->getBlock(), dstOp->getBlock());
+
+  // if srcOp and dstOp are in different blocks, and is not a back edge,
+  // the block is connected by path bb0 -> bb1 -> ... -> bbn
+  // time gap is <TsrcOp, Tb0Exit>, <Tb1Entry, Tb1Exit>, ... <TbnEntry, TdstOp>
+  if (!isBackEdge(srcOp->getBlock(), dstOp->getBlock())) {
+    std::vector<std::pair<GRBVar, GRBVar>> timeGaps;
+    timeGaps.push_back({timeOpVar[srcOp], timeBlkExit[srcOp->getBlock()]});
+
+    path.pop(); // pop the srcOp block
+    for (int i = 0; i < path.size() - 1; i++) {
+      timeGaps.push_back({timeBlkEntry[path.top()], timeBlkExit[path.top()]});
+      path.pop();
+    }
+    timeGaps.push_back({timeBlkEntry[dstOp->getBlock()], timeOpVar[dstOp]});
+    return timeGaps;
+  }
+
+  // if it is a back edge, the time gap is <TsrcOp, TBlockExit>,<Tb1Entry,
+  // Tb1Exit>,...<TbnEntry, TdstOp>
+  std::vector<std::pair<GRBVar, GRBVar>> timeGaps;
+  timeGaps.push_back({timeOpVar[srcOp], timeBlkExit[srcOp->getBlock()]});
+  path.pop(); // pop the srcOp block
+  for (int i = 0; i < path.size() - 1; i++) {
+    timeGaps.push_back({timeBlkEntry[path.top()], timeBlkExit[path.top()]});
+    path.pop();
+  }
+  timeGaps.push_back({timeBlkEntry[dstOp->getBlock()], timeOpVar[dstOp]});
+  return timeGaps;
+}
+
 static void addNeighborConstraints(GRBModel &model, Operation *consumer,
                                    std::vector<Operation *> &producers,
                                    int nRow, int nCol,
                                    std::map<Operation *, GRBVar> &timeOpVar,
                                    std::map<Operation *, GRBVar> &spaceOpVar,
+                                   std::map<Block *, GRBVar> timeBlkEntry,
+                                   std::map<Block *, GRBVar> timeBlkExit,
                                    std::map<Operation *, std::string> varName) {
   // Create helper variables for the possible neighbors
   GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
@@ -376,42 +501,31 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
 
     // Between the time gap of the producer and consumer, the producer PE cannot
     // execute any other operations
-    auto &startT = timeOpVar[prodOp];
-    auto &endT = timeOpVar[consumer];
+    // auto &startT = timeOpVar[prodOp];
+    // auto &endT = timeOpVar[consumer];
+    auto timeGaps = getTimeGapBetween(prodOp, consumer, timeOpVar, spaceOpVar,
+                                      timeBlkEntry, timeBlkExit);
     int constrInd = 0;
-    for (auto [op, tVar] : timeOpVar) {
-      if (op == consumer || op == prodOp)
-        continue;
+    for (auto [startT, endT] : timeGaps) {
+      llvm::errs() << "Add constraints for " << varName[prodOp] << " and "
+                   << varName[consumer] << "\n";
+      for (auto [op, tVar] : timeOpVar) {
+        if (op == consumer || op == prodOp)
+          continue;
 
-      GRBVar &pe = spaceOpVar[op];
-      // A helper variable to indicate the time gap between the producer and the
-      // consumer, where helper = 1 means startT <= t <= endT.
-      GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
-      model.addConstr(tVar >= startT - 1e6 * (1 - h1));
-      model.addConstr(tVar <= startT + 1e6 * h1);
+        GRBVar &pe = spaceOpVar[op];
+        // A helper variable to indicate the time gap between the producer and
+        // the consumer, where helper = 1 means startT <= t <= endT.
+        GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
+        model.addConstr(tVar >= startT - 1e6 * (1 - h1));
+        model.addConstr(tVar <= startT + 1e6 * h1);
 
-      GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
-      model.addConstr(endT >= tVar - 1e6 * (1 - h2));
-      model.addConstr(endT <= tVar + 1e6 * h2);
+        GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
+        model.addConstr(endT >= tVar - 1e6 * (1 - h2));
+        model.addConstr(endT <= tVar + 1e6 * h2);
 
-      GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
-      // TODO[@Yuxuan]: fix the RA to consider the loop block and remove the
-      // first if here.
-      // theoretically, the constraint should be disable all
-      // operations to be placed at the same PE as the producer if its t:
-      // t_start<=t<=t_end, and producer and consumer are not in the same PE.
-      // if they are in the same PE, the operator liveness should be solved by
-      // the register allocation(RA).
-      // However, to strictly follow the original SAT-MapIt MS result, RA for
-      // the loop block is not considered, so we change the constraints to not
-      // allowed any operation to be placed at the same PE as the producer to
-      // avoid the result of producer is written to Rout, which is consumed in
-      // the loop but could be overwritten in the fini phase.
-      if (isa<LLVM::ReturnOp>(prodOp->getBlock()->getTerminator())) {
-        // if t_start<=t<=t_end
-        GRBVar xvars[2] = {h1, h2};
-        model.addGenConstrAnd(h, xvars, 2);
-      } else {
+        GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
+
         // if t_start<=t<=t_end && x!=y
         // if x ! = y, consumer and producer are not in the same PE
         GRBVar diffXY =
@@ -424,57 +538,31 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
 
         GRBVar xvars[3] = {h1, h2, ifPEEq};
         model.addGenConstrAnd(h, xvars, 3);
+
+        // Set constraints for pe != y if helper == 1
+        GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+        GRBVar diffAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+        model.addConstr(diff == pe - y,
+                        "diff" + varName[op] + "_" + varName[consumer] + "_" +
+                            varName[prodOp] + "_" + std::to_string(constrInd));
+        model.addGenConstrAbs(diffAbs, diff);
+
+        model.addGenConstrIndicator(h, 1, diffAbs, GRB_GREATER_EQUAL, 1e-4,
+                                    "indicator_" + varName[consumer] + "with" +
+                                        varName[prodOp] + "id" +
+                                        std::to_string(constrInd));
+
+        constrInd++;
       }
-
-      // Set constraints for pe != y if helper == 1
-      GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-      GRBVar diffAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(diff == pe - y,
-                      "diff" + varName[op] + "_" + varName[consumer] + "_" +
-                          varName[prodOp] + "_" + std::to_string(constrInd));
-      model.addGenConstrAbs(diffAbs, diff);
-
-      model.addGenConstrIndicator(h, 1, diffAbs, GRB_GREATER_EQUAL, 1e-4,
-                                  "indicator_" + varName[consumer] + "with" +
-                                      varName[prodOp] + "id" +
-                                      std::to_string(constrInd));
-
-      constrInd++;
     }
   }
-}
-
-static bool connectOutLoop(Operation *op, std::vector<Operation *> &producers) {
-  if (op->getBlock()->isEntryBlock())
-    return true;
-
-  if (isa<LLVM::ReturnOp>(op->getBlock()->getTerminator()))
-    return true;
-
-  // if op is the loop basic block, check whether the producer is outside the
-  // loop, e.g. in the entry block
-  bool isLoop = false;
-  for (auto it = producers.begin(); it != producers.end();) {
-    if ((*it)->getBlock()->isEntryBlock()) {
-      isLoop = true;
-      ++it;
-    } else {
-      it = producers.erase(it); // Remove the producer and get the next iterator
-    }
-  }
-
-  return isLoop;
-
-  // for (auto blk : op->getBlock()->getPredecessors())
-  //   if (blk->isEntryBlock())
-  //     return true;
-
-  // return false;
 }
 
 void OpenEdgeKernelScheduler::initOpSpaceConstraints(
     GRBModel &model, std::map<Operation *, GRBVar> &spaceOpVar,
-    std::map<Operation *, GRBVar> &timeOpVar) {
+    std::map<Operation *, GRBVar> &timeOpVar,
+    std::map<Block *, GRBVar> timeBlkEntry,
+    std::map<Block *, GRBVar> timeBlkExit) {
 
   for (auto [op, var] : spaceOpVar) {
     // BrOp does not require to consider data dependency
@@ -511,16 +599,8 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         continue;
     }
 
-    if (connectOutLoop(op, producers)) {
-      // llvm::errs() << *op << "has " << producers.size()
-      //              << " producers outside the loop\n";
-      // for (auto prod : producers)
-      //   llvm::errs() << "    " << *prod << "\n";
-
-      // llvm::errs() << "\n";
-      addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
-                             spaceOpVar, varNamePost);
-    }
+    addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
+                           spaceOpVar, timeBlkEntry, timeBlkExit, varNamePost);
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
@@ -543,9 +623,6 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
         model.addConstr(var == dstPE);
-        llvm::errs() << *cntOp << "(" << knownRes[cntOp].pe << ") " << direct
-                     << "\n"
-                     << "   assign " << *op << " to " << dstPE << "\n";
         knownRes[op].pe = dstPE;
         break;
       }
@@ -644,7 +721,8 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   // llvm::errs() << "Time constraints are initialized\n";
 
   // create space constraints
-  initOpSpaceConstraints(model, peVarMap, timeVarMap);
+  initOpSpaceConstraints(model, peVarMap, timeVarMap, timeBlkEntry,
+                         timeBlkExit);
   // llvm::errs() << "Space constraints are initialized\n";
 
   // create time and space constraints
