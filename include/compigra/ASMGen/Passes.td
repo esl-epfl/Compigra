@@ -27,7 +27,9 @@ def OpenEdgeASMGen : Pass<"gen-openedge-asm"> {
     Option<"funcName", "func-name", "std::string", "",
            "Specify the name of the fucntion to convert. ">,
     Option<"mapResult", "map-result", "std::string", "",
-           "Specify the map result by the SAT-MapIt">
+           "Specify the map result by the SAT-MapIt">,
+    Option<"nGrid", "grid", "int", "",
+           "Number of grid blocks">,
   ];
 }
 

@@ -19,6 +19,7 @@
 #include "mlir/IR/Dialect.h"
 #include "mlir/Support/LLVM.h"
 #include <set>
+#include <stack>
 #include <unordered_set>
 
 using namespace mlir;
@@ -83,8 +84,7 @@ private:
   /// Remove the block arguments from the terminator of the term specified by
   /// argId, dest is the block to be connected.
   void removeBlockArgs(Operation *term, std::vector<unsigned> argId,
-                       Block *dest);
-
+                       Block *dest = nullptr);
   /// add producer result as the branch argument for the dest block on the
   /// terminator(term) of predesesor block, insertBefore indicates whether
   /// insert the argument before the original arguments or not
@@ -125,6 +125,15 @@ private:
   /// Remove the useless block arguments in the CFG for the prolog stage which
   /// takes the operands from initBlock unconditionally.
   void removeUselessBlockArg();
+
+private:
+  // Data structure to store the operations Id in the block
+  // std::map<Block *, std::vector<opWithId>> enterBlks;
+  // std::map<Block *, std::vector<opWithId>> exitBlks;
+  std::map<Block *, std::vector<opWithId>> blkOpIds;
+
+  LogicalResult searchInitArg(std::stack<Block *> &blkSt, int id,
+                              Block *curBlk);
 
 public:
   /// Return created DFG in the CFG, this is the

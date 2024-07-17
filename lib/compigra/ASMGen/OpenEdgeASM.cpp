@@ -55,25 +55,6 @@ static Block *getLoopBlock(Region &region) {
   return nullptr;
 }
 
-static void getReplicatedOp(Operation *op, OpBuilder &builder) {}
-
-static LogicalResult replaceSucBlock(Operation *term, Block *newBlock,
-                                     Block *prevBlock = nullptr) {
-  if (auto br = dyn_cast<LLVM::BrOp>(term)) {
-    br.setSuccessor(newBlock);
-    return success();
-  }
-
-  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(term)) {
-    for (auto [ind, suc] : llvm::enumerate(condBr->getSuccessors()))
-      if (suc == prevBlock) {
-        condBr.setSuccessor(newBlock, ind);
-        return success();
-      }
-  }
-  return failure();
-}
-
 /// Create the interference graph for the operations in the PE, the
 /// corresponding relations with the abstract operands are stored in the
 /// opMap.
@@ -535,7 +516,7 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
 
     // Get defition operation
     if (op->getNumOperands() > 0 && inst.opA == "Unknown") {
-      auto producerA = op->getOperand(0).getDefiningOp();
+      auto producerA = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
       if (isa<LLVM::ConstantOp>(producerA))
         // assign opA to be Imm
         inst.opA = std::to_string(
@@ -549,7 +530,7 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
     }
 
     if (op->getNumOperands() > 1 && inst.opB == "Unknown") {
-      auto producerB = op->getOperand(1).getDefiningOp();
+      auto producerB = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
       if (isa<LLVM::ConstantOp>(producerB))
         // assign opA to be Imm
         inst.opB = std::to_string(
@@ -872,7 +853,8 @@ namespace {
 struct OpenEdgeASMGenPass
     : public compigra::impl::OpenEdgeASMGenBase<OpenEdgeASMGenPass> {
 
-  explicit OpenEdgeASMGenPass(StringRef funcName, StringRef mapResult) {}
+  explicit OpenEdgeASMGenPass(StringRef funcName, StringRef mapResult,
+                              int nGrid) {}
 
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
@@ -910,7 +892,11 @@ struct OpenEdgeASMGenPass
       opSize = loopBlock->getOperations().size();
 
       // init scheduler
-      OpenEdgeKernelScheduler scheduler(r, maxReg, 4);
+      auto grid = nGrid.getValue();
+      if (!nGrid.hasValue() || nGrid.getValue() <= 0)
+        grid = 4;
+
+      OpenEdgeKernelScheduler scheduler(r, maxReg, grid);
 
       // init modulo schedule result
       if (kernelOverlap(bbTimeMap)) {
@@ -944,12 +930,12 @@ struct OpenEdgeASMGenPass
         }
       } else
         scheduler.assignSchedule(loopBlock->getOperations(), instructions);
-
+      llvm::errs() << funcOp << "\n";
       // init OpenEdgeASMGen
-      OpenEdgeASMGen asmGen(r, maxReg, 4);
+      OpenEdgeASMGen asmGen(r, maxReg, grid);
       if (failed(scheduler.createSchedulerAndSolve())) {
         llvm::errs() << "Failed to create scheduler and solve\n";
-        return signalPassFailure();
+        // return signalPassFailure();
       }
 
       // assign schedule results and produce assembly
@@ -965,8 +951,8 @@ struct OpenEdgeASMGenPass
 } // namespace
 
 namespace compigra {
-std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName,
-                                                 StringRef mapResult) {
-  return std::make_unique<OpenEdgeASMGenPass>(funcName, mapResult);
+std::unique_ptr<mlir::Pass>
+createOpenEdgeASMGen(StringRef funcName, StringRef mapResult, int nGrid) {
+  return std::make_unique<OpenEdgeASMGenPass>(funcName, mapResult, nGrid);
 }
 } // namespace compigra

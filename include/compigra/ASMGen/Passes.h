@@ -22,6 +22,7 @@ namespace compigra {
 #include "compigra/ASMGen/Passes.h.inc"
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName,
-                                                 StringRef mapResult);
+                                                 StringRef mapResult,
+                                                 int nGrid);
 } // end namespace compigra
 #endif // COMPIGRA_ASM_GEN_PASSES_H

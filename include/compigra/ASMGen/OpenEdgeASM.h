@@ -177,7 +177,8 @@ private:
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",
-                                                 StringRef mapResult = "");
+                                                 StringRef mapResult = "",
+                                                 int nGrid = 4);
 } // end namespace compigra
 
 #endif // OPEN_EDGE_ASM_H

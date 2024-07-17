@@ -175,14 +175,22 @@ void OpenEdgeKernelScheduler::assignSchedule(
       if (exitExec[opId] != curRound) {
         // update current round
         gap = opExec.at(opId);
-        curRound = exitExec[opId];
+
         // llvm::errs() << "Gap at: " << opId << "is updated by " << curRound
         //              << " to " << gap << "\n";
+
+        if (curRound != -1)
+          updatePC++;
+        curPC = updatePC;
+        curRound = exitExec[opId];
       }
       knownRes[op] = instructions.at(opId);
-      // llvm::errs() << curPC << " + " << opExec.at(opId) << " - " << gap <<
-      // "\n";
       knownRes[op].time = curPC + opExec.at(opId) - gap;
+      // llvm::errs() << opId << " (" << *op << ") execute at " << curPC << " +
+      // "
+      //              << opExec.at(opId) << " - " << gap << " = "
+      //              << knownRes[op].time << "\n";
+
       exitExec[opId]++;
       if (knownRes[op].time > updatePC)
         updatePC = knownRes[op].time;
@@ -195,6 +203,7 @@ void OpenEdgeKernelScheduler::assignSchedule(
     knownRes[op] = instructions.at(opId);
 
     knownRes[op].time = opExec.at(opId) + II * totalExec[opId];
+    // llvm::errs() << *op << "execute at" << knownRes[op].time << "\n";
     curPC = std::max(curPC, knownRes[op].time);
     totalExec[opId]++;
   }
@@ -339,16 +348,25 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
     model.addConstr(bottom == bottomRow * nCol + xCol);
 
     // Add constraints that y must be one of the neighbors
-    GRBVar chooseLeft = model.addVar(0, 1, 0, GRB_BINARY);
-    GRBVar chooseRight = model.addVar(0, 1, 0, GRB_BINARY);
-    GRBVar chooseTop = model.addVar(0, 1, 0, GRB_BINARY);
-    GRBVar chooseBottom = model.addVar(0, 1, 0, GRB_BINARY);
+    GRBVar chooseLeft =
+        model.addVar(0, 1, 0, GRB_BINARY,
+                     "left" + varName[consumer] + "for" + varName[prodOp]);
+    GRBVar chooseRight =
+        model.addVar(0, 1, 0, GRB_BINARY,
+                     "right" + varName[consumer] + "for" + varName[prodOp]);
+    GRBVar chooseTop =
+        model.addVar(0, 1, 0, GRB_BINARY,
+                     "top" + varName[consumer] + "for" + varName[prodOp]);
+    GRBVar chooseBottom =
+        model.addVar(0, 1, 0, GRB_BINARY,
+                     "bottom" + varName[consumer] + "for" + varName[prodOp]);
+    GRBVar chooseSelf =
+        model.addVar(0, 1, 0, GRB_BINARY,
+                     "self" + varName[consumer] + "for" + varName[prodOp]);
     leftVars.push_back(chooseLeft);
     rightVars.push_back(chooseRight);
     topVars.push_back(chooseTop);
     bottomVars.push_back(chooseBottom);
-
-    GRBVar chooseSelf = model.addVar(0, 1, 0, GRB_BINARY);
 
     model.addQConstr(y == left * chooseLeft + right * chooseRight +
                               top * chooseTop + bottom * chooseBottom +
@@ -417,8 +435,9 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
       model.addGenConstrAbs(diffAbs, diff);
 
       model.addGenConstrIndicator(h, 1, diffAbs, GRB_GREATER_EQUAL, 1e-4,
-                                  varName[consumer] + "_" + varName[prodOp] +
-                                      "_" + std::to_string(constrInd));
+                                  "indicator_" + varName[consumer] + "with" +
+                                      varName[prodOp] + "id" +
+                                      std::to_string(constrInd));
 
       constrInd++;
     }
@@ -524,6 +543,9 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
         model.addConstr(var == dstPE);
+        llvm::errs() << *cntOp << "(" << knownRes[cntOp].pe << ") " << direct
+                     << "\n"
+                     << "   assign " << *op << " to " << dstPE << "\n";
         knownRes[op].pe = dstPE;
         break;
       }

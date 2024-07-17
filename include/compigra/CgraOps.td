@@ -246,6 +246,25 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
       getTrueDestOperandsMutable().erase(index);
     }
 
+    /// Erase the operand at 'index' from the false operand list.
+    void eraseFalseOperand(unsigned index) {
+      getFalseDestOperandsMutable().erase(index);
+    }
+
+    void eraseOperand(unsigned index) {
+      if (index >= getFalseDestOperandIndex())
+        eraseFalseOperand(index - getFalseDestOperandIndex());
+      else if (index >= getTrueDestOperandIndex())
+        eraseTrueOperand(index - getTrueDestOperandIndex());
+      else
+        llvm_unreachable("invalid operand index");
+    }
+
+    void eraseOperands(unsigned start, unsigned length) {
+      for (unsigned i = 0; i < length; ++i)
+        eraseOperand(start);
+    }
+
     // Accessors for operands to the 'false' destination.
     ::mlir::Value getFalseOperand(unsigned idx) {
       assert(idx < getNumFalseOperands());
@@ -260,11 +279,6 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
     operand_range getFalseOperands() { return getFalseDestOperands(); }
 
     unsigned getNumFalseOperands() { return getFalseOperands().size(); }
-
-    // /// Erase the operand at 'index' from the false operand list.
-    // void eraseFalseOperand(unsigned index) {
-    //   getFalseDestOperandsMutable().erase(index);
-    // }
 
   private:
     /// Get the index of the first true destination operand.
