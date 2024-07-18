@@ -19,6 +19,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include <stack>
 
 using namespace mlir;
 
@@ -29,8 +30,12 @@ bool isAddrConstOp(LLVM::ConstantOp constOp);
 /// Move all constant operations to the entry block
 LogicalResult raiseConstOperation(cgra::FuncOp funcOp);
 
-/// Erased constant operations if they are not in used
+/// Erase constant operations if they are not in used
 LogicalResult removeUnusedConstOp(cgra::FuncOp funcOp);
+
+/// Erase bitwidth related operations if they have been rewritten and have equal
+/// bitwidths for input and output.
+LogicalResult removeEqualWidthBWOp(cgra::FuncOp funcOp);
 
 /// Use add operation to generate a value if Imm field is not allowed.
 LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
@@ -48,10 +53,10 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
 bool isValidImmAddr(LLVM::ConstantOp constOp);
 
 namespace {
-// Initialze the constant target that can not be deployed in the openedge
+// Initialze the IR target that can not be deployed in the openedge
 // CGRA
-struct ConstTarget : public ConversionTarget {
-  ConstTarget(MLIRContext *ctx);
+struct OpenEdgeISATarget : public ConversionTarget {
+  OpenEdgeISATarget(MLIRContext *ctx);
 };
 
 } // namespace
@@ -73,18 +78,34 @@ struct CgraFitToOpenEdgePass
   void runOnOperation() override;
 };
 
+/// Rewrite constant operation to make all the immediate field in hardware ISA
+/// valid.
 struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
-  ConstantOpRewrite(MLIRContext *ctx, int *constBase,
-                    SmallVector<Operation *> &insertedOps)
-      : OpRewritePattern(ctx), constBase(constBase), insertedOps(insertedOps) {}
+  ConstantOpRewrite(MLIRContext *ctx, SmallVector<Operation *> &insertedOps)
+      : OpRewritePattern(ctx), insertedOps(insertedOps) {}
 
   LogicalResult matchAndRewrite(LLVM::ConstantOp constOp,
                                 PatternRewriter &rewriter) const override;
 
 protected:
-  int *constBase;
   SmallVector<Operation *> &insertedOps;
 };
+
+/// Fix the load operators to be I32, as the Load&Store interface is fixed in
+/// OpenEdge.
+struct LwiOpRewrite : public OpRewritePattern<cgra::LwiOp> {
+  LwiOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
+  LogicalResult matchAndRewrite(cgra::LwiOp lwiOp,
+                                PatternRewriter &rewriter) const override;
+};
+
+/// Remove bitwidth extension operations as OpenEdge PE is by default 32 bits
+struct BitWidthExtOpRewrite : public OpRewritePattern<LLVM::SExtOp> {
+  BitWidthExtOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx){};
+  LogicalResult matchAndRewrite(LLVM::SExtOp extOp,
+                                PatternRewriter &rewriter) const override;
+};
+
 } // namespace
 
 #endif // CGRA_FIT_TO_OPENEDGE_H

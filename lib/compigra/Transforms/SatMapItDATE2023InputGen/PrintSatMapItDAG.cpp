@@ -147,22 +147,11 @@ LogicalResult PrintSatMapItDAG::init() {
 
   BlockArgs.append(loopBlock->getArguments().begin(),
                    loopBlock->getArguments().end());
-  llvm::errs() << "The number of liveIn arguments: " << BlockArgs.size()
-               << "\n";
   // The liveOut arguments are the false branch arguments
 
   if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(terminator)) {
     liveOutArgs = condBr.getFalseDestOperands();
   }
-  // if (auto beqOp = dyn_cast<cgra::BeqOp>(terminator)) {
-  //   getFalseDestOperands<cgra::BeqOp>(beqOp, liveOutArgs);
-  // } else if (auto bneOp = dyn_cast<cgra::BneOp>(terminator)) {
-  //   getFalseDestOperands<cgra::BneOp>(bneOp, liveOutArgs);
-  // } else if (auto bltOp = dyn_cast<cgra::BltOp>(terminator)) {
-  //   getFalseDestOperands<cgra::BltOp>(bltOp, liveOutArgs);
-  // } else if (auto bgeOp = dyn_cast<cgra::BgeOp>(terminator)) {
-  //   getFalseDestOperands<cgra::BgeOp>(bgeOp, liveOutArgs);
-  // }
 
   // init constant, liveIn, and liveOut operations
   for (auto [ind, arg] : llvm::enumerate(BlockArgs)) {
@@ -200,8 +189,11 @@ LogicalResult PrintSatMapItDAG::init() {
 LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
   std::ofstream dotFile;
   dotFile.open(fileName.c_str());
+  if (!dotFile.is_open()) {
+    LLVM_DEBUG(llvm::dbgs() << "Failed to open the " << fileName << "\n");
+    return failure();
+  }
 
-  // SmallVector
   // print the block arguments to be merge node
   for (auto [ind, argPair] : llvm::enumerate(argMaps)) {
     std::string nodeName = "phi";
@@ -297,6 +289,11 @@ LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
 LogicalResult PrintSatMapItDAG::printConsts(std::string fileName) {
   std::ofstream dotFile;
   dotFile.open(fileName.c_str());
+  if (!dotFile.is_open()) {
+    LLVM_DEBUG(llvm::dbgs() << "Failed to open the " << fileName << "\n");
+    return failure();
+  }
+
   for (auto [ind, constOp] : llvm::enumerate(constants)) {
     // The constant should only have one user
     if (std::distance(constOp->getUsers().begin(), constOp->getUsers().end()) >
@@ -328,6 +325,11 @@ LogicalResult PrintSatMapItDAG::printConsts(std::string fileName) {
 LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
   std::ofstream dotFile;
   dotFile.open(fileName.c_str());
+  if (!dotFile.is_open()) {
+    LLVM_DEBUG(llvm::dbgs() << "Failed to open the " << fileName << "\n");
+    return failure();
+  }
+
   for (auto arg : BlockArgs) {
     for (auto &use : arg.getUses()) {
 
@@ -396,6 +398,10 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
   // print the live-in nodes to text file
   std::ofstream dotFile;
   dotFile.open(inNodeFile.c_str());
+  if (!dotFile.is_open()) {
+    LLVM_DEBUG(llvm::dbgs() << "Failed to open the " << fileName << "\n");
+    return failure();
+  }
   for (auto liveIn : liveIns)
     dotFile << getNodeIndex(liveIn) << "\n";
   dotFile.close();

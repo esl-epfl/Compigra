@@ -507,8 +507,6 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
                                       timeBlkEntry, timeBlkExit);
     int constrInd = 0;
     for (auto [startT, endT] : timeGaps) {
-      llvm::errs() << "Add constraints for " << varName[prodOp] << " and "
-                   << varName[consumer] << "\n";
       for (auto [op, tVar] : timeOpVar) {
         if (op == consumer || op == prodOp)
           continue;
@@ -738,8 +736,8 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
                         timeBlkExit, obj);
 
   // Optimize the model
-  model.optimize();
   model.write("model.lp");
+  model.optimize();
 
   // Check if the optimization status indicates infeasibility
   if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE ||

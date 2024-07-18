@@ -544,13 +544,6 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
     }
 
     instSolution[op] = inst;
-    llvm::errs() << "Op: " << *op << "\n"
-                 << "Name: " << inst.name << " "
-                 << "Time: " << inst.time << " "
-                 << "PE: " << inst.pe << " "
-                 << "Rout: " << inst.Rout << " "
-                 << "OpA: " << inst.opA << " "
-                 << "OpB: " << inst.opB << "\n\n";
   }
   return success();
 }

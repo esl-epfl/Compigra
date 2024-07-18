@@ -72,13 +72,31 @@ LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
   return success();
 }
 
+/// remove the constant operation if it is not used
 LogicalResult removeUnusedConstOp(cgra::FuncOp funcOp) {
-  // remove the constant operation if it is not used
   for (auto op :
        llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
     if (op->use_empty())
       op->erase();
   }
+
+  return success();
+}
+
+LogicalResult removeEqualWidthBWOp(cgra::FuncOp funcOp) {
+  for (auto op : llvm::make_early_inc_range(funcOp.getOps<LLVM::SExtOp>())) {
+    if (op.getOperand().getType() == op.getResult().getType()) {
+      if (op.getOperand().getDefiningOp())
+        op.replaceAllUsesWith(op.getOperand().getDefiningOp());
+      op->erase();
+    }
+  }
+
+  // for (auto op : llvm::make_early_inc_range(funcOp.getOps<LLVM::TruncOp>()))
+  // {
+  //   if (op.getOperand().getType() == op.getResult().getType())
+  //     op->erase();
+  // }
 
   return success();
 }
@@ -198,7 +216,6 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
   for (Operation &op : loopBlk->getOperations()) {
     nodes.push_back(&op);
   }
-  llvm::errs() << "The number of operations: " << nodes.size() << "\n";
 
   // initialize print function
   satmapit::PrintSatMapItDAG printer(loopBlk->getTerminator(), nodes);
@@ -244,8 +261,17 @@ LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
   return addOp;
 }
 
+static bool isI32IntegerType(Type type) {
+  if (auto intType = dyn_cast<IntegerType>(type))
+    if (intType.getWidth() == 32) {
+      return true;
+    }
+  return false;
+}
+
 namespace {
-ConstTarget::ConstTarget(MLIRContext *ctx) : ConversionTarget(*ctx) {
+OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
+    : ConversionTarget(*ctx) {
   addLegalDialect<cgra::CgraDialect>();
   addDynamicallyLegalDialect<LLVM::LLVMDialect>(
       [&](Operation *op) { return !isa<LLVM::ConstantOp>(op); });
@@ -280,6 +306,17 @@ ConstTarget::ConstTarget(MLIRContext *ctx) : ConversionTarget(*ctx) {
     }
 
     return true;
+  });
+
+  addDynamicallyLegalOp<LLVM::SExtOp>([&](LLVM::SExtOp extOp) {
+    return extOp.getOperand().getType() == extOp.getResult().getType();
+  });
+  // addIllegalOp<LLVM::SExtOp>();
+  // addDynamicallyLegalOp<LLVM::TruncOp>([&](LLVM::TruncOp truncOp) {
+  //   return truncOp.getOperand().getType() == truncOp.getResult().getType();
+  // });
+  addDynamicallyLegalOp<cgra::LwiOp>([&](cgra::LwiOp lwiOp) {
+    return isI32IntegerType(lwiOp.getResult().getType());
   });
 }
 
@@ -343,26 +380,116 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   return success();
 }
 
+static SmallVector<Operation *, 4> getSrcOpIndirectly(Value val) {
+  SmallVector<Operation *, 4> cntOps;
+  if (!val.isa<BlockArgument>()) {
+    cntOps.push_back(val.getDefiningOp());
+    return cntOps;
+  }
+
+  // if the value is not block argument, return empty vector
+
+  Block *block = val.getParentBlock();
+  Value propVal;
+
+  int argInd = val.cast<BlockArgument>().getArgNumber();
+  for (auto pred : block->getPredecessors()) {
+    Operation *termOp = pred->getTerminator();
+    Value corrVal = termOp->getOperand(argInd);
+    auto defOps = getSrcOpIndirectly(corrVal);
+    cntOps.append(defOps.begin(), defOps.end());
+  }
+  return cntOps;
+}
+
+LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
+                                            PatternRewriter &rewriter) const {
+  auto resType = lwiOp.getResult().getType();
+  auto origType = lwiOp.getOperand().getType(); // valid I32 address type
+
+  rewriter.modifyOpInPlace(
+      lwiOp, [&] { lwiOp.getResult().setType(rewriter.getI32Type()); });
+
+  // set the type of corresponding successor
+  std::stack<Value> dstOprs;
+  dstOprs.push(lwiOp.getResult());
+  bool empty = false;
+  while (!dstOprs.empty()) {
+    auto opr = dstOprs.top();
+    dstOprs.pop();
+
+    // change opr to origType
+    opr.setType(origType);
+
+    // push the predecessors if its type is not the same as result type
+    for (auto user : opr.getUsers())
+      if (user->getNumResults() == 1 &&
+          !isI32IntegerType(user->getResult(0).getType()))
+        dstOprs.push(user->getResult(0));
+  }
+  return success();
+}
+
+LogicalResult
+BitWidthExtOpRewrite::matchAndRewrite(LLVM::SExtOp extOp,
+                                      PatternRewriter &rewriter) const {
+  // track all the predecessor op of extOp
+  auto resType = extOp.getResult().getType();
+  auto *prodOp = extOp.getOperand().getDefiningOp();
+  auto origType = extOp.getOperand().getType();
+  if (!isI32IntegerType(resType))
+    return failure();
+
+  std::stack<Value> srcOprs;
+  srcOprs.push(extOp.getOperand());
+  bool empty = false;
+  while (!srcOprs.empty()) {
+    auto opr = srcOprs.top();
+    srcOprs.pop();
+
+    // change opr to origType
+    opr.setType(resType);
+
+    // push the predecessors if its type is not the same as result type
+    auto defOps = getSrcOpIndirectly(opr);
+    for (auto op : defOps) {
+      if (op->getResult(0).getType() != resType)
+        srcOprs.push(op->getResult(0));
+    }
+  }
+  if (prodOp)
+    rewriter.replaceAllOpUsesWith(extOp, prodOp);
+  llvm::errs() << "replace " << *extOp << " with " << *prodOp << "\n";
+
+  // set all the predecessor type with result type, erase the operation
+  rewriter.modifyOpInPlace(extOp, [&] {
+    extOp.getOperand().setType(resType);
+    extOp->erase();
+  });
+  return success();
+}
+
 void CgraFitToOpenEdgePass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
   MLIRContext *ctx = &getContext();
   RewritePatternSet patterns{ctx};
-  ConstTarget target(ctx);
+  OpenEdgeISATarget target(ctx);
 
-  int BaseAddr = 64;
   SmallVector<Operation *> insertedOps;
-  patterns.add<ConstantOpRewrite>(ctx, &BaseAddr, insertedOps);
+  patterns.add<ConstantOpRewrite>(ctx, insertedOps);
+  patterns.add<BitWidthExtOpRewrite>(ctx);
+  patterns.add<LwiOpRewrite>(ctx);
 
   // adapt the constant operation to meet the requirement of Imm field of
   // openedge CGRA
-  if (failed(
-          applyPartialConversion(getOperation(), target, std::move(patterns))))
+  if (failed(applyPartialConversion(modOp, target, std::move(patterns))))
     signalPassFailure();
 
   // raise the constant operation to the top level
   for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
     if (failed(raiseConstOperation(funcOp)) ||
-        failed(removeUnusedConstOp(funcOp)))
+        failed(removeUnusedConstOp(funcOp)) ||
+        failed(removeEqualWidthBWOp(funcOp)))
       signalPassFailure();
 
   // print the DAG of the specified function
