@@ -298,6 +298,7 @@ def ConditionalBranchOp : Cgra_Op<"cond_br", [
       $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?
       attr-dict
   }];
+  let hasVerifier = 1;
 }
 
 def BzfaOp : Cgra_Op<"bzfa", [

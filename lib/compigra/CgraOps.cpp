@@ -326,6 +326,21 @@ void JumpOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
 bool ConditionalBranchOp::isControl() { return true; }
 
+LogicalResult ConditionalBranchOp::verify() {
+  // check whether true destination block hase the same arugment size
+  auto trueDest = getTrueDest();
+  if (trueDest->getNumArguments() != getNumTrueDestOperands())
+    return emitOpError() << "Successor #0 expect " << getNumTrueDestOperands()
+                         << "arguments but have "
+                         << trueDest->getNumArguments();
+  auto falseDest = getFalseDest();
+  if (falseDest->getNumArguments() != getNumFalseOperands())
+    return emitOpError() << "Successor #1 expect " << getNumFalseOperands()
+                         << " arguments but have "
+                         << falseDest->getNumArguments();
+  return success();
+}
+
 /// Parse the cgra select-like operation such as bzfa and bsfa.
 static ParseResult
 parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand &jumpOperand,
@@ -343,7 +358,7 @@ parseSelLikeOp(OpAsmParser &parser, OpAsmParser::UnresolvedOperand &jumpOperand,
 }
 
 /// Operands should share the same type
-static bool hasSameType(Operation::operand_range operands) {
+static bool hasSameType(SmallVector<Value> operands) {
   if (operands.size() <= 1)
     return true;
   auto type = operands.front().getType();
@@ -356,14 +371,20 @@ static bool hasSameType(Operation::operand_range operands) {
 
 LogicalResult BzfaOp::verify() {
   auto operands = getDataOperands();
+  auto resultOpr = getDataResult();
+  SmallVector<Value> allOpr(operands.begin(), operands.end());
+  allOpr.push_back(resultOpr);
 
-  if (!hasSameType(operands))
+  if (!hasSameType(allOpr))
     return emitOpError() << "expected all data operands have the same type";
   return success();
 }
 
 LogicalResult BsfaOp::verify() {
   auto operands = getDataOperands();
+  auto resultOpr = getDataResult();
+  SmallVector<Value> allOpr(operands.begin(), operands.end());
+  allOpr.push_back(resultOpr);
 
   if (!hasSameType(operands))
     return emitOpError() << "expected all data operands have the same type";
