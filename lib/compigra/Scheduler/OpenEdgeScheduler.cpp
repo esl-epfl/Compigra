@@ -769,7 +769,6 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   model.write("solution.sol");
 
   std::ofstream csvFile("output.csv");
-
   // If the model is infeasible, write the model to solution
   for (auto [op, var] : timeVarMap) {
     writeOpResult(op, var.get(GRB_DoubleAttr_X),

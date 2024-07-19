@@ -149,8 +149,9 @@ compile_sat() {
 
     # Generate the scheduled assembly code
     $COMPIGRA_OPT --allow-unregistered-dialect \
-        --gen-openedge-asm="func-name=$bench_name map-result=$bench_path/$config/out_raw.sat" \
-        "$f_hardware" > $f_sat 2> /dev/null
+        --gen-openedge-asm="func-name=$bench_name \
+        map-result=$bench_path/$config/out_raw.sat grid=$2" \
+        "$f_hardware" > $f_sat 2> /dev/null 
 
     # Check if the scheduling was successful
     if [ $? -eq 0 ]; then

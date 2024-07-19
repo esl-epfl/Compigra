@@ -863,7 +863,6 @@ struct OpenEdgeASMGenPass
     // initial interval
     int II;
 
-    llvm::errs() << mapResult << "\n";
     size_t pos = mapResult.find_last_of("/");
     // Default output file directory
     std::string outDir = mapResult.substr(0, pos + 1) + "out";
