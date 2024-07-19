@@ -859,7 +859,7 @@ struct OpenEdgeASMGenPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-    unsigned maxReg = 4;
+    unsigned maxReg = 3;
     // initial interval
     int II;
 
@@ -927,6 +927,7 @@ struct OpenEdgeASMGenPass
                                    instructions, preOpIds[i]);
           curPC++;
         }
+
       } else
         scheduler.assignSchedule(loopBlock->getOperations(), instructions);
 
@@ -943,7 +944,6 @@ struct OpenEdgeASMGenPass
       asmGen.allocateRegisters(scheduler.knownRes);
       asmGen.printKnownSchedule(true, 0, outDir);
     }
-
   }
 };
 } // namespace

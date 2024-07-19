@@ -140,17 +140,25 @@ int OpenEdgeKernelScheduler::getConnectedBlock(int pe, std::string direction) {
 
   if (direction == "RCT") {
     row = (row - 1 + nRow) % nRow; // Move up, wrap around if needed
-  } else if (direction == "RCB") {
-    row = (row + 1) % nRow; // Move down, wrap around if needed
-  } else if (direction == "RCL") {
-    col = (col - 1 + nCol) % nCol; // Move left, wrap around if needed
-  } else if (direction == "RCR") {
-    col = (col + 1) % nCol; // Move right, wrap around if needed
-  } else {
-    return -1;
+    return row * nCol + col;
   }
 
-  return row * nCol + col;
+  if (direction == "RCB") {
+    row = (row + 1) % nRow; // Move down, wrap around if needed
+    return row * nCol + col;
+  }
+
+  if (direction == "RCL") {
+    col = (col - 1 + nCol) % nCol; // Move left, wrap around if needed
+    return row * nCol + col;
+  }
+
+  if (direction == "RCR") {
+    col = (col + 1) % nCol; // Move right, wrap around if needed
+    return row * nCol + col;
+  }
+
+  return -1;
 }
 
 /// sort hte ops in the order of loop iteration sequence and execution time
@@ -198,18 +206,12 @@ void OpenEdgeKernelScheduler::assignSchedule(
       if (exitExec[opId] != curRound) {
         // update current round
         gap = opExec.at(opId);
-
-        // llvm::errs() << "Gap at: " << opId << "is updated by " << curRound
-        //              << " to " << gap << "\n";
-
         curRound = exitExec[opId];
       }
       knownRes[op] = instructions.at(opId);
       knownRes[op].time = curPC + opExec.at(opId) - gap;
-      // llvm::errs() << opId << " (" << *op << ") execute at " << curPC << " +
-      // "
-      //              << opExec.at(opId) << " - " << gap << " = "
-      //              << knownRes[op].time << "\n";
+      if (isa<cgra::ConditionalBranchOp>(op) && knownRes[op].opB == "ROUT")
+        knownRes[op].opB = "Unknown";
 
       exitExec[opId]++;
       if (knownRes[op].time > updatePC)
@@ -221,9 +223,9 @@ void OpenEdgeKernelScheduler::assignSchedule(
 
   for (auto [op, opId] : ops) {
     knownRes[op] = instructions.at(opId);
-
     knownRes[op].time = opExec.at(opId) + II * totalExec[opId];
-    // llvm::errs() << *op << "execute at" << knownRes[op].time << "\n";
+    if (isa<cgra::ConditionalBranchOp>(op) && knownRes[op].opB == "ROUT")
+      knownRes[op].opB = "Unknown";
     curPC = std::max(curPC, knownRes[op].time);
     totalExec[opId]++;
   }
@@ -234,6 +236,8 @@ void OpenEdgeKernelScheduler::assignSchedule(
     const std::map<int, Instruction> instructions) {
   for (auto [ind, op] : llvm::enumerate(ops)) {
     knownRes[&op] = instructions.at(ind);
+    if (isa<cgra::ConditionalBranchOp>(op) && knownRes[&op].opB == "ROUT")
+      knownRes[&op].opB = "Unknown";
   }
 }
 
@@ -638,10 +642,14 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         bool leftOp =
             cntOp->getOperand(leftOpInd) == getCorrelatedVal(op->getResult(0));
         std::string direct = leftOp ? knownRes[cntOp].opA : knownRes[cntOp].opB;
+        // if cannot refer from its user's operands, skip it
+        if (direct == "Unknown")
+          continue;
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
         model.addConstr(var == dstPE);
         knownRes[op].pe = dstPE;
+
         break;
       }
     }
@@ -765,8 +773,6 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE ||
       model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD)
     return failure();
-
-  model.write("solution.sol");
 
   std::ofstream csvFile("output.csv");
   // If the model is infeasible, write the model to solution
