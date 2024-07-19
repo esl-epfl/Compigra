@@ -92,12 +92,6 @@ LogicalResult removeEqualWidthBWOp(cgra::FuncOp funcOp) {
     }
   }
 
-  // for (auto op : llvm::make_early_inc_range(funcOp.getOps<LLVM::TruncOp>()))
-  // {
-  //   if (op.getOperand().getType() == op.getResult().getType())
-  //     op->erase();
-  // }
-
   return success();
 }
 
@@ -380,7 +374,7 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   return success();
 }
 
-static SmallVector<Operation *, 4> getSrcOpIndirectly(Value val) {
+SmallVector<Operation *, 4> getSrcOpIndirectly(Value val, Block *targetBlock) {
   SmallVector<Operation *, 4> cntOps;
   if (!val.isa<BlockArgument>()) {
     cntOps.push_back(val.getDefiningOp());
@@ -395,10 +389,30 @@ static SmallVector<Operation *, 4> getSrcOpIndirectly(Value val) {
   int argInd = val.cast<BlockArgument>().getArgNumber();
   for (auto pred : block->getPredecessors()) {
     Operation *termOp = pred->getTerminator();
-    Value corrVal = termOp->getOperand(argInd);
-    auto defOps = getSrcOpIndirectly(corrVal);
-    cntOps.append(defOps.begin(), defOps.end());
+    // Return operation does not propagate block argument
+    if (isa<LLVM::ReturnOp>(termOp))
+      continue;
+
+    if (isa<LLVM::BrOp>(termOp)) {
+      // the corresponding block argument is the argInd'th operator
+      propVal = termOp->getOperand(argInd);
+      auto defOps = getSrcOpIndirectly(propVal, targetBlock);
+      cntOps.append(defOps.begin(), defOps.end());
+    } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
+      // The terminator would be beq, bne, blt, bge, etc, the propagated value
+      // is counted from 2nd operand.
+      if (targetBlock == condBr.getTrueDest())
+        propVal = condBr.getTrueOperand(argInd);
+      else if (targetBlock == condBr.getFalseDest()) {
+        propVal = condBr.getFalseOperand(argInd);
+      } else
+        continue;
+
+      auto defOps = getSrcOpIndirectly(propVal, targetBlock);
+      cntOps.append(defOps.begin(), defOps.end());
+    }
   }
+
   return cntOps;
 }
 
@@ -451,7 +465,7 @@ BitWidthExtOpRewrite::matchAndRewrite(LLVM::SExtOp extOp,
     opr.setType(resType);
 
     // push the predecessors if its type is not the same as result type
-    auto defOps = getSrcOpIndirectly(opr);
+    auto defOps = getSrcOpIndirectly(opr, opr.getDefiningOp()->getBlock());
     for (auto op : defOps) {
       if (op->getResult(0).getType() != resType)
         srcOprs.push(op->getResult(0));

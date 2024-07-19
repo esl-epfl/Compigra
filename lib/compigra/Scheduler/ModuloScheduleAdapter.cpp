@@ -377,7 +377,7 @@ LogicalResult ModuloScheduleAdapter::searchInitArg(std::stack<Block *> &blkSt,
     }
     for (auto pred : blk->getPredecessors())
       if (blkOpIds.count(pred) > 0) {
-        llvm::errs() << pred->getOperations().front() << "\n";
+        // llvm::errs() << pred->getOperations().front() << "\n";
         blkSt.push(pred);
       }
     trackBlk = blk;
@@ -588,8 +588,19 @@ LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
   for (auto &op : finiBlock->getOperations()) {
     for (auto opr : op.getOperands()) {
       if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
-        // TODO[@Yuxuan]: general method to handle block arguments
-        return failure();
+        llvm::errs() << op << ": " << opr << "\n";
+        // still use block argument, the parameter propagation is handled by the
+        // predecessor
+        unsigned argId = blockArg.getArgNumber();
+        if (loopFalseBlk->getSuccessor(0) != finiBlock)
+          return failure();
+        Operation *defOp =
+            loopFalseBlk->getTerminator()->getOperand(argId).getDefiningOp();
+        unsigned opId = getOpId(templateBlock->getOperations(), defOp);
+        for (auto opList : insertOpsList)
+          addBranchArgument(opList[opId]->getBlock()->getTerminator(),
+                            opList[opId], finiBlock);
+        continue;
       }
       if (opr.getDefiningOp()) {
         auto defOp = opr.getDefiningOp();
@@ -643,6 +654,9 @@ void ModuloScheduleAdapter::removeTempletBlock() {
   // delete the origianl loop block
   // collect all operations in reverse order in a temporary vector.
 
+  // erase loopFalseBlk terminator in case it is used for parameter propagation.
+  loopFalseBlk->getTerminator()->erase();
+
   std::vector<Operation *> toErase;
   for (auto &op : llvm::reverse(loopOpList)) {
     toErase.push_back(&op);
@@ -652,7 +666,6 @@ void ModuloScheduleAdapter::removeTempletBlock() {
     op->erase();
 
   templateBlock->erase();
-  // erase loopFalseBlk
   loopFalseBlk->erase();
 }
 

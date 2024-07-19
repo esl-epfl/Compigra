@@ -104,17 +104,17 @@ public:
   /// Assume the loop basic block has been scheduled, initialize the known
   /// results as constraints for the optimization model.
   void initKnownSchedule(GRBModel &model,
-                         std::map<Operation *, GRBVar> &timeOpVar,
-                         std::map<Operation *, GRBVar> &spaceOpVar);
+                         const std::map<Operation *, GRBVar> timeOpVar,
+                         const std::map<Operation *, GRBVar> spaceOpVar);
 
   /// Initialize the constraints for the optimization model, including the
   /// successor should always execuated after the predecessor(both operation and
   /// block). Also, the operation execution time should belong to the range of
   /// its belonging block.
   void initOpTimeConstraints(GRBModel &model,
-                             std::map<Operation *, GRBVar> &timeOpVar,
-                             std::map<Block *, GRBVar> &timeBlkEntry,
-                             std::map<Block *, GRBVar> &timeBlkExit);
+                             const std::map<Operation *, GRBVar> timeOpVar,
+                             const std::map<Block *, GRBVar> timeBlkEntry,
+                             const std::map<Block *, GRBVar> timeBlkExit);
 
   /// Initialize the constraints for the optimization model.
   /// 1. Producer operation should be execuated at neighbour PE or the same PE
@@ -123,10 +123,10 @@ public:
   /// can be scheduled at this PE before the consumer operation consumes the
   /// results.
   void initOpSpaceConstraints(GRBModel &model,
-                              std::map<Operation *, GRBVar> &spaceOpVar,
-                              std::map<Operation *, GRBVar> &timeOpVar,
-                              std::map<Block *, GRBVar> timeBlkEntry,
-                              std::map<Block *, GRBVar> timeBlkExit);
+                              const std::map<Operation *, GRBVar> spaceOpVar,
+                              const std::map<Operation *, GRBVar> timeOpVar,
+                              const std::map<Block *, GRBVar> timeBlkEntry,
+                              const std::map<Block *, GRBVar> timeBlkExit);
 
   /// Initialize the constraints for both time and space. Specifically, the time
   /// and space scheduling result for one operation should be unique.
@@ -147,7 +147,7 @@ public:
   void assignSchedule(mlir::Block::OpListType &ops,
                       const std::map<int, Instruction> instructions);
 
-  void assignSchedule(std::vector<opWithId> &ops, const bool epilog,
+  void assignSchedule(std::vector<opWithId> ops, const bool epilog,
                       const int II, int &curPC, std::map<int, int> opExec,
                       const std::map<int, Instruction> instructions,
                       std::vector<int> &totalExec);

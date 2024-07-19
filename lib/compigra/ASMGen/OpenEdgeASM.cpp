@@ -930,7 +930,7 @@ struct OpenEdgeASMGenPass
         }
       } else
         scheduler.assignSchedule(loopBlock->getOperations(), instructions);
-      // llvm::errs() << funcOp << "\n";
+
       // init OpenEdgeASMGen
       OpenEdgeASMGen asmGen(r, maxReg, grid);
       if (failed(scheduler.createSchedulerAndSolve())) {
@@ -945,7 +945,6 @@ struct OpenEdgeASMGenPass
       asmGen.printKnownSchedule(true, 0, outDir);
     }
 
-    // Assign operations in the init phase
   }
 };
 } // namespace
