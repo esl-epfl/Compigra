@@ -25,9 +25,9 @@ def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
   let dependentDialects = ["cgra::CgraDialect"];
   let options = [
     Option<"funcName", "func-name", "std::string", "",
-           "Specify the name of the fucntion to convert. ">,
+           "    Specify the name of the fucntion to convert. ">,
     Option<"memAlloc", "mem-json", "std::string", "",
-           "Specify the memory allocation policy for data interface between "
+           "    Specify the memory allocation policy for data interface between "
            "CGRA and host processor ">
   ];
 }

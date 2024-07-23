@@ -95,9 +95,26 @@ compile_sat() {
     # Get llvm IR from clang
     $CLANG14 -S -c -emit-llvm -m32 -O3 \
       -fno-unroll-loops -fno-vectorize -fno-slp-vectorize \
-      "$bench_c" -o "$f_ll"
+      "$bench_c" -o "$f_ll" 2> /dev/null
+
+    # Check whether conversion success
+    if [ $? -ne 0 ]; then
+        echo "FAILED ON LLVM IR GENERATION."
+        return 1
+    else
+        echo "Generate LLVM IR."
+    fi
+
     # Translate llvm to mlir llvm dialect
     $MLIR_TRANSLATE --import-llvm  "$f_ll" > "$f_llvm" 2> /dev/null
+       
+    # Check whether conversion success
+    if [ $? -ne 0 ]; then
+        echo "FAILED ON LLVM IR GENERATION."
+        return 1
+    else
+        echo "Translate to MLIR with LLVM Dialect."
+    fi
 
     # convert llvm to cgra operation
     $COMPIGRA_OPT --allow-unregistered-dialect \
@@ -156,6 +173,7 @@ compile_sat() {
     # Check if the scheduling was successful
     if [ $? -eq 0 ]; then
         echo "Kernel scheduling success."
+        echo "========================"
         echo "COMPILATION SUCCESS."
     else
         echo "Kernel schedule failed."

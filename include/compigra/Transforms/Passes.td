@@ -44,7 +44,7 @@ def CgraFitToOpenEdge : Pass<"fit-openedge"> {
   let constructor = "compigra::createCgraFitToOpenEdge()";
     let options = [
     Option<"outputDAG", "out-dag", "std::string", "",
-           "Specify the name of the fucntion to output the SATMapIt DAG in "
+           "    Specify the name of the fucntion to output the SATMapIt DAG in "
            "the format of DATE2023 code. ">
   ];
 }

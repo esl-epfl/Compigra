@@ -25,11 +25,11 @@ def OpenEdgeASMGen : Pass<"gen-openedge-asm"> {
   let dependentDialects = ["cgra::CgraDialect"];
   let options = [
     Option<"funcName", "func-name", "std::string", "",
-           "Specify the name of the fucntion to convert. ">,
+           "  Specify the name of the fucntion to convert. ">,
     Option<"mapResult", "map-result", "std::string", "",
-           "Specify the map result by the SAT-MapIt">,
+           "  Specify the map result by the SAT-MapIt">,
     Option<"nGrid", "grid", "int", "",
-           "Number of grid blocks">,
+           "  Number of grid blocks">,
   ];
 }
 
