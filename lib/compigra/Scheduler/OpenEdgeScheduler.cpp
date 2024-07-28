@@ -161,32 +161,15 @@ int OpenEdgeKernelScheduler::getConnectedBlock(int pe, std::string direction) {
   return -1;
 }
 
-/// sort hte ops in the order of loop iteration sequence and execution time
-static void sortOpsInExecTime(std::vector<opWithId> &ops,
-                              std::map<int, int> opExec) {
-  // Map to store the first occurrence of each opId
-  std::unordered_set<int> executed;
-  std::map<Operation *, int> group;
-  unsigned iter = 0;
-  for (size_t i = 0; i < ops.size(); ++i) {
-    if (executed.find(ops[i].second) == executed.end())
-      executed.insert(ops[i].second);
-    else {
-      // start another loop iteration
-      iter++;
+static bool useValueForCmp(Operation *userOp, Value val) {
+  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(userOp))
+    for (auto [ind, op] : llvm::enumerate(condBr.getOperands())) {
+      if (ind >= 2)
+        break;
+      if (op == val)
+        return true;
     }
-
-    group[ops[i].first] = (iter);
-  }
-
-  // Sort ops using a lambda function that directly compares based on opExec
-  // values
-  std::sort(ops.begin(), ops.end(), [&](const opWithId &a, const opWithId &b) {
-    if (group[a.first] == group[b.first]) {
-      return opExec.at(a.second) < opExec.at(b.second);
-    }
-    return group[a.first] < group[b.first];
-  });
+  return false;
 }
 
 void OpenEdgeKernelScheduler::assignSchedule(
@@ -199,8 +182,6 @@ void OpenEdgeKernelScheduler::assignSchedule(
     int updatePC = curPC;
     int curRound = -1;
     int gap = 0;
-    // sort ops based on the value stored in opExec
-    sortOpsInExecTime(ops, opExec);
 
     for (auto [op, opId] : ops) {
       if (exitExec[opId] != curRound) {
@@ -216,6 +197,9 @@ void OpenEdgeKernelScheduler::assignSchedule(
       exitExec[opId]++;
       if (knownRes[op].time > updatePC)
         updatePC = knownRes[op].time;
+      llvm::errs() << *op << " (" << opId << ")"
+                   << " : [" << knownRes[op].time << ", " << knownRes[op].pe
+                   << "]\n";
     }
     curPC = updatePC;
     return;
@@ -228,6 +212,9 @@ void OpenEdgeKernelScheduler::assignSchedule(
       knownRes[op].opB = "Unknown";
     curPC = std::max(curPC, knownRes[op].time);
     totalExec[opId]++;
+    llvm::errs() << *op << " (" << opId << ")"
+                 << " : [" << knownRes[op].time << ", " << knownRes[op].pe
+                 << "]\n";
   }
 }
 
@@ -630,6 +617,11 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
 
     // assign the space w.r.t to its user's PE if it can be inferred.
     for (auto userOp : op->getUsers()) {
+      // ignore if it is for the parameter propagation
+      if (isa<LLVM::BrOp>(userOp) ||
+          (isa<cgra::ConditionalBranchOp>(userOp) &&
+           !useValueForCmp(userOp, op->getResult(0))))
+        continue;
       // Get the real userOp if the userOp is branchOp or conditionalOp
       auto cntOp = getCntOpIndirectly(userOp, op);
       if (knownRes.find(cntOp) != knownRes.end() && knownRes[cntOp].Rout >= 0) {
@@ -647,6 +639,9 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
           continue;
         // Get the last char of direct
         int dstPE = getConnectedBlock(knownRes[cntOp].pe, direct);
+        llvm::errs() << *cntOp << " in " << knownRes[cntOp].pe << " >> "
+                     << direct << " ";
+        llvm::errs() << "Assign " << *op << " to " << dstPE << "\n";
         model.addConstr(var == dstPE);
         knownRes[op].pe = dstPE;
 

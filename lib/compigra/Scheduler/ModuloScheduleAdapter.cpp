@@ -84,6 +84,25 @@ static std::set<int> getDiffSet(std::set<int> set1, std::set<int> set2) {
   return diffSet;
 }
 
+static std::vector<std::set<int>> getDiffSet(std::vector<std::set<int>> set1,
+                                             std::vector<std::set<int>> set2) {
+  for (auto it1 = set1.begin(); it1 != set1.end();) {
+    bool foundEqual = false;
+    for (const auto &s2 : set2) {
+      if (*it1 == s2) {
+        foundEqual = true;
+        break;
+      }
+    }
+    if (foundEqual) {
+      it1 = set1.erase(it1); // erase returns the next iterator
+    } else {
+      ++it1;
+    }
+  }
+  return set1;
+}
+
 /// Return the union set specified by key in keys
 static std::set<int> getUnionSet(std::map<int, std::unordered_set<int>> mapSet,
                                  std::unordered_set<int> keys) {
@@ -115,30 +134,56 @@ static std::set<int> getUnionSet(std::vector<std::set<int>> sets) {
   return unionSet;
 }
 
+/// Return the union set for two sets
+static std::set<int> getUnionSet(std::set<int> set1, std::set<int> set2) {
+  std::set<int> unionSet;
+  for (auto val : set1)
+    unionSet.insert(val);
+  for (auto val : set2)
+    unionSet.insert(val);
+  return unionSet;
+}
+
+/// insert the op index to the right loop iteration
+static void insertOpToIter(std::vector<std::set<int>> &opSets, int val) {
+  for (auto &s : opSets) {
+    if (s.count(val) == 0) {
+      s.insert(val);
+      return;
+    }
+  }
+  // all existed iteration have executed the op, init a loop iter
+  opSets.push_back({});
+  opSets.back().insert(val);
+}
+
+/// if repeteted index appears, attach them to new set
+static std::vector<std::set<int>>
+getCombinationSet(std::map<int, std::unordered_set<int>> timeMap,
+                  std::unordered_set<int> keys) {
+  std::vector<std::set<int>> opSets = {{}};
+  for (auto [key, vals] : timeMap)
+    if (keys.count(key))
+      for (auto val : vals)
+        insertOpToIter(opSets, val);
+
+  return opSets;
+}
+
 /// In modulo scheduling, multiple operations might be executed in a same basic
 /// block with different operantors. This function is used to get the
 /// aggregation of the operation sets belongs to different loop iterations.
 static std::vector<std::set<int>>
 getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
                 std::unordered_set<int> keys,
-                std::vector<std::set<int>> &prevSet, bool epilog = false) {
+                std::vector<std::set<int>> prevSet, unsigned II,
+                bool epilog = false) {
 
   if (keys.empty())
     return {};
 
   if (epilog) {
-    std::vector<std::set<int>> opSets = {{}};
-    for (auto [key, vals] : timeMap)
-      if (keys.count(key))
-        for (auto val : vals) {
-          // if the value shows twice, it belongs to different loop iterations
-          if (opSets.back().count(val) == 0)
-            opSets.back().insert(val);
-          else {
-            opSets.push_back({});
-            opSets.back().insert(val);
-          }
-        }
+    auto opSets = getCombinationSet(timeMap, keys);
 
     // sort opSets according to its smallest element
     std::sort(opSets.begin(), opSets.end(),
@@ -148,13 +193,36 @@ getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
     return opSets;
   }
 
-  // if it is prolog or loop kernel, it always add new ops based on the previous
-  // operation set
-  std::vector<std::set<int>> opSets = prevSet;
-  auto unionSet = getUnionSet(timeMap, keys);
-  auto prevUnionSet = getUnionSet(prevSet);
-  opSets.push_back(getDiffSet(unionSet, prevUnionSet));
-  // sort opSets according to its smallest element
+  if (prevSet.empty())
+    return (getCombinationSet(timeMap, keys));
+
+  // another loop iteration is initialized in prolog
+  llvm::errs() << keys.size() << "/" << II << "=" << keys.size() / II
+               << " new loop iterations added\n";
+  std::vector<std::set<int>> opSets(prevSet.size() + 1);
+  for (auto [t, vals] : timeMap)
+    if (keys.count(t) > 0)
+      for (auto val : vals) {
+        // if hase not been executed, add to cur set
+        bool newIter = true;
+        for (auto [ind, prev] : llvm::enumerate(prevSet)) {
+          // prev = prevSet[ind];
+          auto executed = getUnionSet(
+              std::vector<std::set<int>>(prevSet.begin() + ind, prevSet.end()));
+          executed = getUnionSet(opSets[ind], executed);
+          if (executed.count(val) == 0) {
+            opSets[ind].insert(val);
+            // inserted, update prevSet to avoid add multiple times
+            // prev.insert(val);
+            newIter = false;
+            break;
+          }
+        }
+        // if all previous iteration contains such op, meaning it is a new iter
+        if (newIter)
+          opSets.back().insert(val);
+      }
+
   std::sort(opSets.begin(), opSets.end(),
             [](const std::set<int> &a, const std::set<int> &b) {
               return *a.begin() > *b.begin();
@@ -404,6 +472,8 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
   SmallVector<Location> argLocs;
 
   Operation *lastOp = nullptr;
+  Operation *termOp = nullptr;
+  unsigned termOpId = -1;
 
   for (auto [_, opSet] : llvm::enumerate(opSets))
     for (auto ind : opSet) {
@@ -420,6 +490,12 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
         repOp = builder.create<cgra::ConditionalBranchOp>(
             lastOp->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
             condBr.getOperand(1), condBr.getTrueDest(), condBr.getFalseDest());
+        // one BB can only have one terminator
+        if (termOp)
+          return failure();
+        termOp = repOp;
+        termOpId = createdDFG.size();
+
       } else
         repOp = builder.clone(*op);
 
@@ -487,6 +563,15 @@ ModuloScheduleAdapter::initDFGBB(Block *blk, std::vector<std::set<int>> &opSets,
       createdDFG.push_back({repOp, ind});
       lastOp = repOp;
     }
+
+  // always let the terminator terminates current bb;
+  if (termOp != lastOp && termOp != nullptr) {
+    termOp->moveAfter(lastOp);
+    // move termOp to the back of createdDFG in order to maintain consistency
+    // with IR
+    std::rotate(createdDFG.begin() + termOpId,
+                createdDFG.begin() + termOpId + 1, createdDFG.end());
+  }
 
   // add branch arguments for the kernel block
   // the loop block must have a conditional terminator
@@ -559,10 +644,23 @@ Block *ModuloScheduleAdapter::createExitBlock(
     // get the union set from first to the end - i of the existedOps
     auto unionSet = getUnionSet(
         std::vector<std::set<int>>(existOps.begin() + i, existOps.end()));
+
+    // if the executed ops in the prolog does not contain the terminator, they
+    // are redundant ops.
+    if (!unionSet.count(loopOpNum - 1))
+      continue;
     // get the difference between unionSet and full set;
     auto exitLoopOps = getDiffSet(fullSet, unionSet);
     if (!exitLoopOps.empty())
       exitOps.push_back(exitLoopOps);
+  }
+
+  // print exitOps
+  for (auto opSet : exitOps) {
+    for (auto opId : opSet) {
+      llvm::errs() << opId << " ";
+    }
+    llvm::errs() << "\n";
   }
 
   //   create DFG within the basic block
@@ -589,6 +687,9 @@ LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
     for (auto opr : op.getOperands()) {
       if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
         llvm::errs() << op << ": " << opr << "\n";
+        // if it is a block argument from other block, use the original value
+        if (blockArg.getOwner() != finiBlock)
+          continue;
         // still use block argument, the parameter propagation is handled by the
         // predecessor
         unsigned argId = blockArg.getArgNumber();
@@ -712,8 +813,6 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   auto cntOpr = getInitOperandId(initBlock, templateBlock);
   blkOpIds[initBlock] = cntOpr;
 
-  llvm::errs() << "finish init block\n";
-
   /// Data structure to store the liveOut arguments in different loop
   /// iterations
   SmallVector<Block *> newBlks = {initBlock};
@@ -730,11 +829,22 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   std::vector<mapId2Op> insertOpsList = {};
   for (auto [ind, s] : llvm::enumerate(bbTimeMap)) {
     // does not process epilog in the prolog-loop basic block generation
-    if (ind == bbTimeMap.size() - 1)
+    if (phase == loop)
       break;
 
     // opSetPrev = opSet;
-    opSet = getOperationSet(opTimeMap, s, opSet, false);
+    opSet = getOperationSet(opTimeMap, s, opSet, II, false);
+
+    // print opSet
+    llvm::errs() << "init DFG for " << ind << " th block\n";
+    for (auto opSet : opSet) {
+      llvm::errs() << "{";
+      for (auto opId : opSet) {
+        llvm::errs() << opId << " ";
+      }
+      llvm::errs() << "}";
+    }
+    llvm::errs() << "\n";
 
     // insert a new block before the template block
     auto newBlk = builder.createBlock(templateBlock);
@@ -747,20 +857,20 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     }
     // connect the current block to the CFG
     auto predBlk = newBlks.rbegin()[1];
-    auto termOp = predBlk->getTerminator();
-    if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
+    auto preTermOp = predBlk->getTerminator();
+    if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(preTermOp)) {
       // create a new condBr op to switch the false and true dest, temporarily
       // point the true dest to newBlk.
-      builder.setInsertionPoint(termOp);
+      builder.setInsertionPoint(preTermOp);
       auto newTerm = builder.create<cgra::ConditionalBranchOp>(
-          termOp->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
+          preTermOp->getLoc(), condBr.getPredicate(), condBr.getOperand(0),
           condBr.getOperand(1), finiBlock, condBr.getFalseDestOperands(),
           newBlk, condBr.getTrueDestOperands());
 
       // reverse the flag of the conditional branch
       reverseCondBrFlag(newTerm);
-      termOp->erase();
-    } else if (auto br = dyn_cast<LLVM::BrOp>(termOp)) {
+      preTermOp->erase();
+    } else if (auto br = dyn_cast<LLVM::BrOp>(preTermOp)) {
       br.setSuccessor(newBlk);
     }
 
@@ -776,7 +886,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   for (size_t ind = 1; ind < newBlks.size() - 1; ++ind) {
     auto s = bbTimeMap[ind - 1];
     auto preGenOps = insertOpsList[ind - 1];
-    opSet = getOperationSet(opTimeMap, s, opSet, false);
+    opSet = getOperationSet(opTimeMap, s, opSet, II, false);
 
     // connect the current block to the CFG
 
@@ -803,6 +913,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
         else
           return failure();
       }
+      llvm::errs() << "create exit block for " << ind << " th prolog\n";
       auto quitBB = createExitBlock(condBr, opSet, preGenOps, optionalTerm);
       //   put the generated operations on different paths into the list
       liveOutOpList.push_back(preGenOps);
@@ -813,6 +924,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
 
   } // end of the epilog creation
   llvm::errs() << "finish bb creation\n";
+
   // add the operatons generated in the loop path
   if (failed(replaceLiveOutWithNewPath(liveOutOpList)))
     return failure();

@@ -49,10 +49,10 @@ public:
   /// bbTimeMap is a vector of basic blocks, where each basic block contains the
   /// opearations in the block specified by the opTimeMap.
   ModuloScheduleAdapter(Region &region, OpBuilder &builder,
-                        Block::OpListType &loopOpList,
+                        Block::OpListType &loopOpList, unsigned II,
                         const std::map<int, std::unordered_set<int>> opTimeMap,
                         const std::vector<std::unordered_set<int>> bbTimeMap)
-      : region(region), builder(builder), opTimeMap(opTimeMap),
+      : region(region), builder(builder), II(II), opTimeMap(opTimeMap),
         bbTimeMap(bbTimeMap), loopOpList(loopOpList) {
     // Get related basic blocks
     templateBlock = getLoopBlock(region);
@@ -73,6 +73,7 @@ private:
   Block *initBlock = nullptr;
   Block *finiBlock = nullptr;
   unsigned loopOpNum = 0;
+  unsigned II = -1;
 
 public:
   /// Adapt the CFG with the modulo scheduling result.

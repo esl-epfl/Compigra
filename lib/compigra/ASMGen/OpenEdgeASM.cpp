@@ -707,7 +707,7 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 
   std::ofstream file(outDir);
   if (!file.is_open()) {
-    llvm::errs() << "Unable to open file\n";
+    llvm::errs() << "Unable to open " << outDir << "\n";
     return;
   }
 
@@ -744,7 +744,7 @@ readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps, int &II,
             std::map<int, Instruction> &instructions) {
   std::ifstream file(mapResult);
   if (!file.is_open()) {
-    llvm::errs() << "Unable to open file\n";
+    llvm::errs() << "Unable to open " << mapResult << "\n";
     return failure();
   }
 
@@ -900,7 +900,7 @@ struct OpenEdgeASMGenPass
       // init modulo schedule result
       if (kernelOverlap(bbTimeMap)) {
         ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(),
-                                      opTimeMap, bbTimeMap);
+                                      II, opTimeMap, bbTimeMap);
         adapter.adaptCFGWithLoopMS();
 
         // hash map to store the total round of operation execution, where

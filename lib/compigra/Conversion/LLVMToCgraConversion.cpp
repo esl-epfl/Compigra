@@ -538,7 +538,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
   auto funcOp = region.getParentOfType<cgra::FuncOp>();
   DenseMap<Value, Operation *> arrayBaseAddrs;
 
-  SmallVector<Operation *> gepOps;
+  SmallPtrSet<Operation *, 8> gepOps;
   SmallVector<Operation *> loadOps;
   Operation *entryOp = getConstantOp();
 
@@ -572,7 +572,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
 
     // calculate the address if it is a GEP operation
     if (auto gepOp = dyn_cast<LLVM::GEPOp>(arg.getDefiningOp())) {
-      gepOps.push_back(gepOp);
+      gepOps.insert(gepOp);
       Value baseAddr = gepOp.getOperand(0);
       auto argIndex = getArgsIndex<Value>(
           baseAddr, SmallVector<Value>{funcOp.getArguments().begin(),
@@ -603,7 +603,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
     }
   }
 
-  // calculate the address if it is a GEP operation
+  // replace store operations with swi operations
   for (auto storeOp :
        llvm::make_early_inc_range(region.getOps<LLVM::StoreOp>())) {
     auto arg = storeOp.getOperand(1);
@@ -615,7 +615,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
           arg, SmallVector<Value>{funcOp.getArguments().begin(),
                                   funcOp.getArguments().end()});
 
-      // insert lwi operation to load the integer variable
+      // insert swi operation to store the integer variable
       rewriter.setInsertionPoint(entryOp);
       LLVM::ConstantOp constOp = rewriter.create<LLVM::ConstantOp>(
           storeOp.getLoc(), rewriter.getI32Type(),
@@ -632,7 +632,7 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
 
     // calculate the address if it is a GEP operation
     if (auto gepOp = dyn_cast<LLVM::GEPOp>(arg.getDefiningOp())) {
-      gepOps.push_back(gepOp);
+      gepOps.insert(gepOp);
       Value baseAddr = gepOp.getOperand(0);
       auto argIndex = getArgsIndex<Value>(
           baseAddr, SmallVector<Value>{funcOp.getArguments().begin(),
@@ -660,6 +660,8 @@ CgraLowering::addMemoryInterface(ConversionPatternRewriter &rewriter) {
       rewriter.eraseOp(storeOp);
     }
   }
+
+  // erase the GEP operations that have been replaced
   for (Operation *op : gepOps)
     rewriter.eraseOp(op);
 
@@ -710,7 +712,6 @@ static LogicalResult lowerRegion(CgraLowering &cl) {
   if (failed(runPartialLowering(cl, &CgraLowering::addMemoryInterface)))
     return failure();
 
-  llvm::errs() << "add memory interface success\n";
   if (failed(runPartialLowering(cl, &CgraLowering::replaceCmpOps)))
     return failure();
 
