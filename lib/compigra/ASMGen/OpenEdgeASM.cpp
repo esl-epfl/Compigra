@@ -383,9 +383,10 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   }
 
   for (auto [op, sol] : solution) {
-    if (op->getNumResults() > 0 && sol.reg == -1)
+    if (op->getNumResults() > 0 && sol.reg == -1) {
       llvm::errs() << "Failed" << *op << " " << sol.pe << "\n";
-    // return failure();
+      return failure();
+    }
     instSolution[op].Rout = sol.reg;
   }
 
@@ -897,17 +898,22 @@ struct OpenEdgeASMGenPass
 
       OpenEdgeKernelScheduler scheduler(r, maxReg, grid);
 
+      // assign the first operation to PC 0
+      int startPC = 0;
+      // scheduler.knownRes[&loopBlock->getOperations().front()] =
+      //     Instruction{"init", startPC, 0, -1, "Unknown", "Unknown"};
+
       // init modulo schedule result
       if (kernelOverlap(bbTimeMap)) {
+        std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
         ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(),
-                                      II, opTimeMap, bbTimeMap);
+                                      II, execTime, opTimeMap, bbTimeMap);
         adapter.adaptCFGWithLoopMS();
 
         // hash map to store the total round of operation execution, where
         // totalRound[ind] represents ind-th operation's in the loop has been
         // executed totalRound[ind] times
         std::vector<int> totalRound(opSize, 0);
-        std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
 
         int curPC = 0;
 
@@ -915,16 +921,19 @@ struct OpenEdgeASMGenPass
         auto postParts = adapter.exitDFGs;
 
         std::vector<std::vector<int>> preOpIds;
+        std::vector<int> bbStarts;
         for (size_t i = 0; i < preParts.size(); i++) {
-          scheduler.assignSchedule(preParts[i], false, II, curPC, execTime,
+          bbStarts.push_back(curPC);
+          scheduler.assignSchedule(preParts[i], II, curPC, execTime,
                                    instructions, totalRound);
           curPC++;
           preOpIds.push_back(totalRound);
         }
 
-        for (int i = postParts.size() - 1; i >= 0; i--) {
-          scheduler.assignSchedule(postParts[i], true, II, curPC, execTime,
-                                   instructions, preOpIds[i]);
+        for (int i = 0; i < preParts.size() - 1; i++) {
+          scheduler.assignSchedule(postParts[i], II, curPC, execTime,
+                                   instructions, preOpIds[i],
+                                   curPC - bbStarts[i + 1]);
           curPC++;
         }
 
@@ -941,7 +950,10 @@ struct OpenEdgeASMGenPass
       // assign schedule results and produce assembly
       asmGen.setSolution(scheduler.getSolution());
       llvm::errs() << "Allocate Register...\n";
-      asmGen.allocateRegisters(scheduler.knownRes);
+      if (failed(asmGen.allocateRegisters(scheduler.knownRes))) {
+        llvm::errs() << "Failed to allocate registers\n";
+        return signalPassFailure();
+      }
       asmGen.printKnownSchedule(true, 0, outDir);
     }
   }

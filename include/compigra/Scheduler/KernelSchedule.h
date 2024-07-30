@@ -147,10 +147,10 @@ public:
   void assignSchedule(mlir::Block::OpListType &ops,
                       const std::map<int, Instruction> instructions);
 
-  void assignSchedule(std::vector<opWithId> ops, const bool epilog,
-                      const int II, int &curPC, std::map<int, int> opExec,
+  void assignSchedule(std::vector<opWithId> ops, const int II, int &curPC,
+                      std::map<int, int> opExec,
                       const std::map<int, Instruction> instructions,
-                      std::vector<int> &totalExec);
+                      std::vector<int> &totalExec, int gap = 0);
 
   // void printKownSchedule();
   std::map<Operation *, Instruction> knownRes;

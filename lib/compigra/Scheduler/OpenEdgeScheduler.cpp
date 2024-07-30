@@ -14,6 +14,7 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "compigra/Scheduler/ModuloScheduleAdapter.h"
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
 #endif
@@ -172,42 +173,45 @@ static bool useValueForCmp(Operation *userOp, Value val) {
   return false;
 }
 
-void OpenEdgeKernelScheduler::assignSchedule(
-    std::vector<opWithId> ops, const bool epilog, const int II, int &curPC,
-    std::map<int, int> opExec, const std::map<int, Instruction> instructions,
-    std::vector<int> &totalExec) {
-  std::vector<int> exitExec = totalExec;
-
-  if (epilog) {
-    int updatePC = curPC;
-    int curRound = -1;
-    int gap = 0;
-
-    for (auto [op, opId] : ops) {
-      if (exitExec[opId] != curRound) {
-        // update current round
-        gap = opExec.at(opId);
-        curRound = exitExec[opId];
-      }
-      knownRes[op] = instructions.at(opId);
-      knownRes[op].time = curPC + opExec.at(opId) - gap;
-      if (isa<cgra::ConditionalBranchOp>(op) && knownRes[op].opB == "ROUT")
-        knownRes[op].opB = "Unknown";
-
-      exitExec[opId]++;
-      if (knownRes[op].time > updatePC)
-        updatePC = knownRes[op].time;
-      llvm::errs() << *op << " (" << opId << ")"
-                   << " : [" << knownRes[op].time << ", " << knownRes[op].pe
-                   << "]\n";
+/// sort hte ops in the order of loop iteration sequence and execution time
+static void sortOpsInExecTime(std::vector<opWithId> &ops,
+                              std::map<int, int> opExec,
+                              const std::vector<int> totalExec) {
+  // Map to store the first occurrence of each opId
+  std::unordered_set<int> executed;
+  std::map<Operation *, int> group;
+  unsigned iter = 0;
+  // unsig
+  for (int i = 0; i < ops.size(); ++i) {
+    if (executed.find(ops[i].second) == executed.end())
+      executed.insert(ops[i].second);
+    else {
+      // start another loop iteration
+      iter++;
     }
-    curPC = updatePC;
-    return;
+    group[ops[i].first] = totalExec[ops[i].second] + iter;
+    llvm::errs() << i << ": " << *ops[i].first << "(" << ops[i].second
+                 << ") : " << totalExec[ops[i].second] << " + " << iter << "="
+                 << group[ops[i].first] << "\n";
   }
 
+  // Sort ops using a lambda function that directly compares based on opExec
+  // values
+  std::sort(ops.begin(), ops.end(), [&](const opWithId &a, const opWithId &b) {
+    if (group[a.first] == group[b.first]) {
+      return opExec.at(a.second) < opExec.at(b.second);
+    }
+    return group[a.first] < group[b.first];
+  });
+}
+
+void OpenEdgeKernelScheduler::assignSchedule(
+    std::vector<opWithId> ops, const int II, int &curPC,
+    std::map<int, int> opExec, const std::map<int, Instruction> instructions,
+    std::vector<int> &totalExec, int gap) {
   for (auto [op, opId] : ops) {
     knownRes[op] = instructions.at(opId);
-    knownRes[op].time = opExec.at(opId) + II * totalExec[opId];
+    knownRes[op].time = opExec.at(opId) + II * totalExec[opId] + gap;
     if (isa<cgra::ConditionalBranchOp>(op) && knownRes[op].opB == "ROUT")
       knownRes[op].opB = "Unknown";
     curPC = std::max(curPC, knownRes[op].time);
@@ -297,13 +301,11 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
   }
 
   // Add the constraint based on the block
-  for (auto &blk : region.getBlocks()) {
-    for (auto sucBlk : blk.getSuccessors()) {
-      // Skip the self-loop
-      if (&blk == sucBlk)
-        continue;
-      model.addConstr(timeBlkExit.at(&blk) + 1 <= timeBlkEntry.at(sucBlk));
-    }
+  for (auto [id1, blk1] : llvm::enumerate(region.getBlocks())) {
+    if (id1 == 0)
+      continue;
+    auto prevNode = blk1.getPrevNode();
+    model.addConstr(timeBlkEntry.at(&blk1) >= timeBlkExit.at(prevNode) + 1);
   }
 
   // The returnOp is mapped to be EXIT, and must be execute alone
@@ -437,14 +439,14 @@ getTimeGapBetween(Operation *srcOp, Operation *dstOp,
   return timeGaps;
 }
 
-static void addNeighborConstraints(GRBModel &model, Operation *consumer,
-                                   std::vector<Operation *> &producers,
-                                   int nRow, int nCol,
-                                   std::map<Operation *, GRBVar> timeOpVar,
-                                   std::map<Operation *, GRBVar> spaceOpVar,
-                                   std::map<Block *, GRBVar> timeBlkEntry,
-                                   std::map<Block *, GRBVar> timeBlkExit,
-                                   std::map<Operation *, std::string> varName) {
+static LogicalResult
+addNeighborConstraints(GRBModel &model, Operation *consumer,
+                       std::vector<Operation *> &producers, int nRow, int nCol,
+                       std::map<Operation *, GRBVar> timeOpVar,
+                       std::map<Operation *, GRBVar> spaceOpVar,
+                       std::map<Block *, GRBVar> timeBlkEntry,
+                       std::map<Block *, GRBVar> timeBlkExit,
+                       std::map<Operation *, std::string> varName) {
   // Create helper variables for the possible neighbors
   GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
   GRBVar right = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
@@ -509,6 +511,7 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
     model.addQConstr(y == left * chooseLeft + right * chooseRight +
                               top * chooseTop + bottom * chooseBottom +
                               x * chooseSelf);
+
     model.addConstr(
         chooseLeft + chooseRight + chooseTop + chooseBottom + chooseSelf == 1);
 
@@ -565,6 +568,7 @@ static void addNeighborConstraints(GRBModel &model, Operation *consumer,
       }
     }
   }
+  return success();
 }
 
 void OpenEdgeKernelScheduler::initOpSpaceConstraints(
@@ -577,6 +581,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
     // BrOp does not require to consider data dependency
     if (isa<LLVM::BrOp>(op))
       continue;
+    llvm::errs() << "test space cnt for " << *op << "\n";
 
     // The operation should be assigned to the PE that is connected to.(PE
     // of predecessors' neighbor or itself)
@@ -608,8 +613,10 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         continue;
     }
 
-    addNeighborConstraints(model, op, producers, nRow, nCol, timeOpVar,
-                           spaceOpVar, timeBlkEntry, timeBlkExit, varNamePost);
+    if (failed(addNeighborConstraints(model, op, producers, nRow, nCol,
+                                      timeOpVar, spaceOpVar, timeBlkEntry,
+                                      timeBlkExit, varNamePost)))
+      return;
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
@@ -723,7 +730,7 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 60;
+  int time_limit = 180;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function

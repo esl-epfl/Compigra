@@ -50,10 +50,11 @@ public:
   /// opearations in the block specified by the opTimeMap.
   ModuloScheduleAdapter(Region &region, OpBuilder &builder,
                         Block::OpListType &loopOpList, unsigned II,
+                        std::map<int, int> execTime,
                         const std::map<int, std::unordered_set<int>> opTimeMap,
                         const std::vector<std::unordered_set<int>> bbTimeMap)
-      : region(region), builder(builder), II(II), opTimeMap(opTimeMap),
-        bbTimeMap(bbTimeMap), loopOpList(loopOpList) {
+      : region(region), builder(builder), II(II), execTime(execTime),
+        opTimeMap(opTimeMap), bbTimeMap(bbTimeMap), loopOpList(loopOpList) {
     // Get related basic blocks
     templateBlock = getLoopBlock(region);
     loopOpNum = loopOpList.size();
@@ -74,6 +75,7 @@ private:
   Block *finiBlock = nullptr;
   unsigned loopOpNum = 0;
   unsigned II = -1;
+  std::map<int, int> execTime;
 
 public:
   /// Adapt the CFG with the modulo scheduling result.

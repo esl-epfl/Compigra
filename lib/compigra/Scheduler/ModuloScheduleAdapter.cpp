@@ -176,8 +176,8 @@ getCombinationSet(std::map<int, std::unordered_set<int>> timeMap,
 static std::vector<std::set<int>>
 getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
                 std::unordered_set<int> keys,
-                std::vector<std::set<int>> prevSet, unsigned II,
-                bool epilog = false) {
+                std::vector<std::set<int>> prevSet,
+                const std::map<int, int> execTime, bool epilog = false) {
 
   if (keys.empty())
     return {};
@@ -185,10 +185,11 @@ getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
   if (epilog) {
     auto opSets = getCombinationSet(timeMap, keys);
 
-    // sort opSets according to its smallest element
+    // sort opSets according to its latest element meaning the iteration is
+    // initialized in prior order
     std::sort(opSets.begin(), opSets.end(),
-              [](const std::set<int> &a, const std::set<int> &b) {
-                return *a.begin() > *b.begin();
+              [&](const std::set<int> &a, const std::set<int> &b) {
+                return execTime.at(*a.begin()) > execTime.at(*b.begin());
               });
     return opSets;
   }
@@ -197,8 +198,6 @@ getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
     return (getCombinationSet(timeMap, keys));
 
   // another loop iteration is initialized in prolog
-  llvm::errs() << keys.size() << "/" << II << "=" << keys.size() / II
-               << " new loop iterations added\n";
   std::vector<std::set<int>> opSets(prevSet.size() + 1);
   for (auto [t, vals] : timeMap)
     if (keys.count(t) > 0)
@@ -213,7 +212,6 @@ getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
           if (executed.count(val) == 0) {
             opSets[ind].insert(val);
             // inserted, update prevSet to avoid add multiple times
-            // prev.insert(val);
             newIter = false;
             break;
           }
@@ -224,8 +222,8 @@ getOperationSet(std::map<int, std::unordered_set<int>> timeMap,
       }
 
   std::sort(opSets.begin(), opSets.end(),
-            [](const std::set<int> &a, const std::set<int> &b) {
-              return *a.begin() > *b.begin();
+            [&](const std::set<int> &a, const std::set<int> &b) {
+              return execTime.at(*a.begin()) > execTime.at(*b.begin());
             });
   return opSets;
 }
@@ -832,8 +830,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     if (phase == loop)
       break;
 
-    // opSetPrev = opSet;
-    opSet = getOperationSet(opTimeMap, s, opSet, II, false);
+    opSet = getOperationSet(opTimeMap, s, opSet, execTime, false);
 
     // print opSet
     llvm::errs() << "init DFG for " << ind << " th block\n";
@@ -886,7 +883,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   for (size_t ind = 1; ind < newBlks.size() - 1; ++ind) {
     auto s = bbTimeMap[ind - 1];
     auto preGenOps = insertOpsList[ind - 1];
-    opSet = getOperationSet(opTimeMap, s, opSet, II, false);
+    opSet = getOperationSet(opTimeMap, s, opSet, execTime, false);
 
     // connect the current block to the CFG
 
@@ -913,7 +910,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
         else
           return failure();
       }
-      llvm::errs() << "create exit block for " << ind << " th prolog\n";
+      llvm::errs() << "create exit block for " << ind - 1 << " th prolog\n";
       auto quitBB = createExitBlock(condBr, opSet, preGenOps, optionalTerm);
       //   put the generated operations on different paths into the list
       liveOutOpList.push_back(preGenOps);
