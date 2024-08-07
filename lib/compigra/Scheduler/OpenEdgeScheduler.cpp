@@ -581,7 +581,6 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
     // BrOp does not require to consider data dependency
     if (isa<LLVM::BrOp>(op))
       continue;
-    llvm::errs() << "test space cnt for " << *op << "\n";
 
     // The operation should be assigned to the PE that is connected to.(PE
     // of predecessors' neighbor or itself)
@@ -719,9 +718,9 @@ void OpenEdgeKernelScheduler::initObjectiveFunction(
   obj = funcEndT - funcStartT;
   // Add the objective function to minimize the total execution time
   double coef = 1e-3;
-  for (auto [op, var] : timeOpVar) {
-    obj += coef * var;
-  }
+  // for (auto [op, var] : timeOpVar) {
+  //   obj += coef * var;
+  // }
   model.setObjective(obj, GRB_MINIMIZE);
 }
 

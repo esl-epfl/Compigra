@@ -850,6 +850,80 @@ getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap) {
   return opExecT;
 }
 
+/// Function to use the modulo schedule result to initialize existing results in
+/// the region and
+LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
+                                      const unsigned maxReg,
+                                      OpenEdgeKernelScheduler &scheduler,
+                                      Block *loopBlock, Region &r,
+                                      OpBuilder &builder) {
+  int opSize = loopBlock->getOperations().size();
+
+  // read the loop basic block modulo schedule result
+  std::map<int, Instruction> instructions;
+  std::map<int, std::unordered_set<int>> opTimeMap;
+  std::vector<std::unordered_set<int>> bbTimeMap = {{}};
+  if (failed(readMapFile(mapResult, maxReg,
+                         opSize + loopBlock->getNumArguments() - 1, II,
+                         opTimeMap, bbTimeMap, instructions)))
+    return failure();
+
+  // init block arguments to be SADD
+  if (failed(initBlockArgs(loopBlock, instructions, builder)))
+    return failure();
+
+  // update the operation size if the block argument is considered
+  opSize = loopBlock->getOperations().size();
+
+  // init modulo schedule result
+  if (kernelOverlap(bbTimeMap)) {
+    std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
+    ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(), II,
+                                  execTime, opTimeMap, bbTimeMap);
+    adapter.adaptCFGWithLoopMS();
+
+    // hash map to store the total round of operation execution, where
+    // totalRound[ind] represents ind-th operation's in the loop has been
+    // executed totalRound[ind] times
+    std::vector<int> totalRound(opSize, 0);
+
+    int curPC = 0;
+
+    auto preParts = adapter.enterDFGs;
+    auto postParts = adapter.exitDFGs;
+
+    std::vector<std::vector<int>> preOpIds;
+    std::vector<int> bbStarts;
+    for (size_t i = 0; i < preParts.size(); i++) {
+      bbStarts.push_back(curPC);
+      scheduler.assignSchedule(preParts[i], II, curPC, execTime, instructions,
+                               totalRound);
+      curPC++;
+      preOpIds.push_back(totalRound);
+    }
+
+    for (int i = 0; i < preParts.size() - 1; i++) {
+      scheduler.assignSchedule(postParts[i], II, curPC, execTime, instructions,
+                               preOpIds[i], curPC - bbStarts[i + 1]);
+      curPC++;
+    }
+
+  } else
+    scheduler.assignSchedule(loopBlock->getOperations(), instructions);
+  return success();
+}
+
+static Operation *getFirstOpInRegion(Region &r) {
+  for (auto &block : r.getBlocks()) {
+    for (auto &op : block.getOperations()) {
+      if (isa<LLVM::ConstantOp>(op))
+        continue;
+      return &op;
+    }
+  }
+  return nullptr;
+}
+
 namespace {
 struct OpenEdgeASMGenPass
     : public compigra::impl::OpenEdgeASMGenBase<OpenEdgeASMGenPass> {
@@ -873,24 +947,6 @@ struct OpenEdgeASMGenPass
       if (funcOp.getName() != funcName)
         continue;
       Region &r = funcOp.getBody();
-      auto loopBlock = getLoopBlock(r);
-      int opSize = loopBlock->getOperations().size();
-
-      // read the loop basic block modulo schedule result
-      std::map<int, Instruction> instructions;
-      std::map<int, std::unordered_set<int>> opTimeMap;
-      std::vector<std::unordered_set<int>> bbTimeMap = {{}};
-      if (failed(readMapFile(mapResult, maxReg,
-                             opSize + loopBlock->getNumArguments() - 1, II,
-                             opTimeMap, bbTimeMap, instructions)))
-        return signalPassFailure();
-
-      // init block arguments to be SADD
-      if (failed(initBlockArgs(loopBlock, instructions, builder)))
-        return signalPassFailure();
-      // update the operation size if the block argument is considered
-      opSize = loopBlock->getOperations().size();
-
       // init scheduler
       auto grid = nGrid.getValue();
       if (!nGrid.hasValue() || nGrid.getValue() <= 0)
@@ -899,46 +955,16 @@ struct OpenEdgeASMGenPass
       OpenEdgeKernelScheduler scheduler(r, maxReg, grid);
 
       // assign the first operation to PC 0
-      int startPC = 0;
-      // scheduler.knownRes[&loopBlock->getOperations().front()] =
-      //     Instruction{"init", startPC, 0, -1, "Unknown", "Unknown"};
-
-      // init modulo schedule result
-      if (kernelOverlap(bbTimeMap)) {
-        std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
-        ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(),
-                                      II, execTime, opTimeMap, bbTimeMap);
-        adapter.adaptCFGWithLoopMS();
-
-        // hash map to store the total round of operation execution, where
-        // totalRound[ind] represents ind-th operation's in the loop has been
-        // executed totalRound[ind] times
-        std::vector<int> totalRound(opSize, 0);
-
-        int curPC = 0;
-
-        auto preParts = adapter.enterDFGs;
-        auto postParts = adapter.exitDFGs;
-
-        std::vector<std::vector<int>> preOpIds;
-        std::vector<int> bbStarts;
-        for (size_t i = 0; i < preParts.size(); i++) {
-          bbStarts.push_back(curPC);
-          scheduler.assignSchedule(preParts[i], II, curPC, execTime,
-                                   instructions, totalRound);
-          curPC++;
-          preOpIds.push_back(totalRound);
-        }
-
-        for (int i = 0; i < preParts.size() - 1; i++) {
-          scheduler.assignSchedule(postParts[i], II, curPC, execTime,
-                                   instructions, preOpIds[i],
-                                   curPC - bbStarts[i + 1]);
-          curPC++;
-        }
-
-      } else
-        scheduler.assignSchedule(loopBlock->getOperations(), instructions);
+      if (mapResult.hasValue()) {
+        auto loopBlock = getLoopBlock(r);
+        if (failed(useModuloScheduleResult(mapResult, II, maxReg, scheduler,
+                                           loopBlock, r, builder)))
+          return signalPassFailure();
+      } else {
+        int startPC = 0;
+        scheduler.knownRes[getFirstOpInRegion(r)] =
+            Instruction{"init", startPC, 0, -1, "Unknown", "Unknown"};
+      }
 
       // init OpenEdgeASMGen
       OpenEdgeASMGen asmGen(r, maxReg, grid);
