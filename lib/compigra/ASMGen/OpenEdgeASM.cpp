@@ -29,23 +29,6 @@
 using namespace mlir;
 using namespace compigra;
 
-static bool equalValueSet(std::unordered_set<int> set1,
-                          std::unordered_set<int> set2) {
-  if (set1.size() != set2.size())
-    return false;
-  for (auto val : set1)
-    if (set2.find(val) == set2.end())
-      return false;
-  return true;
-}
-
-static int getValueIndex(Value val, std::map<int, Value> opResult) {
-  for (auto [ind, res] : opResult)
-    if (res.getDefiningOp() == val.getDefiningOp())
-      return ind;
-  return -1;
-}
-
 /// Get the loop block of the region
 static Block *getLoopBlock(Region &region) {
   for (auto &block : region)
@@ -53,111 +36,6 @@ static Block *getLoopBlock(Region &region) {
       if (suc == &block)
         return &block;
   return nullptr;
-}
-
-/// Create the interference graph for the operations in the PE, the
-/// corresponding relations with the abstract operands are stored in the
-/// opMap.
-static InterferenceGraph<int>
-createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
-                        std::map<int, Value> &opMap) {
-  std::map<Operation *, std::unordered_set<int>> def;
-  std::map<Operation *, std::unordered_set<int>> use;
-
-  InterferenceGraph<int> graph;
-  unsigned ind = 0;
-  for (auto it = opList.rbegin(); it != opList.rend(); ++it) {
-    // Branch and constant operation is not interfered with other
-    // operations
-    Operation *op = it->second;
-    if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
-      continue;
-    if (op->getNumResults() > 0)
-      if (getValueIndex(op->getResult(0), opMap) == -1) {
-        opMap[ind] = op->getResult(0);
-        graph.addVertex(ind);
-
-        graph.initVertex(ind);
-        ind++;
-        def[op].insert(getValueIndex(op->getResult(0), opMap));
-      }
-  }
-
-  // Add operands to the graph
-  // for (auto it = opList.rbegin(); it != opList.rend(); ++it) {
-  //   Operation *op = it->second;
-  //   if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
-  //     continue;
-  //   for (auto [opInd, operand] : llvm::enumerate(op->getOperands())) {
-  //     if (isa<LLVM::ConstantOp>(getCntOpIndirectly(operand,
-  //     op->getBlock())[0]))
-  //       continue;
-  //     // Skip the branch operator
-  //     if (isa<cgra::ConditionalBranchOp>(op) && opInd == 2)
-  //       break;
-
-  //     if (getValueIndex(operand, opMap) == -1) {
-  //       opMap[ind] = operand;
-  //       graph.addVertex(ind);
-  //       use[op].insert(getValueIndex(operand, opMap));
-  //       ind++;
-  //     }
-  //   }
-  // }
-
-  std::vector<Operation *> sortedOps;
-  for (auto [t, op] : opList) {
-    sortedOps.push_back(op);
-    // llvm::errs() << "put: " << *op << "\n";
-  }
-  std::map<Operation *, std::unordered_set<int>> liveIn;
-  std::map<Operation *, std::unordered_set<int>> liveOut;
-  while (true) {
-    bool changed = false;
-    for (int i = sortedOps.size() - 1; i >= 0; i--) {
-      auto op = sortedOps[i];
-      if (i < sortedOps.size() - 1) {
-        auto succ = sortedOps[i + 1];
-        // Calculate liveOut
-        // if liveIn is empty, continue
-        if (liveIn.find(succ) == liveIn.end())
-          continue;
-        for (auto live : liveIn[succ])
-          if (liveOut[op].find(live) == liveOut[op].end()) {
-            changed = true;
-            liveOut[op].insert(live);
-          }
-      }
-
-      // Calculate liveIn
-      std::unordered_set<int> newLiveIn = use[op];
-      for (auto v : liveOut[op])
-        if (def[op].find(v) == def[op].end())
-          newLiveIn.insert(v);
-
-      // check whether liveIn is changed
-      if (!equalValueSet(newLiveIn, liveIn[op])) {
-        changed = true;
-        liveIn[op] = newLiveIn;
-      }
-    }
-    if (!changed)
-      break;
-  }
-
-  // create interference graph with defOp and liveOut
-  for (auto op : sortedOps) {
-    if (op->getNumResults() == 0)
-      continue;
-    auto defOp = getValueIndex(op->getResult(0), opMap);
-    if (defOp == -1)
-      continue;
-    for (auto liveOp : liveOut[op]) {
-      if (defOp != liveOp)
-        graph.addEdge(defOp, liveOp);
-    }
-  }
-  return graph;
 }
 
 /// Function to perform Lexicographical Breadth-First Search and obtain
@@ -212,6 +90,95 @@ lexBFS(const std::map<int, std::unordered_set<int>> &adjList) {
   return peo;
 }
 
+/// Allocate physical register based on the interference vertices
+static char allocatePhysicalRegOnIG(std::unordered_set<int> interfNodes,
+                                    std::map<int, char> colorMap,
+                                    std::unordered_set<int> usedColors,
+                                    unsigned maxReg) {
+  // std::unordered_set<int> usedColors;
+  // for (auto u : interfNodes) {
+  //   if (colorMap.find(u) != colorMap.end())
+  //     usedColors.insert(colorMap[u]);
+  // }
+  char color = 0;
+  while (usedColors.find(color) != usedColors.end()) {
+    color++;
+    if (color >= maxReg) {
+      return maxReg;
+    }
+  }
+  return color;
+}
+
+static int getValueIndex(Value val, std::map<int, Value> opResult) {
+  for (auto [ind, res] : opResult)
+    if (res.getDefiningOp() == val.getDefiningOp())
+      return ind;
+  return -1;
+}
+
+// TODO[@Yuxuan]: allocate register for the phi node (could be other PE, e.g.
+// RCL, RCR, RCT, RCB)
+std::map<int, int> getLimitationUseWithPhiNode(
+    const std::vector<int> phiNodes, const std::map<int, Value> opMap,
+    const std::map<int, mlir::Operation *> opList,
+    compigra::InterferenceGraph<int> &graph, unsigned maxReg) {
+  std::map<int, int> limitedUse;
+  for (int node : phiNodes) {
+    // phi node should be block argument of the basic block
+    // BlockArgument arg = dyn_cast<BlockArgument>(opMap.at(node));
+    auto arg = opMap.at(node);
+
+    auto defOps = getCntDefOpIndirectly(arg, arg.getParentBlock());
+    // allocate register for the phi node
+    std::unordered_set<int> usedColors;
+    for (auto u : graph.adjList[node]) {
+      if (graph.colorMap.find(u) != graph.colorMap.end())
+        usedColors.insert(graph.colorMap[u]);
+    }
+
+    // check whether the phi node is pre-colored
+    char color = allocatePhysicalRegOnIG(graph.adjList[node], graph.colorMap,
+                                         usedColors, maxReg);
+    for (auto defOp : defOps) {
+      // all defining op should be executed in the same PE, if it is executed in
+      // current PE, then it should be assigned to the same register.
+      bool internal = false;
+      for (auto [_, op] : opList)
+        if (op == defOp) {
+          internal = true;
+          break;
+        }
+
+      if (!internal)
+        break;
+
+      // find the corresponding value in the graph
+      int defNode = getValueIndex(defOp->getResult(0), opMap);
+      limitedUse[defNode] = {};
+
+      // check whether the node is pre-colored, if yes then the color should be
+      // the same
+      if (graph.colorMap.find(defNode) != graph.colorMap.end()) {
+        color = graph.colorMap[defNode];
+        llvm::errs() << "DEF NODE: " << defNode << " set color "
+                     << std::to_string(color) << "\n";
+      }
+    }
+    // limit the coloring selection of the phi node
+    std::unordered_set<int> limited;
+    // rewrite all value in limitedUse
+    for (auto [v, _] : limitedUse) {
+      limitedUse[v] = color;
+      // update adjacent list
+      graph.colorMap[v] = color;
+    }
+    limitedUse[node] = color;
+    graph.colorMap[node] = color;
+  }
+  return limitedUse;
+}
+
 LogicalResult
 compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
                              std::map<Operation *, ScheduleUnit> &solution,
@@ -221,12 +188,8 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
   auto graph = createInterferenceGraph(opList, opMap);
 
   // print opMap and interference graph
-  // llvm::errs() << "OpMap:\n";
-  // for (auto [ind, val] : opMap) {
-  //   llvm::errs() << ind << " " << val << "\n";
-  // }
-  // llvm::errs() << "--------------Interference Graph-----------------\n";
-  // graph.printGraph();
+  llvm::errs() << "--------------Interference Graph-----------------\n";
+  graph.printGraph();
 
   // allocate register using graph coloring
   // TODO[@Yuxuan]: Spill the graph if the number of registers is not
@@ -234,28 +197,41 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
   auto peo = lexBFS(graph.adjList);
   if (peo.empty())
     return success();
-  llvm::errs() << "PEO: [";
-  // First check whether v has been pre-colored
-  for (auto v : peo) {
 
+  // the register allocation for block arguments (phi node) must be limited to
+  // the same register.
+  std::vector<int> phiList;
+  llvm::errs() << "PEO: [";
+  for (auto v : peo) {
     Value val = opMap[v];
     llvm::errs() << " " << v;
+    // first mark phi node as limited use
+    if (isa<BlockArgument>(val)) {
+      phiList.push_back(v);
+      llvm::errs() << "(" << val << ")";
+      continue;
+    }
 
     auto defOp = val.getDefiningOp();
-    if (!defOp)
-      continue;
-
+    // check whether v has been pre-colored
     llvm::errs() << "(" << *defOp << " NEED?: " << graph.needColor(v) << ")";
-    if (graph.needColor(v)) {
-      if (solution[defOp].reg >= 0)
-        graph.colorMap[v] = solution[defOp].reg;
-    } else {
-      // Use produced pe as the color of the vertex
-      graph.colorMap[v] = solution[defOp].pe;
+    if (!graph.needColor(v)) {
+      // Use produced pe + 100 as the color of the vertex to avoid conflict
+      graph.colorMap[v] = solution[defOp].pe + 100;
+      continue;
     }
-    llvm::errs() << " " << graph.colorMap[v];
+
+    if (solution[defOp].reg >= 0)
+      graph.colorMap[v] = solution[defOp].reg;
+
+    if (graph.colorMap.find(v) != graph.colorMap.end())
+      llvm::errs() << "{" << std::to_string(graph.colorMap[v]) << "}";
   }
   llvm::errs() << "]\n";
+
+  // write limitation to the graph
+  std::map<int, int> limitedUse =
+      getLimitationUseWithPhiNode(phiList, opMap, opList, graph, maxReg);
 
   // Color the vertices in the order of PEO
   for (auto v : peo) {
@@ -263,27 +239,52 @@ compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
     auto defOp = val.getDefiningOp();
     if (!defOp)
       continue;
-    if (graph.needColor(v))
-      llvm::errs() << v << ": " << graph.colorMap[v] << "\n";
-    if (graph.needColor(v) && solution[defOp].reg < 0) {
+
+    if (graph.needColor(v)) {
+      if (solution[defOp].reg >= 0) {
+        graph.colorMap[v] = solution[defOp].reg;
+        llvm::errs() << v << ": " << std::to_string(graph.colorMap[v]) << "\n";
+        continue;
+      }
+
+      // allocate register according to the limited use of the phi node
+      if (limitedUse.find(v) != limitedUse.end()) {
+        // TODO[@Yuxuan]: check the validity of the limitation
+        graph.colorMap[v] = limitedUse[v];
+        llvm::errs() << v << ": "
+                     << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
+                     << val << "\n";
+        solution[defOp].reg = limitedUse[v];
+        continue;
+      }
+
       std::unordered_set<int> usedColors;
+      // allocate register using the interference graph
       for (auto u : graph.adjList[v]) {
         if (graph.colorMap.find(u) != graph.colorMap.end())
           usedColors.insert(graph.colorMap[u]);
       }
-      int color = 0;
-      while (usedColors.find(color) != usedColors.end()) {
-        color++;
-        if (color >= maxReg) {
-          llvm::errs() << "FAILED ALLOCATE REGISTER\n";
 
-          // maxReg is Rout. In principle, the register should not be
-          // assigned to Rout if it is used internally.
-          return failure();
-        }
+      // char color = 0;
+      // while (usedColors.find(color) != usedColors.end()) {
+      //   color++;
+      //   if (color >= maxReg) {
+      //     llvm::errs() << "FAILED ALLOCATE REGISTER\n";
+
+      //     // maxReg is Rout. In principle, the register should not be
+      //     // assigned to Rout if it is used internally.
+      //     return failure();
+      //   }
+      // }
+      char color = allocatePhysicalRegOnIG(graph.adjList[v], graph.colorMap,
+                                           usedColors, maxReg);
+      if (color >= maxReg) {
+        llvm::errs() << "FAILED ALLOCATE REGISTER for " << v << "\n";
+        return failure();
       }
       graph.colorMap[v] = color;
-      llvm::errs() << "ALLOCATE REGISTER " << color << " TO " << val << "\n";
+      llvm::errs() << v << ": ALLOCATE R" << std::to_string(color) << " TO "
+                   << val << "\n";
       solution[defOp].reg = color;
     }
   }
@@ -325,6 +326,7 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   }
 
   for (size_t pe = 0; pe < nRow * nCol; ++pe) {
+    llvm::errs() << "\nPE = " << pe << "\n";
     auto ops = getOperationsAtPE(pe);
 
     bool update = false;
@@ -335,51 +337,67 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
       if (solution[op].reg != -1)
         continue;
 
-      for (auto &use : llvm::make_early_inc_range(op->getUses())) {
-        Operation *user = getCntOpIndirectly(use.getOwner(), op);
-        // if the user PE is not restricted, don't allocate register for
-        // now
+      // if the operation does not have result, skip
+      if (op->getNumResults() == 0)
+        continue;
+
+      auto userList = getCntUserIndirectly(op->getResult(0));
+      bool allUserOutside = true;
+      for (auto user : userList) {
+        // Operation *user = getCntUseOpIndirectly(use);
         int userPE = solution[user].pe;
         // If the user is executed in neighbour PE, the result should be
         // stored in Rout.
-        if (userPE != pe) {
-          solution[op].reg = maxReg;
-          // Found the assigned register, stop seeking from other users
-          break;
+        if (userPE == pe) {
+          allUserOutside = false;
         }
 
-        if (solution[user].reg != -1) {
+        if (solution[user].reg != -1 &&
+            instSolution.find(user) != instSolution.end()) {
           // The result operand should match with use operand
-          unsigned operandIndex = use.getOperandNumber();
           int leftOpId = 0;
           if (isa<cgra::BsfaOp, cgra::BzfaOp>(user))
             leftOpId = 1;
-          auto regStr = operandIndex == leftOpId ? instSolution[user].opA
-                                                 : instSolution[user].opB;
-          if (regStr == "ROUT")
+          bool isLeftOpr =
+              op->getResult(0) == user->getOperand(leftOpId) ? 1 : 0;
+          std::string regStr =
+              leftOpId ? instSolution[user].opA : instSolution[user].opB;
+          if (regStr == "ROUT") {
             solution[op].reg = maxReg;
-          else {
-            if (isRegisterDigit(regStr, maxReg))
-              solution[op].reg = std::stoi(regStr.substr(1));
-            else {
-              llvm::errs() << pe << " " << regStr << " " << *op
-                           << "\n   user:" << *user << "\n";
+            break;
+          } else if (isRegisterDigit(regStr, maxReg)) {
+            // the user mast be executed in the same PE so that the register can
+            // be internal.
+            if (userPE != pe)
               return failure();
-            }
+            solution[op].reg = std::stoi(regStr.substr(1));
+            break;
           }
+          // else {
+          //   llvm::errs() << pe << " " << regStr << " " << *op << "\n";
+          //   llvm::errs() << "   user(" << *user
+          //                << ")reg: " << solution[user].reg << "\n";
+          //   return failure();
+          // }
           // If the correspond PE is set, stop seeking from its other
           // users
-          break;
         }
+
+        // if the user PE is not restricted, don't allocate register for now
+      }
+      if (allUserOutside) {
+        solution[op].reg = maxReg;
+        llvm::errs()
+            << *op << " PLACED TO BE ROUT for ALL OUTSIDE USER*************\n";
       }
     }
 
     // allocate register for the operations in the PE
-    llvm::errs() << "\nPE = " << pe << "\n";
     if (failed(allocateOutRegInPE(ops, solution, maxReg))) {
       llvm::errs() << "Failed to allocate register for PE " << pe << "\n";
       return failure();
     }
+    llvm::errs() << "PE " << pe << " register allocation done\n";
   }
 
   for (auto [op, sol] : solution) {
@@ -387,6 +405,9 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
       llvm::errs() << "Failed" << *op << " " << sol.pe << "\n";
       return failure();
     }
+    instSolution[op].name = op->getName().getStringRef().str();
+    instSolution[op].pe = sol.pe;
+    instSolution[op].time = sol.time;
     instSolution[op].Rout = sol.reg;
   }
 
@@ -474,7 +495,7 @@ static std::string getOperandSrcReg(int peA, int peB, int srcReg, int nRow,
                                     int nCol, unsigned maxReg) {
   if (peA == peB)
     if (srcReg == maxReg)
-      return "Rout";
+      return "ROUT";
     else
       return "R" + std::to_string(srcReg);
 
@@ -514,10 +535,14 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
                          unit.reg,
                          "Unknown",
                          "Unknown"};
+    int leftId = 0;
+    if (isa<cgra::BzfaOp, cgra::BsfaOp>(op))
+      leftId = 1;
 
     // Get defition operation
-    if (op->getNumOperands() > 0 && inst.opA == "Unknown") {
-      auto producerA = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
+    if (op->getNumOperands() > leftId && inst.opA == "Unknown") {
+      auto producerA =
+          getCntDefOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
       if (isa<LLVM::ConstantOp>(producerA))
         // assign opA to be Imm
         inst.opA = std::to_string(
@@ -530,8 +555,9 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
         return failure();
     }
 
-    if (op->getNumOperands() > 1 && inst.opB == "Unknown") {
-      auto producerB = getCntOpIndirectly(op->getOperand(1), op->getBlock())[0];
+    if (op->getNumOperands() > leftId + 1 && inst.opB == "Unknown") {
+      auto producerB =
+          getCntDefOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
       if (isa<LLVM::ConstantOp>(producerB))
         // assign opA to be Imm
         inst.opB = std::to_string(
@@ -607,7 +633,8 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   if (op->getNumOperands() > 0) {
     // check whether the operand is immediate
-    auto cntOp = getCntOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
+    auto cntOp =
+        getCntDefOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opA = imm ? " " + std::to_string(imm) : " ZERO";
@@ -618,7 +645,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   std::string opB = "";
   if (op->getNumOperands() > 1) {
     auto cntOp =
-        getCntOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
+        getCntDefOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opB = imm ? "," + std::to_string(imm) : ",ZERO";
@@ -634,12 +661,16 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   }
 
   if (isa<cgra::BzfaOp, cgra::BsfaOp>(op)) {
-    auto cntOp = getCntOpIndirectly(op->getOperand(0), op->getBlock())[0];
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(0), op->getBlock())[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       addition = imm ? " " + std::to_string(imm) : " ZERO";
     } else {
       int predicatePE = instSolution[cntOp].pe;
+      llvm::errs() << "predicate(" << *cntOp << "): " << instSolution[op].pe
+                   << " <- " << predicatePE << "\n";
+      llvm::errs() << "opA: " << instSolution[op].opA
+                   << " opB: " << instSolution[op].opB << "\n";
       addition =
           ", " + getOperandSrcReg(instSolution[op].pe, instSolution[cntOp].pe,
                                   0, nRow, nCol, maxReg);
@@ -924,6 +955,48 @@ static Operation *getFirstOpInRegion(Region &r) {
   return nullptr;
 }
 
+void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
+  std::string mapResult =
+      "/home/yuxuan/Projects/24S/Compigra/build/solution_sha1.sol";
+  std::ifstream file(mapResult);
+  if (!file.is_open()) {
+    llvm::errs() << "Unable to open " << mapResult << "\n";
+    return;
+  }
+  std::map<std::string, int> timeDict;
+  std::map<std::string, int> peDict;
+
+  std::string line;
+  bool parsing = false;
+  while (std::getline(file, line)) {
+    if (line.find("time_") != std::string::npos) {
+      auto key = line.substr(5, line.find(" ") - 5);
+      auto value = std::stoi(line.substr(line.find(" ") + 1));
+      timeDict[key] = value;
+    }
+
+    if (line.find("pe_") != std::string::npos) {
+      auto key = line.substr(3, line.find(" ") - 3);
+      auto value = std::stoi(line.substr(line.find(" ") + 1));
+      peDict[key] = value;
+    }
+  }
+  // Init instruction based on the schedule result
+  for (auto [ind, block] : llvm::enumerate(r.getBlocks())) {
+    for (auto [idOp, op] : llvm::enumerate(block.getOperations())) {
+      if (isa<LLVM::ConstantOp>(op))
+        continue;
+      auto name = op.getName().getStringRef().str();
+      auto t = timeDict[std::to_string(ind) + "_" + std::to_string(idOp)];
+      auto pe = peDict[std::to_string(ind) + "_" + std::to_string(idOp)];
+      auto instruction = Instruction{name, t, pe, -1, "Unknown", "Unknown"};
+      scheduler.knownRes[&op] = instruction;
+      llvm::errs() << op << " " << instruction.time << " " << instruction.pe
+                   << "\n";
+    }
+  }
+}
+
 namespace {
 struct OpenEdgeASMGenPass
     : public compigra::impl::OpenEdgeASMGenBase<OpenEdgeASMGenPass> {
@@ -962,8 +1035,10 @@ struct OpenEdgeASMGenPass
           return signalPassFailure();
       } else {
         int startPC = 0;
+        // DEBUG: READ RESULT FROM FILE
+        readScheduleResult(r, scheduler);
         scheduler.knownRes[getFirstOpInRegion(r)] =
-            Instruction{"init", startPC, 0, -1, "Unknown", "Unknown"};
+            Instruction{"init", startPC, 0, (int)maxReg, "Unknown", "Unknown"};
       }
 
       // init OpenEdgeASMGen
@@ -981,6 +1056,7 @@ struct OpenEdgeASMGenPass
         return signalPassFailure();
       }
       asmGen.printKnownSchedule(true, 0, outDir);
+      llvm::errs() << funcOp << "\n";
     }
   }
 };

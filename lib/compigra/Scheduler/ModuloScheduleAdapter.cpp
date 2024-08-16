@@ -681,6 +681,7 @@ Block *ModuloScheduleAdapter::createExitBlock(
 LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
     std::vector<mapId2Op> insertOpsList) {
   // check whether operations in the fini phase use the operations in the loop
+  SmallVector<BlockArgument> finiArgs;
   for (auto &op : finiBlock->getOperations()) {
     for (auto opr : op.getOperands()) {
       if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
@@ -688,6 +689,11 @@ LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
         // if it is a block argument from other block, use the original value
         if (blockArg.getOwner() != finiBlock)
           continue;
+        // already added the argument propogated from the successors
+        if (std::find(finiArgs.begin(), finiArgs.end(), blockArg) !=
+            finiArgs.end())
+          continue;
+        finiArgs.push_back(blockArg);
         // still use block argument, the parameter propagation is handled by the
         // predecessor
         unsigned argId = blockArg.getArgNumber();
@@ -817,7 +823,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
 
   SmallVector<Block *> preParts;
   SmallVector<Block *> postParts;
-  //   init has been pushed into newBlks, step to prolog
+  // init has been pushed into newBlks, step to prolog
   loopStage phase = prolog;
 
   // get the union of operations within a basic block

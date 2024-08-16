@@ -26,32 +26,77 @@ using namespace mlir;
 using namespace compigra;
 
 namespace compigra {
-Operation *getCntOpIndirectly(Operation *userOp, Operation *op) {
-  Operation *cntOp = userOp;
+Operation *getCntUseOpIndirectly(OpOperand &useOpr) {
+  Operation *cntOp = useOpr.getOwner();
+  unsigned argIndex = useOpr.getOperandNumber();
   // If the userOp is branchOp or conditionalOp, analyze which operation uses
   // the block argument
-  if (isa<LLVM::BrOp>(userOp)) {
-    // get argument index
-    Block *currBlock = userOp->getBlock();
-    Block *userBlock = userOp->getBlock()->getSuccessor(0);
-    unsigned argIndex =
-        std::distance(userOp->getOperands().begin(),
-                      std::find(userOp->getOperands().begin(),
-                                userOp->getOperands().end(), op->getResult(0)));
-    Operation *useOp = nullptr;
-    for (auto &op : userBlock->getOperations()) {
-      if (op.getOperand(0) == userBlock->getArgument(argIndex)) {
-        useOp = &op;
-        break;
-      }
-    }
-    cntOp = useOp;
+  if (isa<LLVM::BrOp>(cntOp)) {
+    Block *currBlock = cntOp->getBlock();
+    Block *userBlock = cntOp->getBlock()->getSuccessor(0);
+    auto users = userBlock->getArgument(argIndex).getUsers();
+    cntOp = *users.begin();
   }
+  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(cntOp))
+    if (argIndex >= 2 && argIndex < 2 + condBr.getNumTrueDestOperands()) {
+      // if the argument if propagated to true branch
+      Block *currBlock = cntOp->getBlock();
+      Block *userBlock = condBr.getTrueDest();
+      auto users = userBlock->getArgument(argIndex - 2).getUsers();
+      cntOp = *users.begin();
 
+    } else if (argIndex >= 2 + condBr.getNumTrueDestOperands()) {
+      // if the argument if propagated to false branch
+      Block *currBlock = cntOp->getBlock();
+      Block *userBlock = condBr.getFalseDest();
+      unsigned prefix = 2 + condBr.getNumTrueDestOperands();
+      auto users = userBlock->getArgument(argIndex - prefix).getUsers();
+      cntOp = *users.begin();
+    }
   return cntOp;
 }
 
-SmallVector<Operation *, 4> getCntOpIndirectly(Value val, Block *targetBlock) {
+SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val) {
+  SmallPtrSet<Operation *, 4> cntOps;
+  // SmallPtrSet<Operation *, 4> visited;
+  for (auto &use : val.getUses()) {
+    auto user = use.getOwner();
+    auto argIndex = use.getOperandNumber();
+    if (isa<LLVM::BrOp>(user)) {
+      Block *currBlock = user->getBlock();
+      Block *userBlock = user->getBlock()->getSuccessor(0);
+      // find the corresponding users that use the block argument
+      auto users = getCntUserIndirectly(userBlock->getArgument(argIndex));
+      cntOps.insert(users.begin(), users.end());
+      continue;
+    }
+    if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(user)) {
+      if (argIndex >= 2 && argIndex < 2 + condBr.getNumTrueDestOperands()) {
+        // if the argument if propagated to true branch
+        Block *currBlock = user->getBlock();
+        Block *userBlock = condBr.getTrueDest();
+        auto users = getCntUserIndirectly(userBlock->getArgument(argIndex - 2));
+        cntOps.insert(users.begin(), users.end());
+      } else if (argIndex >= 2 + condBr.getNumTrueDestOperands()) {
+        // if the argument if propagated to false branch
+        Block *currBlock = user->getBlock();
+        Block *userBlock = condBr.getFalseDest();
+        unsigned prefix = 2 + condBr.getNumTrueDestOperands();
+        auto users =
+            getCntUserIndirectly(userBlock->getArgument(argIndex - prefix));
+        cntOps.insert(users.begin(), users.end());
+      } else
+        cntOps.insert(user);
+      continue;
+    }
+
+    cntOps.insert(user);
+  }
+  return cntOps;
+}
+
+SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
+                                                  Block *targetBlock) {
   SmallVector<Operation *, 4> cntOps;
   if (!val.isa<BlockArgument>()) {
     cntOps.push_back(val.getDefiningOp());
@@ -59,7 +104,7 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val, Block *targetBlock) {
   }
 
   // if the value is not block argument, return empty vector
-
+  // TODO[@Yuxuan]: remove targetBlock from parameter list
   Block *block = val.getParentBlock();
   Value propVal;
 
@@ -73,7 +118,7 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val, Block *targetBlock) {
     if (isa<LLVM::BrOp>(termOp)) {
       // the corresponding block argument is the argInd'th operator
       propVal = termOp->getOperand(argInd);
-      auto defOps = getCntOpIndirectly(propVal, targetBlock);
+      auto defOps = getCntDefOpIndirectly(propVal, targetBlock);
       cntOps.append(defOps.begin(), defOps.end());
     } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
       // The terminator would be beq, bne, blt, bge, etc, the propagated value
@@ -85,7 +130,7 @@ SmallVector<Operation *, 4> getCntOpIndirectly(Value val, Block *targetBlock) {
       } else
         continue;
 
-      auto defOps = getCntOpIndirectly(propVal, targetBlock);
+      auto defOps = getCntDefOpIndirectly(propVal, targetBlock);
       cntOps.append(defOps.begin(), defOps.end());
     }
   }
@@ -216,9 +261,9 @@ void OpenEdgeKernelScheduler::assignSchedule(
       knownRes[op].opB = "Unknown";
     curPC = std::max(curPC, knownRes[op].time);
     totalExec[opId]++;
-    llvm::errs() << *op << " (" << opId << ")"
-                 << " : [" << knownRes[op].time << ", " << knownRes[op].pe
-                 << "]\n";
+    // llvm::errs() << *op << " (" << opId << ")"
+    //              << " : [" << knownRes[op].time << ", " << knownRes[op].pe
+    //              << "]\n";
   }
 }
 
@@ -293,11 +338,19 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
       // as the block exit time
       model.addConstr(var == timeBlkExit.at(op->getBlock()));
     }
-    // if the result is known, skip
-    if (knownRes.find(op) != knownRes.end())
-      continue;
-    for (Operation *userOp : op->getUsers())
-      model.addConstr(var + 1 <= timeOpVar.at(userOp));
+
+    // if (knownRes.find(op) != knownRes.end())
+    //   continue;
+    for (auto &use : op->getUses()) {
+      auto userOp = use.getOwner();
+      // Skip the parameter propagation use
+      if (isa<LLVM::BrOp>(userOp))
+        continue;
+      if (isa<cgra::ConditionalBranchOp>(userOp) && use.getOperandNumber() >= 2)
+        continue;
+      if (userOp->getBlock() == op->getBlock())
+        model.addConstr(var + 1 <= timeOpVar.at(userOp));
+    }
   }
 
   // Add the constraint based on the block
@@ -389,6 +442,21 @@ static std::stack<Block *> getBlockPath(Block *srcBlk, Block *dstBlk) {
   return std::stack<Block *>();
 }
 
+static bool isLoopBlock(Block *blk) {
+  for (auto sucBlk : blk->getSuccessors())
+    if (sucBlk == blk)
+      return true;
+  return false;
+}
+
+static bool viaArgPropagate(Operation *srcOp, Operation *dstOp) {
+  for (auto user : srcOp->getUsers()) {
+    if (user == dstOp)
+      return false;
+  }
+  return true;
+}
+
 static std::vector<std::pair<GRBVar, GRBVar>>
 getTimeGapBetween(Operation *srcOp, Operation *dstOp,
                   std::map<Operation *, GRBVar> &timeOpVar,
@@ -423,6 +491,10 @@ getTimeGapBetween(Operation *srcOp, Operation *dstOp,
       path.pop();
     }
     timeGaps.push_back({timeBlkEntry[dstOp->getBlock()], timeOpVar[dstOp]});
+    // if dstOp block is self loop, add the time gap <TdstOp, TbExit>
+    if (isLoopBlock(dstOp->getBlock()) && !viaArgPropagate(srcOp, dstOp)) {
+      timeGaps.push_back({timeOpVar[dstOp], timeBlkExit[dstOp->getBlock()]});
+    }
     return timeGaps;
   }
 
@@ -520,17 +592,17 @@ addNeighborConstraints(GRBModel &model, Operation *consumer,
     auto timeGaps = getTimeGapBetween(prodOp, consumer, timeOpVar, spaceOpVar,
                                       timeBlkEntry, timeBlkExit);
     int constrInd = 0;
-    for (auto [startT, endT] : timeGaps) {
-      for (auto [op, tVar] : timeOpVar) {
-        if (op == consumer || op == prodOp)
-          continue;
-
+    for (auto [op, tVar] : timeOpVar) {
+      if (op == consumer || op == prodOp)
+        continue;
+      for (auto [startT, endT] : timeGaps) {
         GRBVar &pe = spaceOpVar[op];
         // A helper variable to indicate the time gap between the producer and
         // the consumer, where helper = 1 means startT <= t <= endT.
         GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
         model.addConstr(tVar >= startT - 1e6 * (1 - h1));
-        model.addConstr(tVar <= startT + 1e6 * h1);
+        // constraints changed to mark equal
+        model.addConstr(tVar <= startT + 1e6 * h1 - 1e-6);
 
         GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
         model.addConstr(endT >= tVar - 1e6 * (1 - h2));
@@ -593,43 +665,48 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
       if (isa<cgra::ConditionalBranchOp>(op) && ind >= 2)
         break;
 
-      // The getCntOpIndirectly gets definition operations of the operand which
-      // should be unique unless the operand is block argument.
-      auto defOps = getCntOpIndirectly(opVal, op->getBlock());
+      // The getCntDefOpIndirectly gets definition operations of the operand
+      // which should be unique unless the operand is block argument.
+      auto defOps = getCntDefOpIndirectly(opVal, op->getBlock());
       for (auto defOp : defOps) {
         producers.push_back(defOp);
       }
 
       auto cntOp = defOps[0];
+      if (spaceOpVar.find(cntOp) == spaceOpVar.end())
+        continue;
       // If the operand is block argument, the defOps must be produced in the
       // same PE.
       if (defOps.size() > 1)
         for (auto defOp : defOps)
           if (spaceOpVar.find(defOp) != spaceOpVar.end())
             model.addConstr(spaceOpVar.at(defOp) == spaceOpVar.at(cntOp));
-
-      if (spaceOpVar.find(cntOp) == spaceOpVar.end())
-        continue;
     }
 
     if (failed(addNeighborConstraints(model, op, producers, nRow, nCol,
                                       timeOpVar, spaceOpVar, timeBlkEntry,
-                                      timeBlkExit, varNamePost)))
+                                      timeBlkExit, varNamePost))) {
+      llvm::errs() << "Failed to add neighbor constraints\n";
       return;
+    }
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
       continue;
 
     // assign the space w.r.t to its user's PE if it can be inferred.
-    for (auto userOp : op->getUsers()) {
+    for (auto &use : op->getUses()) {
+      auto userOp = use.getOwner();
       // ignore if it is for the parameter propagation
       if (isa<LLVM::BrOp>(userOp) ||
           (isa<cgra::ConditionalBranchOp>(userOp) &&
            !useValueForCmp(userOp, op->getResult(0))))
         continue;
       // Get the real userOp if the userOp is branchOp or conditionalOp
-      auto cntOp = getCntOpIndirectly(userOp, op);
+      // TODO[@Yuxuan]: check the cntOp's validity and determine whether delete
+      // the previous continue
+      // auto cntOp = getCntUseOpIndirectly(use);
+      auto cntOp = userOp;
       if (knownRes.find(cntOp) != knownRes.end() && knownRes[cntOp].Rout >= 0) {
         knownRes[op] = initVoidInstruction(op->getName().getStringRef().str());
 
@@ -716,11 +793,7 @@ void OpenEdgeKernelScheduler::initObjectiveFunction(
     model.addConstr(exit <= funcEndT);
   }
   obj = funcEndT - funcStartT;
-  // Add the objective function to minimize the total execution time
-  double coef = 1e-3;
-  // for (auto [op, var] : timeOpVar) {
-  //   obj += coef * var;
-  // }
+
   model.setObjective(obj, GRB_MINIMIZE);
 }
 
@@ -729,7 +802,7 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 180;
+  int time_limit = 1500;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function
@@ -771,9 +844,13 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   model.optimize();
 
   // Check if the optimization status indicates infeasibility
-  if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE ||
-      model.get(GRB_IntAttr_Status) == GRB_INF_OR_UNBD)
+  if (!(model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
+        model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL))
     return failure();
+
+  llvm::errs() << model.get(GRB_DoubleAttr_Runtime) << "s\n";
+  // write solution to the file
+  model.write("solution.sol");
 
   std::ofstream csvFile("output.csv");
   // If the model is infeasible, write the model to solution

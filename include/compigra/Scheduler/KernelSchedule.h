@@ -26,15 +26,21 @@ using namespace mlir;
 /// of the operation.
 namespace compigra {
 
-/// Functions to get the operation that is connected to the user operation via
-/// branch.
-Operation *getCntOpIndirectly(Operation *userOp, Operation *op);
+/// Function to get the operation that is connected to the user operation via
+/// branch(br/cond_br). This function only returns the first operation that uses
+/// the block argument, under the assumption that an add zero operation is added
+/// for each block argument.
+Operation *getCntUseOpIndirectly(OpOperand &useOpr);
+
+/// Function to get all the user operations including directly user and user use
+/// the value propagated through branch (br/cond_br).
+SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val);
 
 /// Functions to get the operation that is connected to the value via branch.
 /// If the value has definition, return the operation that defines the value.
 /// Otherwise, return the producer operations that propagate to the value.
-SmallVector<Operation *, 4> getCntOpIndirectly(Value val,
-                                               Block *targetBlock = nullptr);
+SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
+                                                  Block *targetBlock = nullptr);
 
 template <typename T> class CGRAKernelScheduler {
 public:

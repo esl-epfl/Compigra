@@ -13,6 +13,7 @@
 #ifndef OPEN_EDGE_ASM_H
 #define OPEN_EDGE_ASM_H
 
+#include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
@@ -30,53 +31,6 @@ namespace compigra {
 #define GEN_PASS_DEF_OPENEDGEASMGEN
 #define GEN_PASS_DECL_OPENEDGEASMGEN
 #include "compigra/ASMGen/Passes.h.inc"
-
-template <typename T> class InterferenceGraph {
-public:
-  InterferenceGraph() {}
-
-  void addVertex(T v) {
-    // Check if the vertex is already in the graph
-    if (adjList.find(v) == adjList.end()) {
-      adjList[v]; // add an empty set
-    }
-  }
-
-  // Initialize the vertex, which is the vertex that belongs to this PE and need
-  // to be considered for register allocation.
-  void initVertex(T v) { vertices.push_back(v); }
-
-  void addEdge(T v1, T v2) {
-    addVertex(v1);
-    addVertex(v2);
-    adjList[v1].insert(v2);
-    adjList[v2].insert(v1);
-  }
-
-  void printGraph() {
-    for (auto &v : adjList) {
-      llvm::errs() << "Vertex " << v.first << " -> ";
-      for (auto &u : v.second) {
-        llvm::errs() << u << " ";
-      }
-      llvm::errs() << "\n";
-    }
-  }
-
-  bool interference(T v1, T v2);
-
-  bool needColor(T v) {
-    if (std::find(vertices.begin(), vertices.end(), v) != vertices.end())
-      return true;
-    return false;
-  }
-  // Vertices of the graph are interferring with other nodes, but does not
-  // necessary belong to this PE. vertices records the vertices in the graph and
-  // belong to this PE which need to be considered for register allocation.
-  std::vector<T> vertices;
-  std::map<T, std::unordered_set<T>> adjList;
-  std::map<T, char> colorMap;
-};
 
 ///  Allocate registers for the operations in the PE. The register allocation is
 ///  conducted under the pre-colored constraints of `solution`.
