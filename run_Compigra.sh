@@ -63,6 +63,7 @@ compile() {
 compile_sat() {
     local bench_name="$1"
     local config="$2x$2"
+    local mode=$3
     local bench_path="$BENCH_BASE/$bench_name"
     local bench_c="$bench_path/$bench_name.c"
     local bench_ll="$bench_path/$bench_name.ll"
@@ -152,32 +153,49 @@ compile_sat() {
         mkdir -p $bench_path/$config
     fi
 
-    # Run SAT-MapIt to schedule the loop block
-    python3 $ASM_GEN --path $sat_text --bench $bench_name --unit $2 --seed 13\
-        > $bench_path/$config/"out_raw.sat" 2> /dev/null
-
-    # Check whether loop block scheduling success
-    if [ $? -ne 0 ]; then
-        echo "FAILED ON LOOP BLOCK SCHEDULING."
-        return 1
-    else
-        echo "Loop block scheduling success."
-    fi
-
     # Generate the scheduled assembly code
-    $COMPIGRA_OPT --allow-unregistered-dialect \
-        --gen-openedge-asm="func-name=$bench_name \
-        map-result=$bench_path/$config/out_raw.sat grid=$2" \
-        "$f_hardware" > $f_sat 2> /dev/null 
+    if [ "$mode" -eq 0 ]; then
+        echo "!Warning: Not using SAT-MapIt results."
+        $COMPIGRA_OPT --allow-unregistered-dialect \
+            --gen-openedge-asm="func-name=$bench_name \
+            grid=$2" "$f_hardware" > $f_sat #2> /dev/null
 
-    # Check if the scheduling was successful
-    if [ $? -eq 0 ]; then
-        echo "Kernel scheduling success."
-        echo "========================"
-        echo "COMPILATION SUCCESS."
+        if [ $? -ne 0 ]; then
+            echo "Kernel scheduling failed."
+            return 1
+        else
+            echo "Kernel schedule success."
+        fi
+
+        # mv out.sat and out_grid.sat to $bench_path/$config
+        mv out.sat $bench_path/$config/NoOptim_out.sat
+        mv out_grid.sat $bench_path/$config/NoOptim_out_grid.sat
     else
-        echo "Kernel schedule failed."
+        # Run SAT-MapIt to schedule the loop block
+        python3 $ASM_GEN --path $sat_text --bench $bench_name --unit $2 --seed 13\
+            > $bench_path/$config/"out_raw.sat" 2> /dev/null
+
+        # Check whether loop block scheduling success
+        if [ $? -ne 0 ]; then
+            echo "FAILED ON LOOP BLOCK SCHEDULING."
+            return 1
+        else
+            echo "Loop block scheduling success."
+        fi
+
+        $COMPIGRA_OPT --allow-unregistered-dialect \
+            --gen-openedge-asm="func-name=$bench_name \
+            map-result=$bench_path/$config/out_raw.sat grid=$2" \
+            "$f_hardware" > $f_sat 2> /dev/null
+        if [ $? -ne 0 ]; then
+            echo "Kernel scheduling failed."
+            return 1
+        else
+            echo "Kernel schedule success."
+        fi
     fi
+
+    echo "COMPILATION SUCCESS."
     return 0
 }
 
@@ -201,6 +219,7 @@ asm2bin(){
 
 benchmark=$1
 config=$2
+task=$3
 
 # Check if the second parameter is provided
 if [ -z "$2" ]; then
@@ -209,7 +228,19 @@ else
     config=$2
 fi
 
-task=$3
+# Check if the third parameter is provided
+if [ -z "$3" ]; then
+    task=1
+else
+    if [ "$3" -eq 0 ]; then
+        task=0
+    else
+        echo "Error: Invalid task value. \
+        Task must be 0, specifying not use sat-mapit results"
+        exit 1
+    fi
+fi
+
 # use absolute path to avoid any confusion
 # $1 /home/yuxuan/Projects/24S/Compigra/benchmarks/BitCount/IR/
 # $2 bitcount BitCount
@@ -225,7 +256,7 @@ else
         mkdir "$BENCH_BASE/$benchmark/IR"
     fi
 
-    compile_sat $benchmark $config
+    compile_sat $benchmark $config $task
 fi 
 
 
