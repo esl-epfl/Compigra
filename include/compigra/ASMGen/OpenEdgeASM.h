@@ -34,9 +34,11 @@ namespace compigra {
 
 ///  Allocate registers for the operations in the PE. The register allocation is
 ///  conducted under the pre-colored constraints of `solution`.
-LogicalResult allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
-                                 std::map<Operation *, ScheduleUnit> &solution,
-                                 unsigned maxReg);
+LogicalResult
+allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
+                   std::map<Operation *, ScheduleUnit> &solution,
+                   unsigned maxReg,
+                   std::map<int, std::unordered_set<int>> pcCtrlFlow);
 
 class OpenEdgeASMGen {
 public:
@@ -90,7 +92,7 @@ public:
   /// dropped if required.
   void dropTimeFrame(int time);
 
-protected:
+private:
   Region &region;
   unsigned maxReg;
   unsigned nRow, nCol;
@@ -101,6 +103,8 @@ protected:
 
   //   data structure to store the schedule results of operations
   std::map<Operation *, ScheduleUnit> solution;
+
+  std::map<int, std::unordered_set<int>> getPcCtrlFlow();
 
 public:
   /// Get all operations scheduled at a specific time

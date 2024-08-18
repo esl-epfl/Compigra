@@ -28,6 +28,9 @@ namespace compigra {
 using mapId2Op = std::map<int, Operation *>;
 ///
 using opWithId = std::pair<Operation *, int>;
+/// Data structure to store the operations index, each set contains the index of
+/// different interations.
+using opIdInIter = std::vector<std::set<int>>;
 
 /// The modulo scheduler might generate efficient schedule result by overlapping
 /// loop with prolog and epilog that does not exist in current CFG. This

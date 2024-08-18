@@ -77,7 +77,19 @@ public:
 /// opMap.
 InterferenceGraph<int>
 createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
-                        std::map<int, Value> &opMap);
+                        std::map<int, Value> &opMap,
+                        std::map<int, std::unordered_set<int>> ctrlFlow);
+
+/// Get the successor operations of the `op`. The control flow of CGRA could be
+/// controlled by other PEs, which branch direction is given by ctrlFlow.
+SmallVector<Operation *>
+getSuccOps(Operation *op, const std::map<int, mlir::Operation *> &opList,
+           std::map<int, std::unordered_set<int>> ctrlFlow);
+
+/// Get the successor operations of the operation in the PE.
+std::map<Operation *, std::unordered_set<Operation *>>
+getSuccessorMap(const std::map<int, mlir::Operation *> &opList,
+                const std::map<int, std::unordered_set<int>> ctrlFlow);
 } // namespace compigra
 
 #endif

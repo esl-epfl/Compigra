@@ -218,37 +218,39 @@ static bool useValueForCmp(Operation *userOp, Value val) {
   return false;
 }
 
-/// sort hte ops in the order of loop iteration sequence and execution time
-static void sortOpsInExecTime(std::vector<opWithId> &ops,
-                              std::map<int, int> opExec,
-                              const std::vector<int> totalExec) {
-  // Map to store the first occurrence of each opId
-  std::unordered_set<int> executed;
-  std::map<Operation *, int> group;
-  unsigned iter = 0;
-  // unsig
-  for (int i = 0; i < ops.size(); ++i) {
-    if (executed.find(ops[i].second) == executed.end())
-      executed.insert(ops[i].second);
-    else {
-      // start another loop iteration
-      iter++;
-    }
-    group[ops[i].first] = totalExec[ops[i].second] + iter;
-    llvm::errs() << i << ": " << *ops[i].first << "(" << ops[i].second
-                 << ") : " << totalExec[ops[i].second] << " + " << iter << "="
-                 << group[ops[i].first] << "\n";
-  }
+// /// sort hte ops in the order of loop iteration sequence and execution time
+// static void sortOpsInExecTime(std::vector<opWithId> &ops,
+//                               std::map<int, int> opExec,
+//                               const std::vector<int> totalExec) {
+//   // Map to store the first occurrence of each opId
+//   std::unordered_set<int> executed;
+//   std::map<Operation *, int> group;
+//   unsigned iter = 0;
+//   // unsig
+//   for (int i = 0; i < ops.size(); ++i) {
+//     if (executed.find(ops[i].second) == executed.end())
+//       executed.insert(ops[i].second);
+//     else {
+//       // start another loop iteration
+//       iter++;
+//     }
+//     group[ops[i].first] = totalExec[ops[i].second] + iter;
+//     llvm::errs() << i << ": " << *ops[i].first << "(" << ops[i].second
+//                  << ") : " << totalExec[ops[i].second] << " + " << iter <<
+//                  "="
+//                  << group[ops[i].first] << "\n";
+//   }
 
-  // Sort ops using a lambda function that directly compares based on opExec
-  // values
-  std::sort(ops.begin(), ops.end(), [&](const opWithId &a, const opWithId &b) {
-    if (group[a.first] == group[b.first]) {
-      return opExec.at(a.second) < opExec.at(b.second);
-    }
-    return group[a.first] < group[b.first];
-  });
-}
+//   // Sort ops using a lambda function that directly compares based on opExec
+//   // values
+//   std::sort(ops.begin(), ops.end(), [&](const opWithId &a, const opWithId &b)
+//   {
+//     if (group[a.first] == group[b.first]) {
+//       return opExec.at(a.second) < opExec.at(b.second);
+//     }
+//     return group[a.first] < group[b.first];
+//   });
+// }
 
 void OpenEdgeKernelScheduler::assignSchedule(
     std::vector<opWithId> ops, const int II, int &curPC,
@@ -595,18 +597,23 @@ addNeighborConstraints(GRBModel &model, Operation *consumer,
     for (auto [op, tVar] : timeOpVar) {
       if (op == consumer || op == prodOp)
         continue;
-      for (auto [startT, endT] : timeGaps) {
+      for (auto it = timeGaps.begin(); it != timeGaps.end(); ++it) {
+        auto [startT, endT] = *it;
         GRBVar &pe = spaceOpVar[op];
         // A helper variable to indicate the time gap between the producer and
         // the consumer, where helper = 1 means startT <= t <= endT.
         GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
         model.addConstr(tVar >= startT - 1e6 * (1 - h1));
-        // constraints changed to mark equal
         model.addConstr(tVar <= startT + 1e6 * h1 - 1e-6);
 
         GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
         model.addConstr(endT >= tVar - 1e6 * (1 - h2));
-        model.addConstr(endT <= tVar + 1e6 * h2);
+        if (std::next(it) == timeGaps.end()) {
+          model.addConstr(endT <= tVar + 1e6 * h2);
+        } else {
+          model.addConstr(endT <= tVar + 1e6 * h2 - 1e-6);
+        }
+        // model.addConstr(endT <= tVar + 1e6 * h2);
 
         GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
 

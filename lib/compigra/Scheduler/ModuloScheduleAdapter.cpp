@@ -810,7 +810,6 @@ static std::vector<opWithId> getInitOperandId(Block *initBlk, Block *loopBlk) {
 }
 
 LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
-  Operation *firstTerm = initBlock->getTerminator();
   // remove the operators to the loop block, add it later in the CFG
   // generation to solve the data dependency issue by storing the branch
   // operator
@@ -829,7 +828,8 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   // get the union of operations within a basic block
   mapId2Op insertOps = {};
   Block *loopBlock = nullptr;
-  std::vector<std::set<int>> opSet = {};
+  opIdInIter opSet = {};
+  std::vector<opIdInIter> existIds = {};
   std::vector<mapId2Op> insertOpsList = {};
   for (auto [ind, s] : llvm::enumerate(bbTimeMap)) {
     // does not process epilog in the prolog-loop basic block generation
@@ -837,12 +837,13 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
       break;
 
     opSet = getOperationSet(opTimeMap, s, opSet, execTime, false);
+    existIds.push_back(opSet);
 
     // print opSet
     llvm::errs() << "init DFG for " << ind << " th block\n";
-    for (auto opSet : opSet) {
+    for (auto set : opSet) {
       llvm::errs() << "{";
-      for (auto opId : opSet) {
+      for (auto opId : set) {
         llvm::errs() << opId << " ";
       }
       llvm::errs() << "}";
@@ -885,11 +886,11 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   } // end of the prolog-loop creation
 
   std::vector<mapId2Op> liveOutOpList = {};
-  opSet = {};
-  for (size_t ind = 1; ind < newBlks.size() - 1; ++ind) {
+  // for (size_t ind = 1; ind < newBlks.size() - 1; ++ind) {
+  for (int ind = newBlks.size() - 2; ind >= 1; --ind) {
     auto s = bbTimeMap[ind - 1];
     auto preGenOps = insertOpsList[ind - 1];
-    opSet = getOperationSet(opTimeMap, s, opSet, execTime, false);
+    opSet = existIds[ind - 1];
 
     // connect the current block to the CFG
 

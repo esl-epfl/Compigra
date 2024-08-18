@@ -47,7 +47,8 @@ static bool equalValueSet(std::unordered_set<int> set1,
 namespace compigra {
 InterferenceGraph<int>
 createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
-                        std::map<int, Value> &opMap) {
+                        std::map<int, Value> &opMap,
+                        std::map<int, std::unordered_set<int>> ctrlFlow) {
   std::map<Operation *, std::unordered_set<int>> def;
   std::map<Operation *, std::unordered_set<int>> use;
 
@@ -103,8 +104,6 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
         ind++;
       }
       use[op].insert(getValueIndex(operand, opMap));
-      llvm::errs() << "USE(" << *op << ")" << operand << " "
-                   << getValueIndex(operand, opMap) << "\n";
     }
   }
 
@@ -115,24 +114,27 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
   // print sortedOps
   std::map<Operation *, std::unordered_set<int>> liveIn;
   std::map<Operation *, std::unordered_set<int>> liveOut;
+
+  auto succMap = getSuccessorMap(opList, ctrlFlow);
   while (true) {
     bool changed = false;
     for (int i = sortedOps.size() - 1; i >= 0; i--) {
       auto op = sortedOps[i];
-      if (i < sortedOps.size() - 1) {
-        // TODO[@Yuxuan]: define operation that seek the real successor
-        auto succ = sortedOps[i + 1];
-        // Calculate liveOut
-        // if liveIn is empty, continue
-        if (liveIn.find(succ) == liveIn.end())
-          continue;
-        for (auto live : liveIn[succ]) {
-          // don't add the result operators from other PE to liveOut
-          if (!graph.needColor(live))
+      if (i < sortedOps.size()) {
+        auto succOps = succMap[op];
+        for (auto succ : succOps) {
+          // Calculate liveOut
+          // if liveIn is empty, continue
+          if (liveIn.find(succ) == liveIn.end())
             continue;
-          if (liveOut[op].find(live) == liveOut[op].end()) {
-            changed = true;
-            liveOut[op].insert(live);
+          for (auto live : liveIn[succ]) {
+            // don't add the result operators from other PE to liveOut
+            if (!graph.needColor(live))
+              continue;
+            if (liveOut[op].find(live) == liveOut[op].end()) {
+              changed = true;
+              liveOut[op].insert(live);
+            }
           }
         }
       }
@@ -166,5 +168,78 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     }
   }
   return graph;
+}
+
+SmallVector<Operation *>
+getSuccOps(Operation *op, const std::map<int, mlir::Operation *> &opList,
+           std::map<int, std::unordered_set<int>> ctrlFlow) {
+  SmallVector<Operation *> succOps;
+  // find the dst PC of op
+  int srcPC = -1;
+  for (auto [ind, opTest] : opList) {
+    if (opTest == op) {
+      srcPC = ind;
+      break;
+    }
+  }
+
+  std::stack<int> pcStack;
+  std::set<int> visited;
+  std::set<int> inStack;
+  pcStack.push(srcPC);
+
+  while (!pcStack.empty()) {
+    int curPC = pcStack.top();
+
+    if (visited.find(curPC) != visited.end()) {
+      pcStack.pop();
+      continue;
+    }
+
+    if (inStack.find(curPC) != inStack.end()) {
+      // node is already in the stack, meaning visited it before but not
+      // fully processed it; Pop it now as all its children have been visited
+      pcStack.pop();
+      visited.insert(curPC);
+      continue;
+    }
+
+    // First time seeing this node, mark it as in the stack
+    inStack.insert(curPC);
+
+    bool allSuccVisited = true;
+    for (int cntPC : ctrlFlow[curPC]) {
+      if (visited.find(cntPC) != visited.end())
+        continue;
+
+      if (inStack.find(cntPC) == inStack.end()) {
+        allSuccVisited = false;
+      }
+
+      if (opList.find(cntPC) != opList.end())
+        succOps.push_back(opList.at(cntPC));
+      else
+        pcStack.push(cntPC);
+    }
+
+    if (allSuccVisited) {
+      // All children of this node have been visited, mark it as visited
+      visited.insert(curPC);
+      pcStack.pop();
+    }
+  }
+  return succOps;
+}
+
+std::map<Operation *, std::unordered_set<Operation *>>
+getSuccessorMap(const std::map<int, mlir::Operation *> &opList,
+                const std::map<int, std::unordered_set<int>> ctrlFlow) {
+  std::map<Operation *, std::unordered_set<Operation *>> succMap;
+  for (auto [ind, op] : opList) {
+    auto succOps = getSuccOps(op, opList, ctrlFlow);
+    succMap[op] =
+        std::unordered_set<Operation *>(succOps.begin(), succOps.end());
+  }
+  return succMap;
 }
 } // namespace compigra

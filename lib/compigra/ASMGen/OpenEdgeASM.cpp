@@ -179,13 +179,13 @@ std::map<int, int> getLimitationUseWithPhiNode(
   return limitedUse;
 }
 
-LogicalResult
-compigra::allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
-                             std::map<Operation *, ScheduleUnit> &solution,
-                             unsigned maxReg) {
+LogicalResult compigra::allocateOutRegInPE(
+    std::map<int, mlir::Operation *> opList,
+    std::map<Operation *, ScheduleUnit> &solution, unsigned maxReg,
+    std::map<int, std::unordered_set<int>> pcCtrlFlow) {
   // init Operation result to integer
   std::map<int, Value> opMap;
-  auto graph = createInterferenceGraph(opList, opMap);
+  auto graph = createInterferenceGraph(opList, opMap, pcCtrlFlow);
 
   // print opMap and interference graph
   llvm::errs() << "--------------Interference Graph-----------------\n";
@@ -316,6 +316,37 @@ static bool isRegisterDigit(const std::string &reg, unsigned maxReg) {
   return std::stoi(reg.substr(1)) <= maxReg;
 }
 
+std::map<int, std::unordered_set<int>> OpenEdgeASMGen::getPcCtrlFlow() {
+  std::map<int, std::unordered_set<int>> pcCtrlFlow;
+  int start = getKernelStart();
+  int end = getKernelEnd();
+  for (int i = start; i <= end; i++) {
+    pcCtrlFlow[i] = {};
+    auto opList = getOperationsAtTime(i);
+    // if opList does not contain any branch ops, pc increment by 1
+    for (auto [pe, op] : opList) {
+      if (isa<LLVM::BrOp>(op) || isa<cgra::ConditionalBranchOp>(op)) {
+        auto block = op->getBlock();
+        int time = i;
+        int sucTime = getEarliestExecutionTime(block->getSuccessor(0));
+        pcCtrlFlow[time].insert(sucTime);
+        if (isa<cgra::ConditionalBranchOp>(op)) {
+          pcCtrlFlow[time].insert(i + 1);
+        }
+        break;
+      }
+      if (isa<LLVM::ReturnOp>(op)) {
+        pcCtrlFlow[i].insert(INT_MAX);
+        break;
+      }
+    }
+    if (pcCtrlFlow[i].empty())
+      pcCtrlFlow[i].insert(i + 1);
+  }
+
+  return pcCtrlFlow;
+}
+
 LogicalResult OpenEdgeASMGen::allocateRegisters(
     std::map<Operation *, Instruction> restriction) {
 
@@ -323,6 +354,15 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   for (auto [op, inst] : restriction) {
     instSolution[op] = inst;
     solution[op].reg = inst.Rout;
+  }
+
+  auto pcCtrlFlow = getPcCtrlFlow();
+  // print pcCtrlFlow
+  for (auto [time, suc] : pcCtrlFlow) {
+    llvm::errs() << "Time: " << time << " ->{ ";
+    for (auto s : suc)
+      llvm::errs() << s << ", ";
+    llvm::errs() << "}\n";
   }
 
   for (size_t pe = 0; pe < nRow * nCol; ++pe) {
@@ -373,27 +413,19 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
             solution[op].reg = std::stoi(regStr.substr(1));
             break;
           }
-          // else {
-          //   llvm::errs() << pe << " " << regStr << " " << *op << "\n";
-          //   llvm::errs() << "   user(" << *user
-          //                << ")reg: " << solution[user].reg << "\n";
-          //   return failure();
-          // }
           // If the correspond PE is set, stop seeking from its other
           // users
         }
 
         // if the user PE is not restricted, don't allocate register for now
       }
-      if (allUserOutside) {
+      if (allUserOutside) 
         solution[op].reg = maxReg;
-        llvm::errs()
-            << *op << " PLACED TO BE ROUT for ALL OUTSIDE USER*************\n";
-      }
+      
     }
 
     // allocate register for the operations in the PE
-    if (failed(allocateOutRegInPE(ops, solution, maxReg))) {
+    if (failed(allocateOutRegInPE(ops, solution, maxReg, pcCtrlFlow))) {
       llvm::errs() << "Failed to allocate register for PE " << pe << "\n";
       return failure();
     }
@@ -935,7 +967,8 @@ LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
 
     for (int i = 0; i < preParts.size() - 1; i++) {
       scheduler.assignSchedule(postParts[i], II, curPC, execTime, instructions,
-                               preOpIds[i], curPC - bbStarts[i + 1]);
+                               preOpIds[preParts.size() - 2 - i],
+                               curPC - bbStarts[preParts.size() - 1 - i]);
       curPC++;
     }
 
@@ -1036,7 +1069,7 @@ struct OpenEdgeASMGenPass
       } else {
         int startPC = 0;
         // DEBUG: READ RESULT FROM FILE
-        readScheduleResult(r, scheduler);
+        // readScheduleResult(r, scheduler);
         scheduler.knownRes[getFirstOpInRegion(r)] =
             Instruction{"init", startPC, 0, (int)maxReg, "Unknown", "Unknown"};
       }
