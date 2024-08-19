@@ -162,8 +162,9 @@ static SATLoopBlock getSATMapItBlockType(Block *block) {
   }
 
   if (auto condBranchOp = dyn_cast<LLVM::CondBrOp>(block->getTerminator()))
-    for (auto attr : condBranchOp.getAttributeNames())
-      if (attr.contains(StringRef("loop_annotation")))
+    // the loop should be innermost loop
+    for (auto succ : block->getSuccessors())
+      if (succ == block)
         return SATLoopBlock::Loop;
 
   return SATLoopBlock::Unkown;
@@ -177,6 +178,12 @@ LogicalResult CgraLowering::reorderBBs(ConversionPatternRewriter &rewriter) {
       loopBlock = &block;
       break;
     }
+
+  // always enforce Fini block to be the last block
+  for (auto &block : region) {
+    if (getSATMapItBlockType(&block) == SATLoopBlock::Fini)
+      rewriter.moveBlockBefore(&block, &region.back());
+  }
 
   // No need to reorder BBs if there is no loop block
   if (loopBlock == nullptr)
