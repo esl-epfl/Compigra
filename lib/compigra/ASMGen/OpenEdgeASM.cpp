@@ -419,9 +419,8 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
         // if the user PE is not restricted, don't allocate register for now
       }
-      if (allUserOutside) 
+      if (allUserOutside)
         solution[op].reg = maxReg;
-      
     }
 
     // allocate register for the operations in the PE
@@ -990,27 +989,27 @@ static Operation *getFirstOpInRegion(Region &r) {
 
 void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
   std::string mapResult =
-      "/home/yuxuan/Projects/24S/Compigra/build/solution_sha1.sol";
+      "/home/yuxuan/Projects/24S/Compigra/build/solution_isqrt.sol";
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";
     return;
   }
-  std::map<std::string, int> timeDict;
-  std::map<std::string, int> peDict;
+  std::map<std::string, float> timeDict;
+  std::map<std::string, float> peDict;
 
   std::string line;
   bool parsing = false;
   while (std::getline(file, line)) {
     if (line.find("time_") != std::string::npos) {
       auto key = line.substr(5, line.find(" ") - 5);
-      auto value = std::stoi(line.substr(line.find(" ") + 1));
+      auto value = std::stof(line.substr(line.find(" ") + 1));
       timeDict[key] = value;
     }
 
     if (line.find("pe_") != std::string::npos) {
       auto key = line.substr(3, line.find(" ") - 3);
-      auto value = std::stoi(line.substr(line.find(" ") + 1));
+      auto value = std::stof(line.substr(line.find(" ") + 1));
       peDict[key] = value;
     }
   }
@@ -1022,7 +1021,12 @@ void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
       auto name = op.getName().getStringRef().str();
       auto t = timeDict[std::to_string(ind) + "_" + std::to_string(idOp)];
       auto pe = peDict[std::to_string(ind) + "_" + std::to_string(idOp)];
-      auto instruction = Instruction{name, t, pe, -1, "Unknown", "Unknown"};
+      auto instruction = Instruction{name,
+                                     static_cast<int>(std::round(t)),
+                                     static_cast<int>(std::round(pe)),
+                                     -1,
+                                     "Unknown",
+                                     "Unknown"};
       scheduler.knownRes[&op] = instruction;
       llvm::errs() << op << " " << instruction.time << " " << instruction.pe
                    << "\n";
@@ -1040,7 +1044,7 @@ struct OpenEdgeASMGenPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-    unsigned maxReg = 3;
+    unsigned maxReg = 5;
     // initial interval
     int II;
 

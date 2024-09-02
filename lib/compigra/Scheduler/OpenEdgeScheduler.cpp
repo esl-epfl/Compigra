@@ -496,6 +496,8 @@ getTimeGapBetween(Operation *srcOp, Operation *dstOp,
     // if dstOp block is self loop, add the time gap <TdstOp, TbExit>
     if (isLoopBlock(dstOp->getBlock()) && !viaArgPropagate(srcOp, dstOp)) {
       timeGaps.push_back({timeOpVar[dstOp], timeBlkExit[dstOp->getBlock()]});
+      timeGaps.push_back(
+          {timeBlkExit[dstOp->getBlock()], timeBlkExit[dstOp->getBlock()]});
     }
     return timeGaps;
   }
@@ -593,6 +595,14 @@ addNeighborConstraints(GRBModel &model, Operation *consumer,
     // execute any other operations
     auto timeGaps = getTimeGapBetween(prodOp, consumer, timeOpVar, spaceOpVar,
                                       timeBlkEntry, timeBlkExit);
+    // if x ! = y, consumer and producer are not in the same PE
+    GRBVar diffXY = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+    model.addConstr(diffXY == x - y);
+    GRBVar diffXYAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+    model.addGenConstrAbs(diffXYAbs, diffXY);
+    GRBVar ifPEEq = model.addVar(0, 1, 0, GRB_BINARY);
+    model.addConstr(ifPEEq >= diffXYAbs / 1e6);
+
     int constrInd = 0;
     for (auto [op, tVar] : timeOpVar) {
       if (op == consumer || op == prodOp)
@@ -604,28 +614,19 @@ addNeighborConstraints(GRBModel &model, Operation *consumer,
         // the consumer, where helper = 1 means startT <= t <= endT.
         GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
         model.addConstr(tVar >= startT - 1e6 * (1 - h1));
-        model.addConstr(tVar <= startT + 1e6 * h1 - 1e-6);
+        model.addConstr(tVar <= startT + 1e6 * h1 - 1e-3);
 
         GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
         model.addConstr(endT >= tVar - 1e6 * (1 - h2));
         if (std::next(it) == timeGaps.end()) {
           model.addConstr(endT <= tVar + 1e6 * h2);
         } else {
-          model.addConstr(endT <= tVar + 1e6 * h2 - 1e-6);
+          model.addConstr(endT <= tVar + 1e6 * h2 - 1e-3);
         }
-        // model.addConstr(endT <= tVar + 1e6 * h2);
 
         GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
 
         // if t_start<=t<=t_end && x!=y
-        // if x ! = y, consumer and producer are not in the same PE
-        GRBVar diffXY =
-            model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-        model.addConstr(diffXY == x - y);
-        GRBVar diffXYAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-        model.addGenConstrAbs(diffXYAbs, diffXY);
-        GRBVar ifPEEq = model.addVar(0, 1, 0, GRB_BINARY);
-        model.addConstr(ifPEEq >= diffXYAbs / 1e6);
 
         GRBVar xvars[3] = {h1, h2, ifPEEq};
         model.addGenConstrAnd(h, xvars, 3);
@@ -696,6 +697,11 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
       llvm::errs() << "Failed to add neighbor constraints\n";
       return;
     }
+    model.optimize();
+    if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL) {
+      llvm::errs() << "can not fit" << *op << "\n";
+      return;
+    }
 
     // The result is known, skip
     if (knownRes.find(op) != knownRes.end() && knownRes[op].Rout >= 0)
@@ -734,7 +740,11 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
         llvm::errs() << "Assign " << *op << " to " << dstPE << "\n";
         model.addConstr(var == dstPE);
         knownRes[op].pe = dstPE;
-
+        model.optimize();
+        if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL) {
+          llvm::errs() << "ASSIGN OP" << *op << "FAILED\n";
+          return;
+        }
         break;
       }
     }
