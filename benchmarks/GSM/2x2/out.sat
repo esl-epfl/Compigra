@@ -1,0 +1,120 @@
+T = 0
+NOP                      
+SADD R1, -1,ZERO         
+SADD ROUT, 12,ZERO       
+SADD R1, 4088,ZERO       
+T = 1
+SLT R1, RCT,12           
+SADD ROUT, 12,ZERO       
+SADD ROUT, 7,ZERO        
+SLT ROUT, R1,12          
+T = 2
+SLT ROUT, RCR,12         
+SLT ROUT, R1,24          
+SADD ROUT, ZERO,RCR      
+SLT ROUT, RCR,12         
+T = 3
+SADD ROUT, 2048,R1       
+SADD R1, 4095,RCT        
+SADD R0, 2052,RCT        
+SADD R1, RCR,RCT         
+T = 4
+SADD R1, ZERO,ZERO       
+LWI R0, RCR              
+SADD R2, ZERO,40         
+NOP                      
+T = 5
+SADD R1, R1,ZERO         
+NOP                      
+NOP                      
+NOP                      
+T = 6
+SADD R0, R1,1            
+NOP                      
+SMUL R1, RCT,4           
+NOP                      
+T = 7
+NOP                      
+NOP                      
+SADD ROUT, R0,R1         
+NOP                      
+T = 8
+NOP                      
+NOP                      
+NOP                      
+LWI R0, RCR              
+T = 9
+NOP                      
+SSUB R2, ZERO,RCT        
+BEQ RCT,R2, 15           
+SSUB ROUT, R0,R1         
+T = 10
+SADD R1, R0,ZERO         
+BZFA ROUT, R1,R2, RCT    
+NOP                      
+SSUB R2, R2,ZERO         
+T = 11
+SADD R0, R1,1            
+SADD R3, R0,ZERO         
+SMUL R1, RCT,4           
+BSFA ROUT, RCT,R2, R0    
+T = 12
+NOP                      
+SSUB R2, R3,RCT          
+SADD ROUT, R0,R1         
+NOP                      
+T = 13
+NOP                      
+BSFA R0, RCT,R3, R0      
+NOP                      
+LWI R2, RCR              
+T = 14
+NOP                      
+SSUB R2, ZERO,RCT        
+BNE RCT,R2, 10           
+SSUB ROUT, R2,R1         
+T = 15
+NOP                      
+BZFA ROUT, R1,R2, RCT    
+NOP                      
+SSUB R1, R0,ZERO         
+T = 16
+NOP                      
+SADD R1, R0,ZERO         
+NOP                      
+BSFA ROUT, RCT,R0, R0    
+T = 17
+NOP                      
+SSUB R0, R1,RCT          
+NOP                      
+NOP                      
+T = 18
+NOP                      
+BSFA ROUT, RCT,R1, R0    
+NOP                      
+NOP                      
+T = 19
+SADD ROUT, 12,ZERO       
+NOP                      
+NOP                      
+NOP                      
+T = 20
+NOP                      
+NOP                      
+SLT ROUT, RCT,12         
+NOP                      
+T = 21
+SADD R0, 2048,RCT        
+NOP                      
+NOP                      
+NOP                      
+T = 22
+SWI RCR,R0               
+NOP                      
+NOP                      
+NOP                      
+T = 23
+EXIT                     
+NOP                      
+NOP                      
+NOP                      

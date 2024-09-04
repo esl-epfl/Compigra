@@ -1,0 +1,221 @@
+T = 0
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, 12,ZERO       
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD R0, ZERO,ZERO       
+SADD ROUT, 12,ZERO       
+T = 1
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, ZERO,ZERO     
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCT,12         
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCL,12         
+NOP                      
+NOP                      
+NOP                      
+T = 2
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD R0, 2052,RCB        
+NOP                      
+NOP                      
+SADD ROUT, 2048,RCT      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 3
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+LWI R0, R0               
+NOP                      
+LWI ROUT, RCR            
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 4
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, RCT,ZERO      
+NOP                      
+T = 5
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, ROUT,ZERO     
+NOP                      
+SADD ROUT, RCB,-1        
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 6
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, ROUT,1        
+NOP                      
+LAND ROUT, ROUT,RCB      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 7
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+BNE RCT,R0, 4            
+NOP                      
+T = 8
+SADD ROUT, 12,ZERO       
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, 12,ZERO       
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 9
+NOP                      
+SLT ROUT, RCL,12         
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCR,12         
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 10
+NOP                      
+NOP                      
+SADD R0, 2048,RCL        
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, 2052,RCL      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 11
+NOP                      
+NOP                      
+SWI RCR,R0               
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SWI RCR,RCT              
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 12
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+EXIT                     
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      

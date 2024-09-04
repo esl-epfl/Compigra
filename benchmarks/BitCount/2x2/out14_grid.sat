@@ -1,0 +1,39 @@
+Time = 0
+SADD R0, 12,ZERO         SADD R0, 12,ZERO         
+SADD R0, ZERO,ZERO       NOP                      
+Time = 1
+SLT R0, R0,12            SLT R0, R0,12            
+SADD R0, ZERO,ZERO       NOP                      
+Time = 2
+SADD ROUT, 2052,R0       SADD ROUT, 2048,R0       
+NOP                      NOP                      
+Time = 3
+NOP                      LWI R0, RCR              
+NOP                      LWI ROUT, RCT            
+Time = 4
+NOP                      SADD ROUT, ROUT,ZERO     
+NOP                      SADD ROUT, ROUT,ZERO     
+Time = 5
+NOP                      SADD ROUT, ROUT,1        
+SADD ROUT, RCL,-1        NOP                      
+Time = 6
+NOP                      NOP                      
+NOP                      LAND ROUT, RCR,ROUT      
+Time = 7
+NOP                      NOP                      
+BNE RCL,R0, 4            NOP                      
+Time = 8
+NOP                      SADD R0, 12,ZERO         
+SADD R0, 12,ZERO         NOP                      
+Time = 9
+NOP                      SLT R0, R0,12            
+SLT R0, R0,12            NOP                      
+Time = 10
+NOP                      SADD R0, 2052,R0         
+SADD R0, 2048,R0         NOP                      
+Time = 11
+NOP                      SWI Rout,R0              
+SWI R0,R0                NOP                      
+Time = 12
+NOP                      NOP                      
+EXIT                     NOP                      

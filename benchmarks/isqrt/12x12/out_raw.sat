@@ -1,0 +1,1761 @@
+#nodes: 8
+0
+REC 5
+RES 1
+
+ASAP Schedule
+0 1 
+2 6 7 
+3 
+4 
+5 
+
+
+ALAP Schedule
+0 1 
+2 
+3 
+4 
+5 6 7 
+
+
+Mobility Schedule
+0 1 
+2 6 7 
+3 6 7 
+4 6 7 
+5 6 7 
+
+II: 5
+nit 5/5= 1.0= 1
+KMS
+[(0, 0), (0, 1)]
+[(0, 2), (0, 6), (0, 7)]
+[(0, 3), (0, 6), (0, 7)]
+[(0, 4), (0, 6), (0, 7)]
+[(0, 5), (0, 6), (0, 7)]
+Adding C1...
+Time: 16.35279893875122
+Adding C2...
+Time: 0.10267424583435059
+Adding C3...
+[0, 5]
+[0, 2]
+[1, 7]
+[1, 6]
+[1, 2]
+[2, 5]
+[2, 3]
+[2, 3]
+[3, 4]
+[4, 5]
+Adding back...
+[5, 0]
+[6, 1]
+Time: 0.9291512966156006
+Using Seed: 0
+shuffling 0 ...
+SAT
+Node 3 on PE 63 at time 2 of it 0
+Node 4 on PE 75 at time 3 of it 0
+Node 6 on PE 86 at time 4 of it 0
+Node 0 on PE 63 at time 0 of it 0
+Node 5 on PE 63 at time 4 of it 0
+Node 2 on PE 62 at time 1 of it 0
+Node 1 on PE 74 at time 0 of it 0
+Node 7 on PE 75 at time 4 of it 0
+Kernel
+[ 0 1 ]
+[ 2 ]
+[ 3 ]
+[ 4 ]
+[ 6 5 7 ]
+Schedule
+[0, 1]
+[2]
+[3]
+[4]
+[6, 5, 7]
+Time: 4.070007562637329
+Time: 4.07002854347229
+
+
+
+PKE
+t: 0     0 1 
+t: 1     2 
+t: 2     3 
+t: 3     4 
+t: 4     6 5 7 
+
+
+**************
+
+
+Interference graphs : 5
+Colors needed: 0
+Colors needed: 1
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+#Nodes: 0
+#Nodes: 1
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+
+
+**************
+
+
+
+
+**************
+
+
+init_len:  2
+prolog_len:  0
+kernel_len:  5
+epilog_len:  0
+fini_len:  0
+
+
+**************
+
+
+
+
+**************
+
+
+Init: 0 - 1
+Kernel: 2 - 6
+
+
+**************
+
+
+Number of br instructions  1
+Loop length should be = Loop lengh -  1
+
+If loop length is not know at runtime
+running the code could produce wrong results
+if a br in the prologue gets hit
+
+
+
+******************************************************
+
+   BR location in the prologue must be set manually  
+
+******************************************************
+
+T = 0
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+LWD R1
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+LWD R0
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+LWD R0
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 1
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+LWD R1
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 2
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+MV R0, ROUT, ZERO
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+MV ROUT, RCB, ZERO
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 3
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+LOR ROUT, RCR, RCB
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 4
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SMUL ROUT, RCL, RCL
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 5
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SSUB ROUT, R0, RCT
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 6
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+BSFA ROUT, R0, RCL, RCB
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+BGE RCL, R1, 2
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SRT ROUT, RCT, 1
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 7
+EXIT
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+T = 0
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |LWD|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |LWD|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |LWD|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 1
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |LWD|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 2
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |MV|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |MV|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 3
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |LOR|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 4
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SMUL|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 5
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SSUB|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 6
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |BSFA|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |BGE|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SRT|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 7
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |EXIT|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+Output of the mapping with node id
+T = 0
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 30 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 50 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 40 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 1
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 60 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 2
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 0 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 3
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 2 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 4
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 3 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 5
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 4 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 6
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 5 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 7 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 6 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+T = 7
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -- -
+
+Id: 3 name: mul time: 2 pe: 63 Rout: ROUT opA: RCL opB: RCL immediate: 0
+
+Id: 5 name: bsfa time: 4 pe: 63 Rout: ROUT opA: R0 opB: RCL immediate: 0
+
+Id: 0 name: phi time: 0 pe: 63 Rout: R0 opA: ROUT opB: R1 immediate: 0
+
+Id: 4 name: sub time: 3 pe: 75 Rout: ROUT opA: R0 opB: RCT immediate: 0
+
+Id: 7 name: bge time: 4 pe: 75 Rout: ROUT opA: RCL opB: R1 immediate: 0
+
+Id: 6 name: lshr time: 4 pe: 86 Rout: ROUT opA: RCT opB:  immediate: 1
+
+Id: 1 name: phi time: 0 pe: 74 Rout: ROUT opA: RCB opB: ROUT immediate: 0
+
+Id: 2 name: or time: 1 pe: 62 Rout: ROUT opA: RCR opB: RCB immediate: 0
+

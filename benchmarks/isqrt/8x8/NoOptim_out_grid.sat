@@ -1,0 +1,117 @@
+Time = 0
+SADD ROUT, 12,ZERO       NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      SADD ROUT, 12,ZERO       NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      SADD ROUT, 4,ZERO        
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 1
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      SLT ROUT, RCR,12         
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      SLT ROUT, RCT,12         NOP                      NOP                      NOP                      NOP                      SLT ROUT, RCR,12         NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 2
+SADD ROUT, 2052,RCL      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      SADD R0, 2048,RCB        NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 3
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      SADD ROUT, ZERO,2        
+LWI R0, RCT              LWI ROUT, R0             NOP                      NOP                      NOP                      NOP                      SADD R0, ZERO,RCB        NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 4
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      LOR ROUT, RCR,RCL        
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 5
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+SMUL R1, RCL,RCL         NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 6
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+SSUB R1, RCR,R1          NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 7
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+BSFA R0, R0,RCL, R0      NOP                      NOP                      NOP                      NOP                      NOP                      SRT R0, R0,1             BGE RCL,RCT, 4           
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 8
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+SADD ROUT, 12,ZERO       NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 9
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      SLT R0, RCL,12           NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 10
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      SADD ROUT, 2052,R0       NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 11
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+SWI R0,RCR               NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+Time = 12
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      EXIT                     
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      NOP                      

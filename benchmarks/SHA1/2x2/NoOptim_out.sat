@@ -1,0 +1,70 @@
+T = 0
+SADD ROUT, 12,ZERO       
+NOP                      
+SADD R1, 12,ZERO         
+NOP                      
+T = 1
+SADD R0, 12,ZERO         
+SADD R1, 12,ZERO         
+SLT R0, RCT,12           
+SADD R0, ZERO,80         
+T = 2
+SLT R0, R0,12            
+SLT R1, R1,12            
+SLT ROUT, R1,12          
+SADD ROUT, 12,ZERO       
+T = 3
+SADD R0, 2048,R0         
+SADD R1, 2048,R1         
+SLT ROUT, RCR,12         
+SADD R1, 2048,RCR        
+T = 4
+SADD R1, 2048,RCT        
+SADD R0, ZERO,16         
+SADD R1, 2048,R0         
+NOP                      
+T = 5
+SADD ROUT, RCR,-8        
+SADD ROUT, R0,-3         
+NOP                      
+SADD ROUT, RCT,-14       
+T = 6
+SMUL ROUT, RCR,4         
+SMUL R2, RCT,4           
+SMUL ROUT, RCT,4         
+NOP                      
+T = 7
+NOP                      
+SADD ROUT, R0,-16        
+SADD R0, R1,RCT          
+SADD R2, R1,RCR          
+T = 8
+SMUL R2, RCR,4           
+SADD R2, R1,R2           
+LWI R0, R0               
+LWI ROUT, R2             
+T = 9
+SADD ROUT, R0,R2         
+LWI ROUT, R2             
+LXOR ROUT, RCR,R0        
+NOP                      
+T = 10
+LXOR ROUT, RCT,RCR       
+SMUL ROUT, R0,4          
+LWI R0, RCT              
+NOP                      
+T = 11
+SADD R2, R1,RCR          
+SADD R0, R0,1            
+LXOR ROUT, RCT,R0        
+NOP                      
+T = 12
+SWI RCT,R2               
+NOP                      
+NOP                      
+BNE RCT,R0, 5            
+T = 13
+NOP                      
+NOP                      
+EXIT                     
+NOP                      
