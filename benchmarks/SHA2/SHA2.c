@@ -23,7 +23,7 @@
 
 
 
-int SHA2(int W[20]){
+int SHA2(int W[20], int *result_ptr){
     int temp=0;
     int A=0;
     int B=0;
@@ -34,16 +34,22 @@ int SHA2(int W[20]){
 
     for (int i = 0; i < 20; ++i) {
         FUNC(1,i);
+        // printf("A: %d, B: %d, C: %d, D: %d, E: %d\n", A, B, C, D, E);
     }
 
-    return temp+A+B+C+D+E;
+    *result_ptr = temp+A+B+C+D+E;
+    return 0;
 
 }
 
 int main(){
 
-	int W[80];
-	SHA2(W);
+	int W[80] = {1,1,1,1,1,1,1,1,1,1,
+				2,2,2,2,2,2,2,2,2,2};
+    int result;
+	SHA2(W, &result);
+    // printf("%d\n", result);
+    return 0;
 
 
 }

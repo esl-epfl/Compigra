@@ -4,11 +4,10 @@
 
 unsigned ReverseBits ( unsigned *index_ptr, unsigned *NumBits_ptr, unsigned *rev_ptr )
 {
-    unsigned i;
+    unsigned i, rev;
 
     unsigned index = *index_ptr;
     unsigned NumBits = *NumBits_ptr;
-    unsigned rev = *rev_ptr;
 
     #pragma CGRA
     for ( i=rev=0; i < NumBits; i++ )
@@ -16,8 +15,8 @@ unsigned ReverseBits ( unsigned *index_ptr, unsigned *NumBits_ptr, unsigned *rev
         rev = (rev << 1) | (index & 1);
         index >>= 1;
     }
-    *index_ptr = index;
-    *NumBits_ptr = NumBits;
+    // *index_ptr = index;
+    // *NumBits_ptr = NumBits;
     *rev_ptr = rev;
 
     return 0;

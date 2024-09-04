@@ -27,22 +27,24 @@ unsigned char lowervec[1000+1] = {                     /* rdg 10/93 */
 };
 
 
-int StringSearch(int patlen, int skip2, char *pattern){
+void StringSearch(int *patlen_ptr, int *skip2_ptr, char *pattern, char *lowervec){
     char *pat = (char *)pattern;
+    int patlen = *patlen_ptr;
+    int skip2 = *skip2_ptr;
     int i = 0;
     for (i = 0; i < patlen - 1; ++i)
       {
             if ( lowerc(pat[i]) == lowerc(pat[patlen - 1]) )
                   skip2 = patlen - i - 1;
       }
-      return skip2;
+      *skip2_ptr = skip2;
 }
 
 int main(){
 
 	char p[20];
     //TODO: add proper arguments
-	StringSearch(20,2,p);
+	StringSearch(20,2,p, lowervec);
 
 
 }

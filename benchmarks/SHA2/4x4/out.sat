@@ -1,123 +1,77 @@
-Time = 0
-SADD R0, ZERO,20         
+T = 0
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, 2087,ZERO     
+SADD ROUT, ZERO,ZERO     
 NOP                      
 NOP                      
 NOP                      
 SADD ROUT, ZERO,ZERO     
 NOP                      
 NOP                      
-SADD ROUT, ZERO,ZERO     
+NOP                      
+T = 1
+SADD ROUT, 90,ZERO       
 NOP                      
 NOP                      
 NOP                      
-SADD ROUT, ZERO,ZERO     
+SLT R0, RCL,12           
+NOP                      
+NOP                      
+NOP                      
 SADD ROUT, 12,ZERO       
 NOP                      
 NOP                      
+NOP                      
+NOP                      
 SADD ROUT, ZERO,ZERO     
-Time = 1
-SHL ROUT, RCT,12         
 NOP                      
 NOP                      
+T = 2
 NOP                      
+SLT ROUT, RCL,24         
 NOP                      
 NOP                      
+SADD ROUT, 2457,R0       
 NOP                      
-SHL ROUT, RCB,24         
 NOP                      
 NOP                      
 NOP                      
+SLT ROUT, RCL,12         
 NOP                      
+SADD ROUT, ZERO,ZERO     
 NOP                      
+SADD R0, ZERO,20         
 NOP                      
+SADD ROUT, ZERO,ZERO     
+T = 3
+SADD R0, RCB,RCR         
+SADD R0, ZERO,ZERO       
 NOP                      
 NOP                      
-Time = 2
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, 2048,RCL      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-SADD R2, RCT,RCT         
-SADD R0, 2048,RCB        
+T = 4
 NOP                      
 NOP                      
 NOP                      
-Time = 3
 NOP                      
 NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-SADD ROUT, RCT,ZERO      
-NOP                      
-NOP                      
-SADD ROUT, RCB,ZERO      
-NOP                      
-NOP                      
-NOP                      
-SADD ROUT, RCT,ZERO      
-Time = 4
-NOP                      
-NOP                      
-NOP                      
-SHL ROUT, RCT,5          
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-ASHR ROUT, RCL,27        
-NOP                      
-SADD ROUT, RCR,ZERO      
-NOP                      
-Time = 5
-NOP                      
-NOP                      
-XOR ROUT, RCT,-1         
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-SADD ROUT, RCB,ZERO      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-OR ROUT, RCB,RCR         
-Time = 6
-NOP                      
-NOP                      
-NOP                      
-AND ROUT, RCB,RCL        
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-AND ROUT, RCR,RCB        
-SADD ROUT, RCB,R2        
-SMUL ROUT, RCT,4         
-NOP                      
-NOP                      
-ASHR R0, RCL,2           
-Time = 7
 NOP                      
 NOP                      
 NOP                      
@@ -125,41 +79,48 @@ NOP
 NOP                      
 NOP                      
 SADD ROUT, RCR,ZERO      
+SADD R1, RCL,ZERO        
 NOP                      
 NOP                      
 NOP                      
+T = 5
 NOP                      
-SADD ROUT, ROUT,RCL      
-SADD ROUT, R0,ROUT       
 NOP                      
-SHL ROUT, ROUT,30        
 NOP                      
-Time = 8
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-SADD ROUT, RCB,1         
+SLT ROUT, RCB,5          
+SRA ROUT, RCL,27         
 NOP                      
 NOP                      
-SADD ROUT, RCB,RCT       
 NOP                      
 NOP                      
+SADD R1, RCL,ZERO        
 NOP                      
+SADD R0, RCT,ZERO        
+T = 6
 NOP                      
+SADD R1, R0,ZERO         
 NOP                      
+SLT ROUT, RCT,30         
+LOR ROUT, RCL,RCB        
 NOP                      
 NOP                      
-LWI ROUT, RCR            
-Time = 9
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
+SADD R0, RCR,ZERO        
 NOP                      
+LXOR R0, RCR,-1          
+LAND ROUT, RCR,R0        
+T = 7
+SADD ROUT, RCB,R0        
+SADD R0, R1,1            
 NOP                      
-SADD ROUT, ROUT,RCL      
 NOP                      
 NOP                      
 NOP                      
@@ -168,75 +129,16 @@ NOP
 NOP                      
 NOP                      
 NOP                      
-Time = 10
-BNE RCB,R0 3             
 NOP                      
 NOP                      
+SMUL ROUT, RCB,4         
+LAND ROUT, RCL,R0        
 NOP                      
+T = 8
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-NOP                      
-NOP                      
-NOP                      
-SADD ROUT, RCT,RCB       
-NOP                      
-NOP                      
-NOP                      
-OR ROUT, RCL,R0          
-Time = 11
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-SHL ROUT, RCT,1          
-Time = 12
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-SADD R0, RCL,RCL         
-NOP                      
-NOP                      
-NOP                      
-Time = 13
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-SADD ROUT, R0,RCL        
-NOP                      
-NOP                      
-NOP                      
-Time = 14
 NOP                      
 NOP                      
 NOP                      
@@ -248,17 +150,8 @@ NOP
 SADD ROUT, RCB,RCL       
 NOP                      
 NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-Time = 15
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-SADD ROUT, RCB,RCL       
+SRA R0, R0,2             
+T = 9
 NOP                      
 NOP                      
 NOP                      
@@ -268,13 +161,154 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SADD R0, RCR,RCB         
 NOP                      
 NOP                      
-Time = 16
+NOP                      
+SADD ROUT, RCL,RCR       
+NOP                      
+LOR ROUT, RCB,R0         
+T = 10
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+LWI ROUT, R0             
+NOP                      
+NOP                      
+SADD ROUT, RCR,R0        
+NOP                      
+NOP                      
+NOP                      
+T = 11
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, RCB,RCR       
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+BNE RCB,R0, 4            
+NOP                      
+NOP                      
+T = 12
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCB,1          
+NOP                      
+NOP                      
+SADD ROUT, 12,ZERO       
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 13
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCR,12         
+NOP                      
+SADD ROUT, RCT,RCL       
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 14
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, 2112,RCR      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD R0, RCT,RCL         
+NOP                      
+NOP                      
+NOP                      
+T = 15
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, R0,R1         
+NOP                      
+NOP                      
+NOP                      
+T = 16
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, RCL,R1        
+NOP                      
+NOP                      
+T = 17
+NOP                      
+SWI RCT,RCB              
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+T = 18
+NOP                      
+NOP                      
+NOP                      
 EXIT                     
-NOP                      
-NOP                      
-NOP                      
 NOP                      
 NOP                      
 NOP                      

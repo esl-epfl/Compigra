@@ -2,15 +2,16 @@
 #include <math.h>
 
 
-unsigned ReverseBits ( unsigned index, unsigned NumBits )
+int ReverseBits ( int index, int NumBits )
 {
-    unsigned i, rev;
+    int i, rev;
 
     #pragma CGRA
     for ( i=rev=0; i < NumBits; i++ )
     {
         rev = (rev << 1) | (index & 1);
         index >>= 1;
+        printf("%d, %d\n",index, rev);
     }
 
     return rev;
@@ -18,9 +19,9 @@ unsigned ReverseBits ( unsigned index, unsigned NumBits )
 
 
 int main(){
-  unsigned index = 325;
-  unsigned NumBits = 32;
-  unsigned rev = ReverseBits(index, NumBits);
+  int index = 655162044;
+  int NumBits = 32;
+  int rev = ReverseBits(index, NumBits);
   printf("Index: ");
   for (int i = sizeof(index) * 8 - 1; i >= 0; i--) {
     putchar((index & (1 << i)) ? '1' : '0');
