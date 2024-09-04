@@ -1,12 +1,12 @@
 T = 0
+SADD ROUT, 12,ZERO       
+SADD R0, 12,ZERO         
+SADD R0, 12,ZERO         
+SADD ROUT, 12,ZERO       
+SADD R1, 12,ZERO         
 NOP                      
-SADD ROUT, 12,ZERO       
 NOP                      
 NOP                      
-SADD ROUT, 12,ZERO       
-SADD ROUT, 12,ZERO       
-SADD ROUT, 12,ZERO       
-SADD ROUT, 12,ZERO       
 NOP                      
 NOP                      
 NOP                      
@@ -16,14 +16,14 @@ NOP
 NOP                      
 NOP                      
 T = 1
+SLT R0, RCL,12           
+SLT R0, R0,12            
+SLT R0, R0,12            
+SLT ROUT, RCR,12         
+SLT R1, R1,12            
 NOP                      
 NOP                      
-SLT ROUT, RCL,12         
 NOP                      
-SLT ROUT, RCL,12         
-SLT ROUT, RCL,12         
-SLT ROUT, RCL,12         
-SLT ROUT, RCL,12         
 NOP                      
 NOP                      
 NOP                      
@@ -33,22 +33,22 @@ NOP
 NOP                      
 NOP                      
 T = 2
-SADD R0, 2048,RCB        
+SADD R0, 2048,R0         
+SADD R0, 2048,R0         
+SADD ROUT, 2048,R0       
 NOP                      
-SADD ROUT, 2048,RCB      
+SADD R2, 2048,R1         
+SADD ROUT, ZERO,16       
 NOP                      
-SADD R2, 2048,RCL        
-NOP                      
-SADD R0, 2048,RCL        
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 SADD R0, ZERO,80         
 NOP                      
-SADD ROUT, ZERO,16       
-SADD ROUT, 2048,RCB      
 NOP                      
+NOP                      
+SADD R0, 2048,RCB        
 T = 3
 NOP                      
 NOP                      
@@ -59,7 +59,7 @@ NOP
 NOP                      
 NOP                      
 NOP                      
-SADD ROUT, RCB,ZERO      
+SADD ROUT, RCT,ZERO      
 NOP                      
 NOP                      
 NOP                      
@@ -107,7 +107,7 @@ NOP
 NOP                      
 SADD ROUT, R2,R1         
 NOP                      
-SADD ROUT, R0,RCL        
+SADD ROUT, RCT,RCL       
 NOP                      
 SADD ROUT, RCR,-16       
 SADD ROUT, RCR,ZERO      
@@ -133,10 +133,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
-SADD ROUT, RCL,RCT       
+SADD ROUT, R0,RCT        
 T = 8
 SADD ROUT, R0,RCB        
-SADD ROUT, RCR,RCT       
+SADD ROUT, R0,RCT        
 NOP                      
 LXOR ROUT, RCB,RCR       
 SMUL R0, RCB,4           
@@ -158,7 +158,7 @@ NOP
 NOP                      
 SADD ROUT, R2,R1         
 NOP                      
-SADD ROUT, R0,RCL        
+SADD ROUT, RCT,RCL       
 NOP                      
 SADD ROUT, RCR,-16       
 SADD ROUT, RCR,ZERO      
@@ -184,10 +184,10 @@ NOP
 LXOR ROUT, RCB,R0        
 NOP                      
 NOP                      
-SADD ROUT, RCL,RCT       
+SADD ROUT, R0,RCT        
 T = 11
 SADD ROUT, R0,RCB        
-SADD ROUT, RCR,RCT       
+SADD ROUT, R0,RCT        
 NOP                      
 LXOR ROUT, RCB,RCR       
 SMUL R1, RCB,4           
@@ -209,7 +209,7 @@ NOP
 NOP                      
 SADD ROUT, R2,R0         
 NOP                      
-SADD ROUT, R0,RCL        
+SADD ROUT, RCT,RCL       
 NOP                      
 SADD ROUT, RCR,-16       
 NOP                      
@@ -235,10 +235,10 @@ NOP
 LXOR ROUT, RCB,R0        
 NOP                      
 NOP                      
-SADD ROUT, RCL,RCT       
+SADD ROUT, R0,RCT        
 T = 14
 SADD ROUT, R0,RCB        
-SADD ROUT, RCR,RCT       
+SADD ROUT, R0,RCT        
 NOP                      
 LXOR ROUT, RCB,RCR       
 NOP                      
@@ -311,7 +311,7 @@ NOP
 NOP                      
 SADD ROUT, R2,R1         
 NOP                      
-SADD ROUT, R0,RCL        
+SADD ROUT, RCT,RCL       
 NOP                      
 SADD ROUT, RCR,-16       
 NOP                      
@@ -337,10 +337,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
-SADD ROUT, RCL,RCT       
+SADD ROUT, R0,RCT        
 T = 20
 SADD ROUT, R0,RCB        
-SADD ROUT, RCR,RCT       
+SADD ROUT, R0,RCT        
 NOP                      
 LXOR ROUT, RCB,RCR       
 NOP                      
