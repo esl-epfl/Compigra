@@ -1,0 +1,57 @@
+Time = 0
+SADD R2, 12,ZERO         SADD ROUT, 12,ZERO       
+SADD R1, 12,ZERO         NOP                      
+Time = 1
+SLT R1, RCR,12           SADD ROUT, ZERO,ZERO     
+SLT R1, R1,12            SADD R0, ZERO,ZERO       
+Time = 2
+SADD R1, 2048,R1         NOP                      
+SADD R1, 2176,R1         SADD R1, ZERO,ZERO       
+Time = 3
+SLT ROUT, R2,12          NOP                      
+LWI R1, R1               NOP                      
+Time = 4
+BGE RCR,RCT, 15          SADD R2, 2112,RCR        
+SADD R2, ZERO,ZERO       NOP                      
+Time = 5
+NOP                      NOP                      
+SADD R2, R2,ZERO         NOP                      
+Time = 6
+SMUL R2, RCT,4           NOP                      
+SADD R0, R2,1            SMUL ROUT, RCR,4         
+Time = 7
+SADD R0, R1,R2           SADD R0, R2,RCT          
+BEQ R0,R1, 11            NOP                      
+Time = 8
+LWI ROUT, R2             LWI R1, R1               
+SADD R2, R0,ZERO         SADD R1, R1,ZERO         
+Time = 9
+SMUL R2, RCT,4           SMUL ROUT, R1,RCR        
+SADD R0, R2,1            SMUL ROUT, RCR,4         
+Time = 10
+SADD R2, R1,R2           SADD R1, R2,RCT          
+BNE R0,R1, 8             SADD R1, RCT,R1          
+Time = 11
+LWI ROUT, R0             LWI R0, R0               
+NOP                      SADD R1, R1,ZERO         
+Time = 12
+NOP                      SMUL ROUT, R0,RCR        
+NOP                      NOP                      
+Time = 13
+NOP                      NOP                      
+NOP                      SADD R0, RCT,R1          
+Time = 14
+NOP                      SADD ROUT, 12,ZERO       
+NOP                      NOP                      
+Time = 15
+SLT ROUT, RCR,12         NOP                      
+NOP                      NOP                      
+Time = 16
+NOP                      NOP                      
+SADD ROUT, 2180,RCT      NOP                      
+Time = 17
+NOP                      NOP                      
+NOP                      SWI R0,RCR               
+Time = 18
+NOP                      NOP                      
+NOP                      EXIT                     

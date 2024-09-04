@@ -1,0 +1,75 @@
+T = 0
+SADD ROUT, 12,ZERO       
+SADD R1, ZERO,ZERO       
+NOP                      
+SADD ROUT, 12,ZERO       
+T = 1
+SADD R0, ZERO,ZERO       
+SLT R0, RCR,12           
+SLT R0, RCR,12           
+SADD R1, 12,ZERO         
+T = 2
+SADD R1, ZERO,ZERO       
+SADD R0, 2176,R0         
+NOP                      
+SLT R1, R1,12            
+T = 3
+NOP                      
+LWI R0, R0               
+SADD R0, 2112,R0         
+SADD R1, 2048,R1         
+T = 4
+NOP                      
+BGE R1,R0, 12            
+NOP                      
+SADD R0, ZERO,ZERO       
+T = 5
+NOP                      
+SMUL ROUT, RCT,4         
+NOP                      
+SMUL ROUT, R0,4          
+T = 6
+NOP                      
+NOP                      
+SADD ROUT, R0,RCR        
+SADD R2, R1,RCT          
+T = 7
+LWI ROUT, RCT            
+NOP                      
+NOP                      
+LWI ROUT, R2             
+T = 8
+NOP                      
+SMUL ROUT, RCR,RCT       
+NOP                      
+SADD R0, R0,1            
+T = 9
+SADD R0, RCR,R0          
+BNE RCT,R0, 5            
+NOP                      
+NOP                      
+T = 10
+NOP                      
+SADD ROUT, 12,ZERO       
+NOP                      
+NOP                      
+T = 11
+NOP                      
+NOP                      
+NOP                      
+SLT ROUT, RCT,12         
+T = 12
+NOP                      
+SADD ROUT, 2180,RCT      
+NOP                      
+NOP                      
+T = 13
+SWI R0,RCR               
+NOP                      
+NOP                      
+NOP                      
+T = 14
+EXIT                     
+NOP                      
+NOP                      
+NOP                      

@@ -1,0 +1,60 @@
+Time = 0
+SADD ROUT, 12,ZERO       NOP                      NOP                      
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 1
+NOP                      SADD R0, ZERO,ZERO       SADD R1, 12,ZERO         
+SADD ROUT, ZERO,ZERO     NOP                      NOP                      
+SLT R0, RCB,12           NOP                      NOP                      
+Time = 2
+NOP                      SADD ROUT, ZERO,ZERO     SLT R1, R1,12            
+NOP                      SADD R0, 12,ZERO         NOP                      
+SADD ROUT, 2080,R0       NOP                      NOP                      
+Time = 3
+LWI R0, RCT              NOP                      SADD R1, 2064,R1         
+NOP                      SLT R0, R0,12            NOP                      
+NOP                      NOP                      NOP                      
+Time = 4
+BGE RCB,R0, 12           NOP                      SADD R0, ZERO,ZERO       
+NOP                      SADD ROUT, 2048,R0       NOP                      
+NOP                      NOP                      NOP                      
+Time = 5
+SMUL ROUT, RCL,4         SMUL ROUT, RCR,4         NOP                      
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 6
+NOP                      SADD ROUT, RCB,RCL       SADD ROUT, R1,RCL        
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 7
+LWI ROUT, RCL            NOP                      LWI ROUT, RCL            
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 8
+NOP                      SMUL R1, RCL,RCR         SADD R0, R0,1            
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 9
+BNE RCL,R0, 5            SADD R0, R1,R0           NOP                      
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 10
+NOP                      NOP                      NOP                      
+NOP                      NOP                      SADD ROUT, 12,ZERO       
+NOP                      NOP                      NOP                      
+Time = 11
+NOP                      NOP                      NOP                      
+SLT ROUT, RCL,12         NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 12
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+SADD ROUT, 2084,RCT      NOP                      NOP                      
+Time = 13
+SWI RCR,RCT              NOP                      NOP                      
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+Time = 14
+NOP                      NOP                      NOP                      
+NOP                      NOP                      NOP                      
+NOP                      EXIT                     NOP                      
