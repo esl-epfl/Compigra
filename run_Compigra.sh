@@ -1,18 +1,14 @@
 #!/bin/bash
 # MLIR frontend
+POLYGEIST_PATH="/home/yuxuan/Projects/24S/Compigra/Polygeist" # optional: set the path to the Polygeist repository
 CLANG14="/home/yuxuan/Projects/24S/SAT-MapIt/llvm-project/build/bin/clang"
-POLYGEIST_PATH="/home/yuxuan/Projects/24S/Compigra/Polygeist"
 MLIR_OPT="$POLYGEIST_PATH/llvm-project/build/bin/mlir-opt"
 MLIR_TRANSLATE="$POLYGEIST_PATH/llvm-project/build/bin/mlir-translate"
 COMPIGRA_OPT="$POLYGEIST_PATH/../build/bin/compigra-opt"
 BENCH_BASE="/home/yuxuan/Projects/24S/Compigra/benchmarks"
-# backend script to generate bitstream
-ASM_GEN="/home/yuxuan/Projects/24S/SAT-MapIt/Mapper/main.py"
-CONVERTER="/home/yuxuan/Projects/24S/cgra/ESL-CGRA-simulator/src/sat_to_csv.py"
+# Plugin for modulo scheduling
+MS_PLUGIN="/home/yuxuan/Projects/24S/SAT-MapIt/Mapper/main.py"
 # Bitstream generator
-EXPORTER="/home/yuxuan/Projects/24S/cgra/ESL-CGRA-simulator/src/exporter.py"
-BIN_GEN_DIR="/home/yuxuan/Projects/24S/HEEPsilon/sw/applications/kernel_test/utils/"
-
 
 compile() {
     local bench_name="$1"
@@ -172,7 +168,7 @@ compile_sat() {
         mv out_grid.sat $bench_path/$config/NoOptim_out_grid.sat
     else
         # Run SAT-MapIt to schedule the loop block
-        python3 $ASM_GEN --path $sat_text --bench $bench_name --unit $2 --seed 13\
+        python3 $MS_PLUGIN --path $sat_text --bench $bench_name --unit $2 --seed 13\
             > $bench_path/$config/"out_raw.sat" 2> /dev/null
 
         # Check whether loop block scheduling success
@@ -197,23 +193,6 @@ compile_sat() {
 
     echo "COMPILATION SUCCESS."
     return 0
-}
-
-# Generate binary code for OpenEdge
-asm2bin(){
-    local env=${pwd}
-    local path=$1
-    local bench=$2
-    local config=$3x$3
-    local out="out.sat"
-
-    # Export instructions
-    python3 $EXPORTER --infile $path/$config/"instructions.csv" --outfile $path/$config/$out
-
-
-    cd $BIN_GEN_DIR
-    python3 $BIN_GEN_DIR/inst_encoder.py $path $config
-    cd $env
 }
 
 
@@ -241,23 +220,13 @@ else
     fi
 fi
 
-# use absolute path to avoid any confusion
-# $1 /home/yuxuan/Projects/24S/Compigra/benchmarks/BitCount/IR/
-# $2 bitcount BitCount
-BENCH_BASE="/home/yuxuan/Projects/24S/Compigra/benchmarks/"
-ASM_BASE="/home/yuxuan/Projects/24S/Compigra/benchmarks/${benchmark}/IR/SatMapDAG/"
 
-# generate binary code
-if [ "$task" == "bin" ]; then
-    asm2bin $ASM_BASE $benchmark $config
-    exit 0
-else
-    if [ ! -d "$BENCH_BASE/$benchmark/IR" ]; then
-        mkdir "$BENCH_BASE/$benchmark/IR"
-    fi
+if [ ! -d "$BENCH_BASE/$benchmark/IR" ]; then
+    mkdir "$BENCH_BASE/$benchmark/IR"
+fi
 
-    compile_sat $benchmark $config $task
-fi 
+compile_sat $benchmark $config $task
+
 
 
 
