@@ -218,40 +218,6 @@ static bool useValueForCmp(Operation *userOp, Value val) {
   return false;
 }
 
-// /// sort hte ops in the order of loop iteration sequence and execution time
-// static void sortOpsInExecTime(std::vector<opWithId> &ops,
-//                               std::map<int, int> opExec,
-//                               const std::vector<int> totalExec) {
-//   // Map to store the first occurrence of each opId
-//   std::unordered_set<int> executed;
-//   std::map<Operation *, int> group;
-//   unsigned iter = 0;
-//   // unsig
-//   for (int i = 0; i < ops.size(); ++i) {
-//     if (executed.find(ops[i].second) == executed.end())
-//       executed.insert(ops[i].second);
-//     else {
-//       // start another loop iteration
-//       iter++;
-//     }
-//     group[ops[i].first] = totalExec[ops[i].second] + iter;
-//     llvm::errs() << i << ": " << *ops[i].first << "(" << ops[i].second
-//                  << ") : " << totalExec[ops[i].second] << " + " << iter <<
-//                  "="
-//                  << group[ops[i].first] << "\n";
-//   }
-
-//   // Sort ops using a lambda function that directly compares based on opExec
-//   // values
-//   std::sort(ops.begin(), ops.end(), [&](const opWithId &a, const opWithId &b)
-//   {
-//     if (group[a.first] == group[b.first]) {
-//       return opExec.at(a.second) < opExec.at(b.second);
-//     }
-//     return group[a.first] < group[b.first];
-//   });
-// }
-
 void OpenEdgeKernelScheduler::assignSchedule(
     std::vector<opWithId> ops, const int II, int &curPC,
     std::map<int, int> opExec, const std::map<int, Instruction> instructions,
@@ -861,9 +827,18 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   model.optimize();
 
   // Check if the optimization status indicates infeasibility
-  if (!(model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
-        model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL))
+  if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
+      model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL ||
+      model.get(GRB_IntAttr_Status) == GRB_TIME_LIMIT) {
+    if (model.get(GRB_IntAttr_Status) == GRB_TIME_LIMIT) {
+      int solCount = model.get(GRB_IntAttr_SolCount);
+      if (solCount == 0) {
+        return failure();
+      }
+    }
+  } else {
     return failure();
+  }
 
   llvm::errs() << model.get(GRB_DoubleAttr_Runtime) << "s\n";
   // write solution to the file

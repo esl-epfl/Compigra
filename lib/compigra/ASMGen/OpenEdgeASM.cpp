@@ -989,7 +989,7 @@ static Operation *getFirstOpInRegion(Region &r) {
 
 void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
   std::string mapResult =
-      "/home/yuxuan/Projects/24S/Compigra/build/solution_isqrt.sol";
+      "/home/yuxuan/Projects/24S/Compigra/build/sha1_12.sol";
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";
@@ -1044,7 +1044,7 @@ struct OpenEdgeASMGenPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-    unsigned maxReg = 5;
+    unsigned maxReg = 6;
     // initial interval
     int II;
 
