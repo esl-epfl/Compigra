@@ -135,7 +135,7 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
 
   auto lowerBits = rewriter.create<LLVM::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part0));
-  rewriter.modifyOpInPlace(constOp, [&] {
+  rewriter.updateRootInPlace(constOp, [&] {
     constOp->setAttr("value", rewriter.getI32IntegerAttr(part0));
   });
 
@@ -162,7 +162,7 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
   // If the higher bits are zero
   if (!(mask2 & valAttr)) {
     addOp->setAttr("constant", rewriter.getI32IntegerAttr(valAttr));
-    rewriter.replaceOpUsesWithIf(
+    rewriter.replaceUsesWithIf(
         constOp, addOp.getResult(),
         [&](OpOperand &operand) { return operand.getOwner() != addOp; });
     return addOp;
@@ -188,7 +188,7 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
                                    addOp.getResult(), shiftOp2.getResult());
 
   sumOp->setAttr("constant", rewriter.getI32IntegerAttr(valAttr));
-  rewriter.replaceOpUsesWithIf(
+  rewriter.replaceUsesWithIf(
       constOp, sumOp.getResult(),
       [&](OpOperand &operand) { return operand.getOwner() != sumOp; });
   return sumOp;
@@ -328,7 +328,7 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
     //   rewriter.modifyOpInPlace(constOp, [&] {
     //     constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
     //   });
-    //   rewriter.replaceAllOpUsesWith(constOp, validOp);
+    //   rewriter.replaceAllUsesWith(constOp, validOp);
     // } else
     {
       auto addOp = generateValidConstant(constOp, rewriter);
@@ -340,7 +340,7 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   // rewrite the constant operation if the value exceed the range
   if (value < -4097 || value > 4096) {
     // if (auto validOp = existsConstant(value, insertedOps))
-    //   rewriter.replaceAllOpUsesWith(constOp, validOp);
+    //   rewriter.replaceAllUsesWith(constOp, validOp);
     // else
     {
       auto addOp = generateValidConstant(constOp, rewriter);
@@ -367,7 +367,7 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   }
 
   // set the value to 0, to be removed later on
-  rewriter.modifyOpInPlace(constOp, [&] {
+  rewriter.updateRootInPlace(constOp, [&] {
     constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
   });
 
@@ -421,7 +421,7 @@ LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
   auto resType = lwiOp.getResult().getType();
   auto origType = lwiOp.getOperand().getType(); // valid I32 address type
 
-  rewriter.modifyOpInPlace(
+  rewriter.updateRootInPlace(
       lwiOp, [&] { lwiOp.getResult().setType(rewriter.getI32Type()); });
 
   // set the type of corresponding successor
@@ -472,11 +472,10 @@ BitWidthExtOpRewrite::matchAndRewrite(LLVM::SExtOp extOp,
     }
   }
   if (prodOp)
-    rewriter.replaceAllOpUsesWith(extOp, prodOp);
-  llvm::errs() << "replace " << *extOp << " with " << *prodOp << "\n";
+    rewriter.replaceAllUsesWith(extOp, prodOp->getResult(0));
 
   // set all the predecessor type with result type, erase the operation
-  rewriter.modifyOpInPlace(extOp, [&] {
+  rewriter.updateRootInPlace(extOp, [&] {
     extOp.getOperand().setType(resType);
     extOp->erase();
   });

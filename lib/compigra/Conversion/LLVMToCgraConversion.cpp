@@ -63,7 +63,7 @@ struct PartialLowerFuncOp : public OpConversionPattern<LLVM::LLVMFuncOp> {
     // replaced or updated if the match was successful; this ensures that
     // happens even if the lowering function does not modify the root operation
     LogicalResult res = failure();
-    rewriter.modifyOpInPlace(op, [&] { res = loweringFunc(op, rewriter); });
+    rewriter.updateRootInPlace(op, [&] { res = loweringFunc(op, rewriter); });
 
     // Signal to the conversion target that the conversion pattern
     target.loweredFuncs.insert(op);
@@ -122,7 +122,7 @@ struct PartialLowerRegion : public ConversionPattern {
     // Dialect conversion scheme requires the matched root operation to be
     // replaced or updated if the match was successful; this ensures that
     // happens even if the lowering function does not modify the root operation
-    rewriter.modifyOpInPlace(
+    rewriter.updateRootInPlace(
         op, [&] { loweringRes = fun(target.region, rewriter); });
 
     // Signal to the conversion target that the conversion pattern ran
@@ -182,7 +182,7 @@ LogicalResult CgraLowering::reorderBBs(ConversionPatternRewriter &rewriter) {
   // always enforce Fini block to be the last block
   for (auto &block : region) {
     if (getSATMapItBlockType(&block) == SATLoopBlock::Fini)
-      rewriter.moveBlockBefore(&block, &region.back());
+      block.moveBefore(&region.back());
   }
 
   // No need to reorder BBs if there is no loop block
@@ -203,7 +203,7 @@ LogicalResult CgraLowering::reorderBBs(ConversionPatternRewriter &rewriter) {
     return failure();
 
   if (loopBlock->getNextNode() != nextNode)
-    rewriter.moveBlockBefore(loopBlock, nextNode);
+    loopBlock->moveBefore(nextNode);
 
   return success();
 }
