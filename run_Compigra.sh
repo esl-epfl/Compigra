@@ -1,14 +1,13 @@
 #!/bin/bash
 # MLIR frontend
-POLYGEIST_PATH="/home/yuxuan/Projects/24S/Compigra/Polygeist" # optional: set the path to the Polygeist repository
-CLANG14="/home/yuxuan/Projects/24S/SAT-MapIt/llvm-project/build/bin/clang"
-MLIR_OPT="$POLYGEIST_PATH/llvm-project/build/bin/mlir-opt"
+POLYGEIST_PATH=`YOUR POLYGEIST PATH` # optional: set the path to the Polygeist repository
+CLANG14=`YOUR CLANG PATH` 
+MLIR_OPT=`"$POLYGEIST_PATH/llvm-project/build/bin/mlir-opt"`
 MLIR_TRANSLATE="$POLYGEIST_PATH/llvm-project/build/bin/mlir-translate"
 COMPIGRA_OPT="$POLYGEIST_PATH/../build/bin/compigra-opt"
-BENCH_BASE="/home/yuxuan/Projects/24S/Compigra/benchmarks"
+BENCH_BASE="$POLYGEIST_PATH/../Compigra/benchmarks"
 # Plugin for modulo scheduling
-MS_PLUGIN="/home/yuxuan/Projects/24S/SAT-MapIt/Mapper/main.py"
-# Bitstream generator
+MS_PLUGIN=`OPT_PLUGIN_PATH` # optional: set the path to the SAT-MapIt plugin
 
 compile() {
     local bench_name="$1"
@@ -115,7 +114,7 @@ compile_sat() {
 
     # convert llvm to cgra operation
     $COMPIGRA_OPT --allow-unregistered-dialect \
-      --convert-llvm-to-cgra="func-name=$bench_name mem-json=${BENCH_BASE}/../build/bin/memory_config.json" \
+      --convert-llvm-to-cgra="func-name=$bench_name mem-json=${BENCH_BASE}/memory_config.json" \
      "$f_llvm" > "$f_cgra" 2> /dev/null
 
     # Check whether conversion success
