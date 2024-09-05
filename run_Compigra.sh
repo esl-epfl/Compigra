@@ -2,10 +2,10 @@
 # MLIR frontend
 POLYGEIST_PATH=`YOUR POLYGEIST PATH` # optional: set the path to the Polygeist repository
 CLANG14=`YOUR CLANG PATH` 
-MLIR_OPT=`"$POLYGEIST_PATH/llvm-project/build/bin/mlir-opt"`
+MLIR_OPT="$POLYGEIST_PATH/llvm-project/build/bin/mlir-opt"
 MLIR_TRANSLATE="$POLYGEIST_PATH/llvm-project/build/bin/mlir-translate"
 COMPIGRA_OPT="$POLYGEIST_PATH/../build/bin/compigra-opt"
-BENCH_BASE="$POLYGEIST_PATH/../Compigra/benchmarks"
+BENCH_BASE="$POLYGEIST_PATH/../benchmarks"
 # Plugin for modulo scheduling
 MS_PLUGIN=`OPT_PLUGIN_PATH` # optional: set the path to the SAT-MapIt plugin
 
@@ -62,6 +62,8 @@ compile_sat() {
     local bench_path="$BENCH_BASE/$bench_name"
     local bench_c="$bench_path/$bench_name.c"
     local bench_ll="$bench_path/$bench_name.ll"
+
+    echo $bench_path    
  
 
     # Check if the benchmark file exists
