@@ -20,6 +20,7 @@ $ ./run_Compigra.sh $BENCHMARK 4
 # or for example, directly called the benchmark name
 $ ./run_Compigra.sh GSM 4 
 ```
+We specify the address in benchmarks/memory_config.json, where the first data is placed in C800. The address before is reserved space for system configuration. You could change the address setting by directly change the memory configuration file.
 
 ### IR generation
 This automatically keeps the original C file and clears the $BENCHMARK in the benchmark folder and generates
