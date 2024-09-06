@@ -104,7 +104,7 @@ SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
   }
 
   // if the value is not block argument, return empty vector
-  // TODO[@Yuxuan]: remove targetBlock from parameter list
+  // TODO[@YYY]: remove targetBlock from parameter list
   Block *block = val.getParentBlock();
   Value propVal;
 
@@ -682,7 +682,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
            !useValueForCmp(userOp, op->getResult(0))))
         continue;
       // Get the real userOp if the userOp is branchOp or conditionalOp
-      // TODO[@Yuxuan]: check the cntOp's validity and determine whether delete
+      // TODO[@YYY]: check the cntOp's validity and determine whether delete
       // the previous continue
       // auto cntOp = getCntUseOpIndirectly(use);
       auto cntOp = userOp;

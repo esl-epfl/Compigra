@@ -117,7 +117,7 @@ static int getValueIndex(Value val, std::map<int, Value> opResult) {
   return -1;
 }
 
-// TODO[@Yuxuan]: allocate register for the phi node (could be other PE, e.g.
+// TODO[@YYY]: allocate register for the phi node (could be other PE, e.g.
 // RCL, RCR, RCT, RCB)
 std::map<int, int> getLimitationUseWithPhiNode(
     const std::vector<int> phiNodes, const std::map<int, Value> opMap,
@@ -192,7 +192,7 @@ LogicalResult compigra::allocateOutRegInPE(
   graph.printGraph();
 
   // allocate register using graph coloring
-  // TODO[@Yuxuan]: Spill the graph if the number of registers is not
+  // TODO[@YYY]: Spill the graph if the number of registers is not
   // enough
   auto peo = lexBFS(graph.adjList);
   if (peo.empty())
@@ -249,7 +249,7 @@ LogicalResult compigra::allocateOutRegInPE(
 
       // allocate register according to the limited use of the phi node
       if (limitedUse.find(v) != limitedUse.end()) {
-        // TODO[@Yuxuan]: check the validity of the limitation
+        // TODO[@YYY]: check the validity of the limitation
         graph.colorMap[v] = limitedUse[v];
         llvm::errs() << v << ": "
                      << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
@@ -988,8 +988,7 @@ static Operation *getFirstOpInRegion(Region &r) {
 }
 
 void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
-  std::string mapResult =
-      "/home/yuxuan/Projects/24S/Compigra/build/sha1_12.sol";
+  std::string mapResult = "";
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";

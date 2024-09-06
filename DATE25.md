@@ -24,11 +24,24 @@ We specify the address in benchmarks/memory_config.json, where the first data is
 
 ### IR generation
 This automatically keeps the original C file and clears the $BENCHMARK in the benchmark folder and generates
-- IR/llvm.ll -through clang14 using $(BENCHMARK).c.
-- IR/llvm.mlir -through mlir-translate processing IR/llvm.ll.
-- IR/cgra.mlir -Conversion pass that convert all operations into CGRA ISA using IR/llvm.mlir.
-- IR/hardware.mlir -Transformation pass that generates hardware-compatible IR using IR/cgra.mlir.
+- IR/llvm.ll - through clang14 using $(BENCHMARK).c.
+- IR/llvm.mlir - through mlir-translate processing IR/llvm.ll.
+- IR/cgra.mlir - Conversion pass that convert all operations into CGRA ISA using IR/llvm.mlir.
+
+  Run the following for more helps 
+  ```bash
+  compigra-opt --allow-unregistered-dialect --convert-llvm-to-cgra -h
+  ```
+- IR/hardware.mlir - Transformation pass that generates hardware-compatible IR using IR/cgra.mlir.
+  Run the following for more helps 
+  ```bash
+  compigra-opt --allow-unregistered-dialect --fit-openedge -h
+  ``` 
 - IR/sat.mlir - IR reconstruction with modulo scheduler result.
+  Run the following for more helps 
+  ```bash
+  compigra-opt --allow-unregistered-dialect --gen-openedge-asm -h
+  ``` 
 
 ### Assembly generation
 The assembly is placed under 4x4 folders generated with modulo scheduler disabled. 

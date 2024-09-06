@@ -86,7 +86,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
       if (isa<cgra::ConditionalBranchOp>(op) && opInd >= 2)
         break;
 
-      // TODO[@Yuxuan]: handle the block argument(phi node) case
+      // TODO[@YYY]: handle the block argument(phi node) case
       if (getValueIndex(operand, opMap) == -1) {
         opMap[ind] = operand;
         graph.addVertex(ind);

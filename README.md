@@ -37,6 +37,8 @@ All the passes including front end optimization and back end assembly generation
 ```bash
 ./bin/compigra-opt -h
 ```
+<span style="font-size:1.5em;">[[DATE25 submission](./DATE25.md)]</span> 
+
 You could refer [DATE25](./DATE25.md) for detailed explanations on the passes we use in the end-to-end compilation flow for the DATE25 submission.
 
 ## Simulate your result
