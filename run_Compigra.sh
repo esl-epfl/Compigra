@@ -1,13 +1,13 @@
 #!/bin/bash
 # MLIR frontend
-POLYGEIST_PATH=`YOUR POLYGEIST PATH` # optional: set the path to the Polygeist repository
-CLANG14=`YOUR CLANG PATH` 
+POLYGEIST_PATH="/home/yuxuan/Projects/24S/Compigra/Polygeist" # optional: set the path to the Polygeist repository
+CLANG14="/home/yuxuan/Projects/24S/SAT-MapIt/llvm-project/build/bin/clang"
 MLIR_OPT="$POLYGEIST_PATH/llvm-project/build/bin/mlir-opt"
 MLIR_TRANSLATE="$POLYGEIST_PATH/llvm-project/build/bin/mlir-translate"
 COMPIGRA_OPT="$POLYGEIST_PATH/../build/bin/compigra-opt"
 BENCH_BASE="$POLYGEIST_PATH/../benchmarks"
 # Plugin for modulo scheduling
-MS_PLUGIN=`OPT_PLUGIN_PATH` # optional: set the path to the SAT-MapIt plugin
+MS_PLUGIN="/home/yuxuan/Projects/24S/SAT-MapIt/Mapper/main.py"
 
 compile() {
     local bench_name="$1"
