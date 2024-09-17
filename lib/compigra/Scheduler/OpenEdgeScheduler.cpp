@@ -32,27 +32,26 @@ Operation *getCntUseOpIndirectly(OpOperand &useOpr) {
   // If the userOp is branchOp or conditionalOp, analyze which operation uses
   // the block argument
   if (isa<LLVM::BrOp>(cntOp)) {
-    Block *currBlock = cntOp->getBlock();
     Block *userBlock = cntOp->getBlock()->getSuccessor(0);
     auto users = userBlock->getArgument(argIndex).getUsers();
     cntOp = *users.begin();
   }
-  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(cntOp))
+
+  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(cntOp)) {
     if (argIndex >= 2 && argIndex < 2 + condBr.getNumTrueDestOperands()) {
       // if the argument if propagated to true branch
-      Block *currBlock = cntOp->getBlock();
       Block *userBlock = condBr.getTrueDest();
       auto users = userBlock->getArgument(argIndex - 2).getUsers();
       cntOp = *users.begin();
 
     } else if (argIndex >= 2 + condBr.getNumTrueDestOperands()) {
       // if the argument if propagated to false branch
-      Block *currBlock = cntOp->getBlock();
       Block *userBlock = condBr.getFalseDest();
       unsigned prefix = 2 + condBr.getNumTrueDestOperands();
       auto users = userBlock->getArgument(argIndex - prefix).getUsers();
       cntOp = *users.begin();
     }
+  }
   return cntOp;
 }
 
@@ -579,15 +578,15 @@ addNeighborConstraints(GRBModel &model, Operation *consumer,
         // A helper variable to indicate the time gap between the producer and
         // the consumer, where helper = 1 means startT <= t <= endT.
         GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
-        model.addConstr(tVar >= startT - 1e6 * (1 - h1));
-        model.addConstr(tVar <= startT + 1e6 * h1 - 1e-3);
+        model.addConstr(tVar >= startT - 1e3 * (1 - h1));
+        model.addConstr(tVar <= startT + 1e3 * h1 - 1e-2);
 
         GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
-        model.addConstr(endT >= tVar - 1e6 * (1 - h2));
+        model.addConstr(endT >= tVar - 1e3 * (1 - h2));
         if (std::next(it) == timeGaps.end()) {
-          model.addConstr(endT <= tVar + 1e6 * h2);
+          model.addConstr(endT <= tVar + 1e3 * h2);
         } else {
-          model.addConstr(endT <= tVar + 1e6 * h2 - 1e-3);
+          model.addConstr(endT <= tVar + 1e3 * h2 - 1e-2);
         }
 
         GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
@@ -841,8 +840,6 @@ LogicalResult OpenEdgeKernelScheduler::createSchedulerAndSolve() {
   }
 
   llvm::errs() << model.get(GRB_DoubleAttr_Runtime) << "s\n";
-  // write solution to the file
-  model.write("solution.sol");
 
   std::ofstream csvFile("output.csv");
   // If the model is infeasible, write the model to solution

@@ -291,21 +291,6 @@ LogicalResult compigra::allocateOutRegInPE(
   return success();
 }
 
-/// Function to print the map of instructions
-static void
-printInstructions(const std::map<Operation *, Instruction> &instructions) {
-  for (const auto &pair : instructions) {
-    const Instruction &inst = pair.second;
-    llvm::errs() << "Op: " << *pair.first << "\n"
-                 << "Name: " << inst.name << " "
-                 << "Time: " << inst.time << " "
-                 << "PE: " << inst.pe << " "
-                 << "Rout: " << inst.Rout << " "
-                 << "OpA: " << inst.opA << " "
-                 << "OpB: " << inst.opB << "\n\n";
-  }
-}
-
 static bool isRegisterDigit(const std::string &reg, unsigned maxReg) {
   if (reg.empty() || reg[0] != 'R')
     return false;
@@ -368,8 +353,6 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   for (size_t pe = 0; pe < nRow * nCol; ++pe) {
     llvm::errs() << "\nPE = " << pe << "\n";
     auto ops = getOperationsAtPE(pe);
-
-    bool update = false;
     // Allocate registers if it can be inferred from the known result.
     for (auto [time, op] : ops) {
       // Check whether the PE of the operation is known, if yes, skip
@@ -398,8 +381,6 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
           int leftOpId = 0;
           if (isa<cgra::BsfaOp, cgra::BzfaOp>(user))
             leftOpId = 1;
-          bool isLeftOpr =
-              op->getResult(0) == user->getOperand(leftOpId) ? 1 : 0;
           std::string regStr =
               leftOpId ? instSolution[user].opA : instSolution[user].opB;
           if (regStr == "ROUT") {
@@ -445,7 +426,9 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   llvm::errs() << "Register allocation done\n";
 
   // write register allocation results to instructions
-  convertToInstructionMap();
+  if (failed(convertToInstructionMap()))
+    return failure();
+
   return success();
 }
 
@@ -507,28 +490,18 @@ static std::string padString(const std::string &str, size_t width) {
                            ' '); // Pad with spaces on the right
 }
 
-static int getOpIndex(Operation *op) {
-  auto block = op->getBlock();
-  int index = 0;
-  for (auto &iterOp : block->getOperations()) {
-    if (op == &iterOp)
-      return index;
-    index++;
-  }
-  return -1;
-}
-
 /// Function for retrieve the operand knowning the src operation and user
 /// operand's definition operand's PES.
 /// e.g. Suppose %a = op %b, ..., return the string of the %b for %a, such
 /// as R0, R1,... or RCT, RCB, RCR, RCL.
 static std::string getOperandSrcReg(int peA, int peB, int srcReg, int nRow,
                                     int nCol, unsigned maxReg) {
-  if (peA == peB)
+  if (peA == peB) {
     if (srcReg == maxReg)
       return "ROUT";
     else
       return "R" + std::to_string(srcReg);
+  }
 
   // check userPE in the neighbour of srcPE
   // check whether peB on peA right
@@ -853,7 +826,7 @@ static LogicalResult initBlockArgs(Block *block,
                                    std::map<int, Instruction> &instructions,
                                    OpBuilder &builder) {
   // Get the phi nodes in the block
-  int nPhi = 0;
+  unsigned nPhi = 0;
   for (auto [index, inst] : instructions) {
     if (inst.name != "phi")
       break;
@@ -942,7 +915,8 @@ LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
     std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
     ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(), II,
                                   execTime, opTimeMap, bbTimeMap);
-    adapter.adaptCFGWithLoopMS();
+    if (failed(adapter.adaptCFGWithLoopMS()))
+      return failure();
 
     // hash map to store the total round of operation execution, where
     // totalRound[ind] represents ind-th operation's in the loop has been
@@ -988,7 +962,7 @@ static Operation *getFirstOpInRegion(Region &r) {
 }
 
 void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
-  std::string mapResult = "";
+  std::string mapResult = "/home/yuxuan/Projects/24S/Compigra/build/sha4_0.sol";
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";
@@ -998,7 +972,6 @@ void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
   std::map<std::string, float> peDict;
 
   std::string line;
-  bool parsing = false;
   while (std::getline(file, line)) {
     if (line.find("time_") != std::string::npos) {
       auto key = line.substr(5, line.find(" ") - 5);
@@ -1043,7 +1016,7 @@ struct OpenEdgeASMGenPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-    unsigned maxReg = 6;
+    char maxReg = 3;
     // initial interval
     int II;
 
@@ -1072,7 +1045,7 @@ struct OpenEdgeASMGenPass
       } else {
         int startPC = 0;
         // DEBUG: READ RESULT FROM FILE
-        // readScheduleResult(r, scheduler);
+        readScheduleResult(r, scheduler);
         scheduler.knownRes[getFirstOpInRegion(r)] =
             Instruction{"init", startPC, 0, (int)maxReg, "Unknown", "Unknown"};
       }

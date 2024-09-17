@@ -198,7 +198,6 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
                                        std::string outputDAG) {
 
   Block *loopBlk = nullptr;
-  Block *initBlk = nullptr;
   // Find the loop block
   for (auto &blk : funcOp.getBlocks())
     if (isLoopBlock(&blk)) {
@@ -418,7 +417,6 @@ SmallVector<Operation *, 4> getSrcOpIndirectly(Value val, Block *targetBlock) {
 
 LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
                                             PatternRewriter &rewriter) const {
-  auto resType = lwiOp.getResult().getType();
   auto origType = lwiOp.getOperand().getType(); // valid I32 address type
 
   rewriter.updateRootInPlace(
@@ -427,7 +425,6 @@ LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
   // set the type of corresponding successor
   std::stack<Value> dstOprs;
   dstOprs.push(lwiOp.getResult());
-  bool empty = false;
   while (!dstOprs.empty()) {
     auto opr = dstOprs.top();
     dstOprs.pop();
@@ -450,13 +447,11 @@ BitWidthExtOpRewrite::matchAndRewrite(LLVM::SExtOp extOp,
   // track all the predecessor op of extOp
   auto resType = extOp.getResult().getType();
   auto *prodOp = extOp.getOperand().getDefiningOp();
-  auto origType = extOp.getOperand().getType();
   if (!isI32IntegerType(resType))
     return failure();
 
   std::stack<Value> srcOprs;
   srcOprs.push(extOp.getOperand());
-  bool empty = false;
   while (!srcOprs.empty()) {
     auto opr = srcOprs.top();
     srcOprs.pop();
