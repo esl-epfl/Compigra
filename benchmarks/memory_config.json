@@ -11,36 +11,12 @@
         "startAddr": ["0xC800", "0xC804"],
         "endAddr": ["0xC804", "0xC808"]
     },
-    "ReverseBits": {
-        "startAddr": ["0xC800","0xC804", "0xC808"],
-        "endAddr": ["0xC804", "0xC808", "0xC80C"]
-    },
     "SHA1": {
         "startAddr": ["0xC800"],
         "endAddr": ["0xC840"]
     },
-    "StringSearch": {
-        "startAddr": ["0xC800","0xC804", "0xC808","0xC810"],
-        "endAddr": ["0xC804", "0xC808", "0xC810", "0xC840"]
-    },
-    "SHA2": {
-        "startAddr": ["0xC800", "0xC840"],
-        "endAddr": ["0xC840", "0xC844"]
-    },
-    "MatMul": {
-        "startAddr": ["0xC800","0xC804","0xC814","0xC824"],
-        "endAddr": ["0xC804","0xC814","0xC824","0xC834"]
-    },
-    "FIR": {
-        "startAddr": ["0xC800","0xC804","0xC814","0xC824","0xC834"],
-        "endAddr": ["0xC804","0xC814","0xC824","0xC834","0xC844"]
-    },
     "DotProduct": {
         "startAddr": ["0xC800","0xC840","0xC880","0xC884"],
         "endAddr": ["0xC840","0xC880","0xC884","0xC888"]
-    },
-    "Conv1d": {
-        "startAddr": ["0xC800","0xC808","0xC818","0xC828"],
-        "endAddr": ["0xC804","0xC818","0xC828","0xC838"]
     }
 }
