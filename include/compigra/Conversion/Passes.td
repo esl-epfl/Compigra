@@ -26,9 +26,25 @@ def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
   let options = [
     Option<"funcName", "func-name", "std::string", "",
            "    Specify the name of the fucntion to convert. ">,
-    Option<"memAlloc", "mem-json", "std::string", "",
-           "    Specify the memory allocation policy for data interface between "
-           "CGRA and host processor ">
+    Option<
+        "memAlloc", "mem-json", "std::string", "",
+        "    Specify the memory allocation policy for data interface between "
+        "CGRA and host processor ">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// CF to CGRA passes
+//===----------------------------------------------------------------------===//
+def CfToCgraConversion : Pass<"convert-cf-to-cgra"> {
+  let summary = "Convert CF to CGRA dialect";
+  let constructor = "compigra::createCfToCgraConversion()";
+  let dependentDialects = ["cgra::CgraDialect"];
+  let options = [
+    Option<
+        "memAlloc", "mem-json", "std::string", "",
+        "    Specify the memory allocation policy for data interface between "
+        "CGRA and host processor ">
   ];
 }
 

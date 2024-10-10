@@ -33,7 +33,7 @@ using namespace compigra;
 using json = nlohmann::json;
 
 namespace {
-/// Conversion target for lowering a func::FuncOp to a handshake::FuncOp.
+/// Conversion target for lowering a func::FuncOp to a cgra::FuncOp.
 struct LowerFuncOpTarget : public ConversionTarget {
   explicit LowerFuncOpTarget(MLIRContext &context) : ConversionTarget(context) {
     loweredFuncs.clear();
