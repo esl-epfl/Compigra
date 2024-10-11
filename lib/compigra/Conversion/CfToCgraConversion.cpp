@@ -12,12 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Conversion/CfToCgraConversion.h"
-#include "compigra/CgraDialect.h"
-#include "compigra/CgraInterfaces.h"
-#include "compigra/CgraOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/MLIRContext.h"
 
 // memory interface support
@@ -176,8 +174,6 @@ struct CfCondBrOpConversion : OpConversionPattern<cf::CondBranchOp> {
       rewriter.eraseOp(cmpOp);
     }
 
-    // llvm::errs() << "CmpOp" << cmpOp->hasOneUse() << " " << cmpOp.use_empty()
-    //              << "\n";
     if (forceJump) {
       rewriter.setInsertionPointToStart(falseBlk);
       auto defaultBr = rewriter.create<cf::BranchOp>(newCondBr->getLoc(),
@@ -189,32 +185,168 @@ struct CfCondBrOpConversion : OpConversionPattern<cf::CondBranchOp> {
   }
 };
 
+// /// Lower memref.load to cgra.load
+// struct CfMemRefLoadOpConversion : OpConversionPattern<memref::LoadOp> {
+//   // using OpConversionPattern<memref::LoadOp>::OpConversionPattern;
+//   CfMemRefLoadOpConversion(MLIRContext *ctx,
+//                            std::vector<Operation *> &constAddrs)
+//       : OpConversionPattern<memref::LoadOp>(ctx), constAddrs(constAddrs) {}
+
+//   LogicalResult
+//   matchAndRewrite(memref::LoadOp loadOp, OpAdaptor adaptor,
+//                   ConversionPatternRewriter &rewriter) const override {
+//     Operation *constOp = constAddrs.back();
+
+//     llvm::errs() << *constOp << "\n";
+//     // compute the base address of loadOp
+//     auto ref = loadOp.getMemRef();
+
+//     // get the index of the memory reference
+//     if (!ref.isa<BlockArgument>())
+//       return failure();
+//     BlockArgument arg = ref.cast<BlockArgument>();
+//     unsigned argIndex = arg.getArgNumber();
+
+//     rewriter.setInsertionPoint(loadOp);
+//     // index cast to 32 bit
+
+//     arith::IndexCastOp castOp = rewriter.create<arith::IndexCastOp>(
+//         loadOp.getLoc(), rewriter.getIntegerType(32),
+//         loadOp.getIndices().front());
+//     Value offset = castOp.getResult();
+
+//     Operation *offsetOp = rewriter.create<arith::MulIOp>(
+//         loadOp.getLoc(), rewriter.getI32Type(), offset,
+//         constOp->getResult(0));
+//     Operation *addrOp = rewriter.create<arith::AddIOp>(
+//         loadOp.getLoc(), rewriter.getI32Type(),
+//         constAddrs[argIndex]->getResult(0), offsetOp->getResult(0));
+//     rewriter.replaceOpWithNewOp<cgra::LwiOp>(
+//         loadOp, loadOp.getResult().getType(), addrOp->getResult(0));
+//   }
+
+//   std::vector<Operation *> constAddrs;
+// };
+template <typename MemRefOp>
+struct CfMemRefOpConversion : OpConversionPattern<MemRefOp> {
+  CfMemRefOpConversion(MLIRContext *ctx, std::vector<Operation *> &constAddrs)
+      : OpConversionPattern<MemRefOp>(ctx), constAddrs(constAddrs) {}
+
+  LogicalResult
+  matchAndRewrite(MemRefOp op, typename MemRefOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Operation *constOp = constAddrs.back();
+
+    llvm::errs() << *constOp << "\n";
+    // compute the base address of op
+    Value ref = op.getMemRef();
+
+    // get the index of the memory reference
+    auto arg = dyn_cast<BlockArgument>(ref);
+    if (!arg)
+      return failure();
+    unsigned argIndex = arg.getArgNumber();
+
+    rewriter.setInsertionPoint(op);
+    // index cast to 32 bit
+
+    arith::IndexCastOp castOp = rewriter.create<arith::IndexCastOp>(
+        op.getLoc(), rewriter.getIntegerType(32), op.getIndices().front());
+    Value offset = castOp.getResult();
+
+    Operation *offsetOp = rewriter.create<arith::MulIOp>(
+        op.getLoc(), rewriter.getI32Type(), offset, constOp->getResult(0));
+    Operation *addrOp = rewriter.create<arith::AddIOp>(
+        op.getLoc(), rewriter.getI32Type(), constAddrs[argIndex]->getResult(0),
+        offsetOp->getResult(0));
+
+    if constexpr (std::is_same_v<MemRefOp, memref::LoadOp>) {
+      rewriter.replaceOpWithNewOp<cgra::LwiOp>(op, op.getResult().getType(),
+                                               addrOp->getResult(0));
+    } else if constexpr (std::is_same_v<MemRefOp, memref::StoreOp>) {
+      rewriter.replaceOpWithNewOp<cgra::SwiOp>(op, op.getValue(),
+                                               addrOp->getResult(0));
+    }
+
+    return success();
+  }
+
+  std::vector<Operation *> constAddrs;
+};
+
 } // namespace
 
-void compigra::populateCfToCgraConversionPatterns(RewritePatternSet &patterns) {
-  //   patterns.insert<cf::CondBranchOp>(context);
-  llvm::errs() << "populateCfToCgraConversionPatterns\n";
+void compigra::populateCfToCgraConversionPatterns(
+    RewritePatternSet &patterns, std::vector<Operation *> &constAddr) {
+
   patterns.add<CfCondBrOpConversion>(patterns.getContext());
+  bool initOffset = false;
+  patterns.add<CfMemRefOpConversion<memref::LoadOp>,
+               CfMemRefOpConversion<memref::StoreOp>>(patterns.getContext(),
+                                                      constAddr);
+}
+
+LogicalResult allocateMemory(ModuleOp &modOp,
+                             std::vector<Operation *> &constAddr,
+                             OpBuilder &builder) {
+  auto funcOp = *modOp.getOps<func::FuncOp>().begin();
+  std::vector<int> memAlloc = {0};
+  int sum = 0;
+  for (auto arg : funcOp.getArguments()) {
+    if (!arg.getType().isa<MemRefType>())
+      return failure();
+    auto memrefType = arg.getType().cast<MemRefType>();
+    // if dimension is not 1, return failure
+    // TODO[@YW]: support multi-dimensional memory
+    if (memrefType.getRank() != 1)
+      return failure();
+
+    // OpenEdge fix the data bit width to 32, which is 4 bytes
+    memAlloc.push_back(sum + memrefType.getDimSize(0) * 4);
+    sum += memrefType.getDimSize(0) * 4;
+  }
+
+  // insert constant operation to initialize the offset and base address
+  builder.setInsertionPointToStart(&funcOp.getBlocks().front());
+  // print the memory allocation
+  for (int i = 0; i < memAlloc.size() - 1; i++) {
+    auto baseOp = builder.create<arith::ConstantIntOp>(
+        funcOp.getLoc(), memAlloc[i], builder.getI32Type());
+    baseOp->setAttr("BaseAddr",
+                    builder.getStringAttr("arg" + std::to_string(i)));
+    constAddr.push_back(baseOp);
+    llvm::errs() << "Memory " << i << " : " << memAlloc[i] << "\n";
+  }
+  // create a constant operation to initialize the offset
+  auto offset = builder.create<arith::ConstantIntOp>(funcOp.getLoc(), 4,
+                                                     builder.getI32Type());
+  constAddr.push_back(offset);
+
+  return success();
 }
 
 void CfToCgraConversionPass::runOnOperation() {
-  llvm::errs() << "CfToCgraConversionPass\n";
   ConversionTarget target(getContext());
   target.addIllegalOp<cf::CondBranchOp>();
   target.addLegalOp<cgra::ConditionalBranchOp>();
+  target.addIllegalOp<memref::LoadOp>();
+  target.addLegalOp<cgra::LwiOp>();
+  target.addIllegalOp<memref::StoreOp>();
+  target.addLegalOp<cgra::SwiOp>();
   target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
-//   target.addIllegalOp<arith::CmpIOp>();
+  //   target.addIllegalOp<arith::CmpIOp>();
 
-  MLIRContext *ctx = &getContext();
-  RewritePatternSet patterns(ctx);
+  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+  OpBuilder builder(modOp);
+  std::vector<Operation *> constAddrs;
+  if (failed(allocateMemory(modOp, constAddrs, builder)))
+    signalPassFailure();
 
-  populateCfToCgraConversionPatterns(patterns);
+  RewritePatternSet patterns(&getContext());
+  populateCfToCgraConversionPatterns(patterns, constAddrs);
   if (failed(
           applyPartialConversion(getOperation(), target, std::move(patterns))))
     signalPassFailure();
-
-  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
-  llvm::errs() << modOp << "\n";
 }
 
 namespace compigra {
