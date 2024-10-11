@@ -185,48 +185,7 @@ struct CfCondBrOpConversion : OpConversionPattern<cf::CondBranchOp> {
   }
 };
 
-// /// Lower memref.load to cgra.load
-// struct CfMemRefLoadOpConversion : OpConversionPattern<memref::LoadOp> {
-//   // using OpConversionPattern<memref::LoadOp>::OpConversionPattern;
-//   CfMemRefLoadOpConversion(MLIRContext *ctx,
-//                            std::vector<Operation *> &constAddrs)
-//       : OpConversionPattern<memref::LoadOp>(ctx), constAddrs(constAddrs) {}
-
-//   LogicalResult
-//   matchAndRewrite(memref::LoadOp loadOp, OpAdaptor adaptor,
-//                   ConversionPatternRewriter &rewriter) const override {
-//     Operation *constOp = constAddrs.back();
-
-//     llvm::errs() << *constOp << "\n";
-//     // compute the base address of loadOp
-//     auto ref = loadOp.getMemRef();
-
-//     // get the index of the memory reference
-//     if (!ref.isa<BlockArgument>())
-//       return failure();
-//     BlockArgument arg = ref.cast<BlockArgument>();
-//     unsigned argIndex = arg.getArgNumber();
-
-//     rewriter.setInsertionPoint(loadOp);
-//     // index cast to 32 bit
-
-//     arith::IndexCastOp castOp = rewriter.create<arith::IndexCastOp>(
-//         loadOp.getLoc(), rewriter.getIntegerType(32),
-//         loadOp.getIndices().front());
-//     Value offset = castOp.getResult();
-
-//     Operation *offsetOp = rewriter.create<arith::MulIOp>(
-//         loadOp.getLoc(), rewriter.getI32Type(), offset,
-//         constOp->getResult(0));
-//     Operation *addrOp = rewriter.create<arith::AddIOp>(
-//         loadOp.getLoc(), rewriter.getI32Type(),
-//         constAddrs[argIndex]->getResult(0), offsetOp->getResult(0));
-//     rewriter.replaceOpWithNewOp<cgra::LwiOp>(
-//         loadOp, loadOp.getResult().getType(), addrOp->getResult(0));
-//   }
-
-//   std::vector<Operation *> constAddrs;
-// };
+/// Lower memref.load/ memref.store to cgra.lwi/cgra.swi
 template <typename MemRefOp>
 struct CfMemRefOpConversion : OpConversionPattern<MemRefOp> {
   CfMemRefOpConversion(MLIRContext *ctx, std::vector<Operation *> &constAddrs)
@@ -237,7 +196,6 @@ struct CfMemRefOpConversion : OpConversionPattern<MemRefOp> {
                   ConversionPatternRewriter &rewriter) const override {
     Operation *constOp = constAddrs.back();
 
-    llvm::errs() << *constOp << "\n";
     // compute the base address of op
     Value ref = op.getMemRef();
 
@@ -315,7 +273,6 @@ LogicalResult allocateMemory(ModuleOp &modOp,
     baseOp->setAttr("BaseAddr",
                     builder.getStringAttr("arg" + std::to_string(i)));
     constAddr.push_back(baseOp);
-    llvm::errs() << "Memory " << i << " : " << memAlloc[i] << "\n";
   }
   // create a constant operation to initialize the offset
   auto offset = builder.create<arith::ConstantIntOp>(funcOp.getLoc(), 4,
