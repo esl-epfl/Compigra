@@ -28,13 +28,13 @@ namespace compigra {
 void populateCfToCgraConversionPatterns(RewritePatternSet &patterns,
                                         std::vector<Operation *> &constAddr);
 
-std::unique_ptr<mlir::Pass> createCfToCgraConversion(StringRef memAlloc = "");
+std::unique_ptr<mlir::Pass> createCfToCgraConversion();
 } // namespace compigra
 
 namespace {
 struct CfToCgraConversionPass
     : public compigra::impl::CfToCgraConversionBase<CfToCgraConversionPass> {
-  CfToCgraConversionPass(StringRef memAlloc) {}
+  CfToCgraConversionPass() {}
 
   void runOnOperation() override;
 };

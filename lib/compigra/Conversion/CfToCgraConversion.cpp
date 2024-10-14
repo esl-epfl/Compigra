@@ -151,34 +151,38 @@ struct CfCondBrOpConversion : OpConversionPattern<cf::CondBranchOp> {
       cmpOpr1 = castOp1.getResult();
     }
 
-    bool isTrueDest = condBrBlock == condBrOp.getTrueDest();
-    if (!isTrueDest)
+    bool switchSuccs = condBrBlock == condBrOp.getFalseDest();
+    if (switchSuccs)
       predicate = reverseCmpFlag(predicate);
 
-    auto condBrArgs = isTrueDest ? condBrOp.getTrueDestOperands()
-                                 : condBrOp.getFalseDestOperands();
-    auto jumpArgs = isTrueDest ? condBrOp.getFalseDestOperands()
-                               : condBrOp.getTrueDestOperands();
+    auto condBrArgs = switchSuccs ? condBrOp.getFalseDestOperands()
+                                  : condBrOp.getTrueDestOperands();
+    auto jumpArgs = switchSuccs ? condBrOp.getTrueDestOperands()
+                                : condBrOp.getFalseDestOperands();
     Block *jumpBlock =
-        isTrueDest ? condBrOp.getFalseDest() : condBrOp.getTrueDest();
+        switchSuccs ? condBrOp.getTrueDest() : condBrOp.getFalseDest();
 
     // replace cf.condbr with cgra.condbr
-    rewriter.setInsertionPoint(condBrOp);
     cgra::CondBrPredicate cgraPred =
         getCgraBrPredicate(predicate, cmpOpr0, cmpOpr1);
-    auto newCondBr = rewriter.replaceOpWithNewOp<cgra::ConditionalBranchOp>(
-        condBrOp, cgraPred, cmpOpr0, cmpOpr1, condBrBlock, condBrArgs, falseBlk,
-        SmallVector<Value>());
-
-    if (cmpOp->hasOneUse()) {
-      rewriter.eraseOp(cmpOp);
-    }
-
     if (forceJump) {
+      // rewriter.setInsertionPoint(condBrOp);
+      auto newCondBr = rewriter.replaceOpWithNewOp<cgra::ConditionalBranchOp>(
+          condBrOp, cgraPred, cmpOpr0, cmpOpr1, condBrBlock, condBrArgs,
+          falseBlk, SmallVector<Value>());
       rewriter.setInsertionPointToStart(falseBlk);
       auto defaultBr = rewriter.create<cf::BranchOp>(newCondBr->getLoc(),
                                                      jumpArgs, jumpBlock);
       defaultBr->moveAfter(&falseBlk->getOperations().front());
+    } else {
+      // rewriter.setInsertionPoint(condBrOp);
+      rewriter.replaceOpWithNewOp<cgra::ConditionalBranchOp>(
+          condBrOp, cgraPred, cmpOpr0, cmpOpr1, condBrBlock, condBrArgs,
+          falseBlk, jumpArgs);
+    }
+
+    if (cmpOp->hasOneUse()) {
+      rewriter.eraseOp(cmpOp);
     }
 
     return success();
@@ -238,7 +242,6 @@ void compigra::populateCfToCgraConversionPatterns(
     RewritePatternSet &patterns, std::vector<Operation *> &constAddr) {
 
   patterns.add<CfCondBrOpConversion>(patterns.getContext());
-  bool initOffset = false;
   patterns.add<CfMemRefOpConversion<memref::LoadOp>,
                CfMemRefOpConversion<memref::StoreOp>>(patterns.getContext(),
                                                       constAddr);
@@ -246,11 +249,12 @@ void compigra::populateCfToCgraConversionPatterns(
 
 LogicalResult allocateMemory(ModuleOp &modOp,
                              std::vector<Operation *> &constAddr,
-                             OpBuilder &builder) {
+                             OpBuilder &builder,
+                             Pass::ListOption<int> &startAddr) {
   auto funcOp = *modOp.getOps<func::FuncOp>().begin();
-  std::vector<int> memAlloc = {0};
-  int sum = 0;
-  for (auto arg : funcOp.getArguments()) {
+  std::vector<int> memAlloc;
+  int lastPtr = 0;
+  for (auto [ind, arg] : llvm::enumerate(funcOp.getArguments())) {
     if (!arg.getType().isa<MemRefType>())
       return failure();
     auto memrefType = arg.getType().cast<MemRefType>();
@@ -259,15 +263,28 @@ LogicalResult allocateMemory(ModuleOp &modOp,
     if (memrefType.getRank() != 1)
       return failure();
 
-    // OpenEdge fix the data bit width to 32, which is 4 bytes
-    memAlloc.push_back(sum + memrefType.getDimSize(0) * 4);
-    sum += memrefType.getDimSize(0) * 4;
+    if (ind < startAddr.size()) {
+      // Priorize the startAddr from the command line
+      if (startAddr[ind] < lastPtr)
+        return failure();
+      else {
+        memAlloc.push_back(startAddr[ind]);
+        lastPtr = startAddr[ind];
+      }
+    } else if (memrefType.getDimSize(0) > 0) {
+      // Allocate memory based on the default size
+      memAlloc.push_back(lastPtr);
+      lastPtr += memrefType.getDimSize(0) * 4;
+    } else {
+      // Fail if the size is not specified
+      return failure();
+    }
   }
 
   // insert constant operation to initialize the offset and base address
   builder.setInsertionPointToStart(&funcOp.getBlocks().front());
   // print the memory allocation
-  for (int i = 0; i < memAlloc.size() - 1; i++) {
+  for (unsigned i = 0; i < memAlloc.size(); i++) {
     auto baseOp = builder.create<arith::ConstantIntOp>(
         funcOp.getLoc(), memAlloc[i], builder.getI32Type());
     baseOp->setAttr("BaseAddr",
@@ -283,6 +300,12 @@ LogicalResult allocateMemory(ModuleOp &modOp,
 }
 
 void CfToCgraConversionPass::runOnOperation() {
+  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+  OpBuilder builder(modOp);
+  std::vector<Operation *> constAddrs;
+  if (failed(allocateMemory(modOp, constAddrs, builder, startAddr)))
+    signalPassFailure();
+
   ConversionTarget target(getContext());
   target.addIllegalOp<cf::CondBranchOp>();
   target.addLegalOp<cgra::ConditionalBranchOp>();
@@ -291,23 +314,17 @@ void CfToCgraConversionPass::runOnOperation() {
   target.addIllegalOp<memref::StoreOp>();
   target.addLegalOp<cgra::SwiOp>();
   target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
-  //   target.addIllegalOp<arith::CmpIOp>();
-
-  ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
-  OpBuilder builder(modOp);
-  std::vector<Operation *> constAddrs;
-  if (failed(allocateMemory(modOp, constAddrs, builder)))
-    signalPassFailure();
 
   RewritePatternSet patterns(&getContext());
   populateCfToCgraConversionPatterns(patterns, constAddrs);
   if (failed(
           applyPartialConversion(getOperation(), target, std::move(patterns))))
     signalPassFailure();
+  llvm::errs() << modOp << "\n";
 }
 
 namespace compigra {
-std::unique_ptr<mlir::Pass> createCfToCgraConversion(StringRef memAlloc) {
-  return std::make_unique<CfToCgraConversionPass>(memAlloc);
+std::unique_ptr<mlir::Pass> createCfToCgraConversion() {
+  return std::make_unique<CfToCgraConversionPass>();
 }
 } // namespace compigra

@@ -23,6 +23,7 @@ namespace compigra {
 
 std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef funcName,
                                                        StringRef memAlloc);
-std::unique_ptr<mlir::Pass> createCfToCgraConversion(StringRef memAlloc);
+std::unique_ptr<mlir::Pass> createCfToCgraConversion();
+
 } // end namespace compigra
 #endif // COMPIGRA_CONVERSION_PASSES_H

@@ -41,10 +41,8 @@ def CfToCgraConversion : Pass<"convert-cf-to-cgra"> {
   let constructor = "compigra::createCfToCgraConversion()";
   let dependentDialects = ["cgra::CgraDialect"];
   let options = [
-    Option<
-        "memAlloc", "mem-json", "std::string", "",
-        "    Specify the memory allocation policy for data interface between "
-        "CGRA and host processor ">
+    ListOption<"startAddr", "start-addr", "int", 
+               "    Specify the start address of the parameters">
   ];
 }
 
