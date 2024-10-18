@@ -69,8 +69,8 @@ LogicalResult fixIndexWidth(Operation &op, OpBuilder &builder) {
   // Check if the operation is a constant operation, set the value attribute to
   // int32
   if (isa<arith::ConstantOp>(op))
-    if (auto attrType = op.getAttr("value").cast<IntegerAttr>().getType())
-      if (attrType.isa<IndexType>()) {
+    if (auto intAttr = op.getAttr("value").dyn_cast_or_null<IntegerAttr>())
+      if (intAttr.getType().isa<IndexType>()) {
         // convert the value attributes  to int32
         op.setAttr(
             "value",
