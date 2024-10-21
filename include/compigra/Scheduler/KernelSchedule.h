@@ -72,6 +72,7 @@ struct ScheduleUnit {
   int reg;
 };
 
+#ifdef HAVE_GUROBI
 /// OpenEdge kernel scheduler class
 class OpenEdgeKernelScheduler : public CGRAKernelScheduler<ScheduleUnit> {
 public:
@@ -86,8 +87,6 @@ protected:
   Region &region;
 
 public:
-#ifdef HAVE_GUROBI
-
   /// Initialize the optimization objective function, which is to minimize the
   /// kernel total PCs size.
   void initObjectiveFunction(GRBModel &model, GRBVar &funcStartT,
@@ -139,7 +138,6 @@ public:
   void initOpTimeSpaceConstraints(GRBModel &model,
                                   std::map<Operation *, GRBVar> &timeOpVar,
                                   std::map<Operation *, GRBVar> &spaceOpVar);
-#endif
 
 private:
   int getConnectedBlock(int block, std::string direction);
@@ -163,6 +161,7 @@ public:
 
   std::map<Operation *, std::string> varNamePost;
 };
+#endif
 } // namespace compigra
 
 #endif // KERNEL_SCHEDULE_H
