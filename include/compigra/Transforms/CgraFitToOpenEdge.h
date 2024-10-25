@@ -16,6 +16,9 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -25,32 +28,32 @@ using namespace mlir;
 
 /// Check whether a constant operation is used as Imm field for an memory
 /// address.
-bool isAddrConstOp(LLVM::ConstantOp constOp);
+bool isAddrConstOp(arith::ConstantOp constOp);
 
 /// Move all constant operations to the entry block
-LogicalResult raiseConstOperation(cgra::FuncOp funcOp);
+template <typename FuncOp> LogicalResult raiseConstOperation(FuncOp funcOp);
 
 /// Erase constant operations if they are not in used
-LogicalResult removeUnusedConstOp(cgra::FuncOp funcOp);
+template <typename FuncOp> LogicalResult removeUnusedConstOp(FuncOp funcOp);
 
 /// Erase bitwidth related operations if they have been rewritten and have equal
 /// bitwidths for input and output.
 LogicalResult removeEqualWidthBWOp(cgra::FuncOp funcOp);
 
 /// Use add operation to generate a value if Imm field is not allowed.
-LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
-                             PatternRewriter &rewriter);
+arith::AddIOp generateImmAddOp(arith::ConstantOp constOp,
+                               PatternRewriter &rewriter);
 
 /// Check whether the constant operation has been adapted to generate by
 /// computation. Avoid generate multiple
 Operation *existsConstant(int intVal, SmallVector<Operation *> &insertedOps);
 
 /// Rewrite constant operations can not fit into Imm field
-Operation *generateValidConstant(LLVM::ConstantOp constOp,
+Operation *generateValidConstant(arith::ConstantOp constOp,
                                  PatternRewriter &rewriter);
 
 /// OpenEdge address Imm field
-bool isValidImmAddr(LLVM::ConstantOp constOp);
+bool isValidImmAddr(arith::ConstantOp constOp);
 
 namespace {
 // Initialze the IR target that can not be deployed in the openedge
@@ -80,11 +83,11 @@ struct CgraFitToOpenEdgePass
 
 /// Rewrite constant operation to make all the immediate field in hardware ISA
 /// valid.
-struct ConstantOpRewrite : public OpRewritePattern<LLVM::ConstantOp> {
+struct ConstantOpRewrite : public OpRewritePattern<arith::ConstantOp> {
   ConstantOpRewrite(MLIRContext *ctx, SmallVector<Operation *> &insertedOps)
       : OpRewritePattern(ctx), insertedOps(insertedOps) {}
 
-  LogicalResult matchAndRewrite(LLVM::ConstantOp constOp,
+  LogicalResult matchAndRewrite(arith::ConstantOp constOp,
                                 PatternRewriter &rewriter) const override;
 
 protected:
@@ -96,13 +99,6 @@ protected:
 struct LwiOpRewrite : public OpRewritePattern<cgra::LwiOp> {
   LwiOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
   LogicalResult matchAndRewrite(cgra::LwiOp lwiOp,
-                                PatternRewriter &rewriter) const override;
-};
-
-/// Remove bitwidth extension operations as OpenEdge PE is by default 32 bits
-struct BitWidthExtOpRewrite : public OpRewritePattern<LLVM::SExtOp> {
-  BitWidthExtOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx){};
-  LogicalResult matchAndRewrite(LLVM::SExtOp extOp,
                                 PatternRewriter &rewriter) const override;
 };
 

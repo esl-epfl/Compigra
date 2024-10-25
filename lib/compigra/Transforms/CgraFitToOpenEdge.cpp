@@ -28,7 +28,7 @@
 using namespace mlir;
 using namespace compigra;
 
-bool isValidImmAddr(LLVM::ConstantOp constOp) {
+bool isValidImmAddr(arith::ConstantOp constOp) {
   // Address can not exceeds 13 bits
   int maxAddr = 0b1111111111111;
   auto value = constOp.getValue().cast<IntegerAttr>().getInt();
@@ -47,7 +47,7 @@ Operation *existsConstant(int intVal, SmallVector<Operation *> &insertedOps) {
   return nullptr;
 }
 
-bool isAddrConstOp(LLVM::ConstantOp constOp) {
+bool isAddrConstOp(arith::ConstantOp constOp) {
   for (auto &use : constOp->getUses()) {
     if (isa<cgra::LwiOp>(use.getOwner()))
       return true;
@@ -59,11 +59,11 @@ bool isAddrConstOp(LLVM::ConstantOp constOp) {
   return false;
 }
 
-LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
+template <typename FuncOp> LogicalResult raiseConstOperation(FuncOp funcOp) {
   Operation &beginOp = *funcOp.getOps().begin();
   // raise the constant operation to the top level
-  for (auto op :
-       llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
+  auto constantOps = funcOp.template getOps<arith::ConstantIntOp>();
+  for (auto op : llvm::make_early_inc_range(constantOps)) {
     if (op->getBlock()->isEntryBlock()) {
       op->moveBefore(&beginOp);
     }
@@ -73,9 +73,9 @@ LogicalResult raiseConstOperation(cgra::FuncOp funcOp) {
 }
 
 /// remove the constant operation if it is not used
-LogicalResult removeUnusedConstOp(cgra::FuncOp funcOp) {
-  for (auto op :
-       llvm::make_early_inc_range(funcOp.getOps<LLVM::ConstantOp>())) {
+template <typename FuncOp> LogicalResult removeUnusedConstOp(FuncOp funcOp) {
+  auto constantOps = funcOp.template getOps<arith::ConstantIntOp>();
+  for (auto op : llvm::make_early_inc_range(constantOps)) {
     if (op->use_empty())
       op->erase();
   }
@@ -84,7 +84,8 @@ LogicalResult removeUnusedConstOp(cgra::FuncOp funcOp) {
 }
 
 LogicalResult removeEqualWidthBWOp(cgra::FuncOp funcOp) {
-  for (auto op : llvm::make_early_inc_range(funcOp.getOps<LLVM::SExtOp>())) {
+  auto sextOps = funcOp.template getOps<LLVM::SExtOp>();
+  for (auto op : llvm::make_early_inc_range(sextOps)) {
     if (op.getOperand().getType() == op.getResult().getType()) {
       if (op.getOperand().getDefiningOp())
         op.replaceAllUsesWith(op.getOperand().getDefiningOp());
@@ -102,7 +103,7 @@ static bool isLoopBlock(Block *blk) {
   return false;
 }
 
-Operation *generateValidConstant(LLVM::ConstantOp constOp,
+Operation *generateValidConstant(arith::ConstantOp constOp,
                                  PatternRewriter &rewriter) {
   int32_t valAttr =
       (int32_t)constOp->getAttr("value").dyn_cast<IntegerAttr>().getInt();
@@ -112,7 +113,7 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
   // insertion location to the exit block
   bool allExit = true;
   for (auto user : constOp->getUsers())
-    if (!isa<LLVM::ReturnOp>(user->getBlock()->getTerminator())) {
+    if (!isa<func::ReturnOp>(user->getBlock()->getTerminator())) {
       allExit = false;
       break;
     }
@@ -133,7 +134,7 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
 
   int32_t part0 = mask0 & valAttr;
 
-  auto lowerBits = rewriter.create<LLVM::ConstantOp>(
+  auto lowerBits = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part0));
   rewriter.updateRootInPlace(constOp, [&] {
     constOp->setAttr("value", rewriter.getI32IntegerAttr(part0));
@@ -141,23 +142,23 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
 
   int32_t part1 = mask1 & valAttr;
   part1 = part1 >> 12;
-  auto midBitVal = rewriter.create<LLVM::ConstantOp>(
+  auto midBitVal = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part1));
-  auto zeroOp = rewriter.create<LLVM::ConstantOp>(
+  auto zeroOp = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(0));
   // Generate midBits through add operation
   auto midBits =
-      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
-                                   midBitVal.getResult(), zeroOp.getResult());
+      rewriter.create<arith::AddIOp>(loc, constOp.getResult().getType(),
+                                     midBitVal.getResult(), zeroOp.getResult());
 
-  auto shiftImm1 = rewriter.create<LLVM::ConstantOp>(
+  auto shiftImm1 = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(12));
-  auto shiftOp1 =
-      rewriter.create<LLVM::ShlOp>(loc, constOp.getResult().getType(),
-                                   midBits.getResult(), shiftImm1.getResult());
-  auto addOp =
-      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
-                                   lowerBits.getResult(), shiftOp1.getResult());
+  auto shiftOp1 = rewriter.create<arith::ShLIOp>(
+      loc, constOp.getResult().getType(), midBits.getResult(),
+      shiftImm1.getResult());
+  auto addOp = rewriter.create<arith::AddIOp>(
+      loc, constOp.getResult().getType(), lowerBits.getResult(),
+      shiftOp1.getResult());
 
   // If the higher bits are zero
   if (!(mask2 & valAttr)) {
@@ -170,22 +171,22 @@ Operation *generateValidConstant(LLVM::ConstantOp constOp,
 
   int32_t part2 = mask2 & valAttr;
   part2 = part2 >> 24;
-  auto highBitVal = rewriter.create<LLVM::ConstantOp>(
+  auto highBitVal = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(part2));
-  auto zeroOp2 = rewriter.create<LLVM::ConstantOp>(
+  auto zeroOp2 = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(0));
   // Generate highBits through add operation
-  auto highBits =
-      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
-                                   highBitVal.getResult(), zeroOp2.getResult());
-  auto shiftImm2 = rewriter.create<LLVM::ConstantOp>(
+  auto highBits = rewriter.create<arith::AddIOp>(
+      loc, constOp.getResult().getType(), highBitVal.getResult(),
+      zeroOp2.getResult());
+  auto shiftImm2 = rewriter.create<arith::ConstantOp>(
       loc, constOp.getResult().getType(), rewriter.getI32IntegerAttr(24));
-  auto shiftOp2 =
-      rewriter.create<LLVM::ShlOp>(loc, constOp.getResult().getType(),
-                                   highBits.getResult(), shiftImm2.getResult());
+  auto shiftOp2 = rewriter.create<arith::ShLIOp>(
+      loc, constOp.getResult().getType(), highBits.getResult(),
+      shiftImm2.getResult());
   auto sumOp =
-      rewriter.create<LLVM::AddOp>(loc, constOp.getResult().getType(),
-                                   addOp.getResult(), shiftOp2.getResult());
+      rewriter.create<arith::AddIOp>(loc, constOp.getResult().getType(),
+                                     addOp.getResult(), shiftOp2.getResult());
 
   sumOp->setAttr("constant", rewriter.getI32IntegerAttr(valAttr));
   rewriter.replaceUsesWithIf(
@@ -219,46 +220,37 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
   return success();
 }
 
-LLVM::AddOp generateImmAddOp(LLVM::ConstantOp constOp,
-                             PatternRewriter &rewriter) {
+arith::AddIOp generateImmAddOp(arith::ConstantOp constOp,
+                               PatternRewriter &rewriter) {
   auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>();
 
-  Location loc = constOp->getLoc();
-  // check whether all the user of the consOp is in exit block, if true, set the
-  // insertion location to the exit block
-  bool allExit = true;
-  for (auto user : constOp->getUsers())
-    if (!isa<LLVM::ReturnOp>(user->getBlock()->getTerminator())) {
-      allExit = false;
-      break;
-    }
-  if (allExit) {
-    auto firstOp = *constOp->getUsers().begin();
-    rewriter.setInsertionPoint(firstOp);
-    loc = firstOp->getLoc();
-  } else {
-    rewriter.setInsertionPoint(constOp);
-  }
-  // insert a new zero constant operation
+  // insert before the first operation
   rewriter.setInsertionPoint(constOp);
-  auto zeroConst = rewriter.create<LLVM::ConstantOp>(
+  Location loc = constOp->getLoc();
+
+  // insert a new zero constant operation
+  // rewriter.setInsertionPoint(constOp);
+  auto zeroConst = rewriter.create<arith::ConstantOp>(
       loc, constOp.getType(), rewriter.getI32IntegerAttr(0));
   rewriter.setInsertionPoint(constOp->getBlock()->getTerminator());
   // replicate the constant operation in case it is used by multiple operations
-  auto immConst = rewriter.create<LLVM::ConstantOp>(
+  auto immConst = rewriter.create<arith::ConstantOp>(
       loc, constOp.getType(), rewriter.getI32IntegerAttr(intAttr.getInt()));
-  auto addOp = rewriter.create<LLVM::AddOp>(
+  auto addOp = rewriter.create<arith::AddIOp>(
       loc, constOp.getType(), zeroConst.getResult(), immConst.getResult());
   // set the imm attribute of the operation
   addOp->setAttr("constant", intAttr);
   return addOp;
 }
 
-static bool isI32IntegerType(Type type) {
+static bool isValidDataType(Type type) {
   if (auto intType = dyn_cast<IntegerType>(type))
     if (intType.getWidth() == 32) {
       return true;
     }
+  if (auto decType = dyn_cast<Float32Type>(type))
+    return true;
+
   return false;
 }
 
@@ -266,17 +258,15 @@ namespace {
 OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
     : ConversionTarget(*ctx) {
   addLegalDialect<cgra::CgraDialect>();
-  addDynamicallyLegalDialect<LLVM::LLVMDialect>(
-      [&](Operation *op) { return !isa<LLVM::ConstantOp>(op); });
+  addDynamicallyLegalDialect<arith::ArithDialect>(
+      [&](Operation *op) { return !isa<arith::ConstantOp>(op); });
 
   // add the operation to the target
-  addDynamicallyLegalOp<LLVM::ConstantOp>([&](LLVM::ConstantOp constOp) {
-    auto valAttr = constOp.getValue().cast<IntegerAttr>();
-    // if not integer attribute, mark as valid
-    if (!valAttr)
+  addDynamicallyLegalOp<arith::ConstantOp>([&](arith::ConstantOp constOp) {
+    if (!dyn_cast_or_null<IntegerAttr>(constOp->getAttr("value")))
       return true;
 
-    int value = valAttr.getInt();
+    int value = constOp.getValue().cast<IntegerAttr>().getInt();
     bool isAddr = isAddrConstOp(constOp);
     bool validAddr = isValidImmAddr(constOp);
     if (isAddr && !validAddr)
@@ -287,11 +277,17 @@ OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
       if (value < -4097 || value > 4096)
         return false;
 
-    for (auto user : constOp->getUsers()) {
-      if (isa<LLVM::BrOp, cgra::ConditionalBranchOp>(user))
+    for (auto &use : constOp->getUses()) {
+      auto user = use.getOwner();
+      if (isa<cf::BranchOp>(user))
         // The branch operation cannot use immediate values (Imm) for
         // computation, nor can it propagate constants.
         return false;
+      if (isa<cgra::ConditionalBranchOp>(user)) {
+        if (value != 0 || use.getOperandNumber() != 1)
+          return false;
+      }
+
       // if the constant is used by swi for imm store, it is not legal
       if (isa<cgra::SwiOp>(user) &&
           user->getOperand(0).getDefiningOp() == constOp)
@@ -301,20 +297,13 @@ OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
     return true;
   });
 
-  addDynamicallyLegalOp<LLVM::SExtOp>([&](LLVM::SExtOp extOp) {
-    return extOp.getOperand().getType() == extOp.getResult().getType();
-  });
-  // addIllegalOp<LLVM::SExtOp>();
-  // addDynamicallyLegalOp<LLVM::TruncOp>([&](LLVM::TruncOp truncOp) {
-  //   return truncOp.getOperand().getType() == truncOp.getResult().getType();
-  // });
   addDynamicallyLegalOp<cgra::LwiOp>([&](cgra::LwiOp lwiOp) {
-    return isI32IntegerType(lwiOp.getResult().getType());
+    return isValidDataType(lwiOp.getResult().getType());
   });
 }
 
 LogicalResult
-ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
+ConstantOpRewrite::matchAndRewrite(arith::ConstantOp constOp,
                                    PatternRewriter &rewriter) const {
 
   auto value = constOp.getValue().cast<IntegerAttr>().getInt();
@@ -322,53 +311,44 @@ ConstantOpRewrite::matchAndRewrite(LLVM::ConstantOp constOp,
   // indirectly load & store cannot exceed reserved address range
   // if the constant is used as immediate for address
   if (isAddrConstOp(constOp) && !isValidImmAddr(constOp)) {
-    // if (auto validOp = existsConstant(value, insertedOps)) {
-    //   // set it to valid range, to be removed later on
-    //   rewriter.modifyOpInPlace(constOp, [&] {
-    //     constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
-    //   });
-    //   rewriter.replaceAllUsesWith(constOp, validOp);
-    // } else
-    {
+    if (auto validOp = existsConstant(value, insertedOps)) {
+      // set it to valid range, to be removed later on
+      constOp.replaceAllUsesWith(validOp);
+    } else {
       auto addOp = generateValidConstant(constOp, rewriter);
       insertedOps.push_back(addOp);
     }
+    // set the value to 0, to be removed later on
+    rewriter.updateRootInPlace(constOp, [&] {
+      constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
+    });
     return success();
   }
 
   // rewrite the constant operation if the value exceed the range
   if (value < -4097 || value > 4096) {
-    // if (auto validOp = existsConstant(value, insertedOps))
-    //   rewriter.replaceAllUsesWith(constOp, validOp);
-    // else
-    {
-      auto addOp = generateValidConstant(constOp, rewriter);
-      insertedOps.push_back(addOp);
-    }
+    auto addOp = generateValidConstant(constOp, rewriter);
+    insertedOps.push_back(addOp);
+    // set the value to 0, to be removed later on
+    rewriter.updateRootInPlace(constOp, [&] {
+      constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
+    });
+    return success();
   }
 
-  for (auto user : llvm::make_early_inc_range(constOp->getUsers()))
-    if (isa<LLVM::BrOp, cgra::ConditionalBranchOp, cgra::SwiOp>(user)) {
-      // Always create new operation if the constant is used by branch ops,
-      // which would be propagated to multiple operations in the successor
-      // blocks.
-      auto addOp = generateImmAddOp(constOp, rewriter);
-      user->replaceUsesOfWith(constOp.getResult(), addOp.getResult());
-      insertedOps.push_back(addOp);
-    }
-
-  // if the constant is not replaced by valid operation, return failure
-  if (!constOp->use_empty()) {
-    // print use
-    for (auto user : constOp->getUsers())
-      llvm::errs() << "Failed to replace Op on: " << *user << "\n";
-    return failure();
+  auto addOp = generateImmAddOp(constOp, rewriter);
+  insertedOps.push_back(addOp);
+  for (auto &use : llvm::make_early_inc_range(constOp->getUses())) {
+    Operation *user = use.getOwner();
+    // Always create new operation if the constant is used by branch ops,
+    // which would be propagated to multiple operations in the successor
+    // blocks.
+    if (isa<cf::BranchOp, cgra::ConditionalBranchOp, cgra::SwiOp>(user))
+      user->setOperand(use.getOperandNumber(), addOp.getResult());
   }
 
-  // set the value to 0, to be removed later on
-  rewriter.updateRootInPlace(constOp, [&] {
-    constOp->setAttr("value", rewriter.getI32IntegerAttr(0));
-  });
+  rewriter.updateRootInPlace(
+      constOp, [&] { constOp->setAttr("value", constOp->getAttr("value")); });
 
   return success();
 }
@@ -389,10 +369,10 @@ SmallVector<Operation *, 4> getSrcOpIndirectly(Value val, Block *targetBlock) {
   for (auto pred : block->getPredecessors()) {
     Operation *termOp = pred->getTerminator();
     // Return operation does not propagate block argument
-    if (isa<LLVM::ReturnOp>(termOp))
+    if (isa<func::ReturnOp>(termOp))
       continue;
 
-    if (isa<LLVM::BrOp>(termOp)) {
+    if (isa<cf::BranchOp>(termOp)) {
       // the corresponding block argument is the argInd'th operator
       propVal = termOp->getOperand(argInd);
       auto defOps = getSrcOpIndirectly(propVal, targetBlock);
@@ -420,8 +400,7 @@ LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
   auto origType = lwiOp.getOperand().getType(); // valid I32 address type
 
   rewriter.updateRootInPlace(
-      lwiOp, [&] { lwiOp.getResult().setType(rewriter.getI32Type()); });
-
+      lwiOp, [&] { lwiOp.getResult().setType(lwiOp.getResult().getType()); });
   // set the type of corresponding successor
   std::stack<Value> dstOprs;
   dstOprs.push(lwiOp.getResult());
@@ -435,45 +414,9 @@ LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
     // push the predecessors if its type is not the same as result type
     for (auto user : opr.getUsers())
       if (user->getNumResults() == 1 &&
-          !isI32IntegerType(user->getResult(0).getType()))
+          !isValidDataType(user->getResult(0).getType()))
         dstOprs.push(user->getResult(0));
   }
-  return success();
-}
-
-LogicalResult
-BitWidthExtOpRewrite::matchAndRewrite(LLVM::SExtOp extOp,
-                                      PatternRewriter &rewriter) const {
-  // track all the predecessor op of extOp
-  auto resType = extOp.getResult().getType();
-  auto *prodOp = extOp.getOperand().getDefiningOp();
-  if (!isI32IntegerType(resType))
-    return failure();
-
-  std::stack<Value> srcOprs;
-  srcOprs.push(extOp.getOperand());
-  while (!srcOprs.empty()) {
-    auto opr = srcOprs.top();
-    srcOprs.pop();
-
-    // change opr to origType
-    opr.setType(resType);
-
-    // push the predecessors if its type is not the same as result type
-    auto defOps = getSrcOpIndirectly(opr, opr.getDefiningOp()->getBlock());
-    for (auto op : defOps) {
-      if (op->getResult(0).getType() != resType)
-        srcOprs.push(op->getResult(0));
-    }
-  }
-  if (prodOp)
-    rewriter.replaceAllUsesWith(extOp, prodOp->getResult(0));
-
-  // set all the predecessor type with result type, erase the operation
-  rewriter.updateRootInPlace(extOp, [&] {
-    extOp.getOperand().setType(resType);
-    extOp->erase();
-  });
   return success();
 }
 
@@ -485,7 +428,6 @@ void CgraFitToOpenEdgePass::runOnOperation() {
 
   SmallVector<Operation *> insertedOps;
   patterns.add<ConstantOpRewrite>(ctx, insertedOps);
-  patterns.add<BitWidthExtOpRewrite>(ctx);
   patterns.add<LwiOpRewrite>(ctx);
 
   // adapt the constant operation to meet the requirement of Imm field of
@@ -494,11 +436,22 @@ void CgraFitToOpenEdgePass::runOnOperation() {
     signalPassFailure();
 
   // raise the constant operation to the top level
-  for (auto funcOp : llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>()))
-    if (failed(raiseConstOperation(funcOp)) ||
-        failed(removeUnusedConstOp(funcOp)) ||
+  auto cgraFuncOps = modOp.getOps<cgra::FuncOp>();
+  if (!cgraFuncOps.empty()) {
+    auto funcOp = *cgraFuncOps.begin();
+    if (failed(raiseConstOperation<cgra::FuncOp>(funcOp)) ||
+        failed(removeUnusedConstOp<cgra::FuncOp>(funcOp)) ||
         failed(removeEqualWidthBWOp(funcOp)))
       signalPassFailure();
+  } else {
+    auto funcOps = modOp.getOps<func::FuncOp>();
+    if (!funcOps.empty()) {
+      auto funcOp = *funcOps.begin();
+      if (failed(raiseConstOperation<func::FuncOp>(funcOp)) ||
+          failed(removeUnusedConstOp<func::FuncOp>(funcOp)))
+        signalPassFailure();
+    }
+  }
 
   // print the DAG of the specified function
   if (!outputDAG.empty()) {
