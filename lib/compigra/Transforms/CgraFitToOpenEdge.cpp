@@ -220,22 +220,22 @@ static LogicalResult outputDATE2023DAG(cgra::FuncOp funcOp,
   return success();
 }
 
-arith::AddIOp generateImmAddOp(arith::ConstantOp constOp,
+arith::AddIOp generateImmAddOp(arith::ConstantOp constOp, Operation *user,
                                PatternRewriter &rewriter) {
   auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>();
 
   // insert before the first operation
-  rewriter.setInsertionPoint(constOp);
-  Location loc = constOp->getLoc();
+  Location loc = user->getLoc();
 
   // insert a new zero constant operation
   // rewriter.setInsertionPoint(constOp);
+  rewriter.setInsertionPoint(constOp);
   auto zeroConst = rewriter.create<arith::ConstantOp>(
       loc, constOp.getType(), rewriter.getI32IntegerAttr(0));
-  rewriter.setInsertionPoint(constOp->getBlock()->getTerminator());
   // replicate the constant operation in case it is used by multiple operations
   auto immConst = rewriter.create<arith::ConstantOp>(
       loc, constOp.getType(), rewriter.getI32IntegerAttr(intAttr.getInt()));
+  rewriter.setInsertionPoint(user);
   auto addOp = rewriter.create<arith::AddIOp>(
       loc, constOp.getType(), zeroConst.getResult(), immConst.getResult());
   // set the imm attribute of the operation
@@ -336,15 +336,16 @@ ConstantOpRewrite::matchAndRewrite(arith::ConstantOp constOp,
     return success();
   }
 
-  auto addOp = generateImmAddOp(constOp, rewriter);
-  insertedOps.push_back(addOp);
   for (auto &use : llvm::make_early_inc_range(constOp->getUses())) {
     Operation *user = use.getOwner();
     // Always create new operation if the constant is used by branch ops,
     // which would be propagated to multiple operations in the successor
     // blocks.
-    if (isa<cf::BranchOp, cgra::ConditionalBranchOp, cgra::SwiOp>(user))
+    if (isa<cf::BranchOp, cgra::ConditionalBranchOp, cgra::SwiOp>(user)) {
+      auto addOp = generateImmAddOp(constOp, user, rewriter);
+      insertedOps.push_back(addOp);
       user->setOperand(use.getOperandNumber(), addOp.getResult());
+    }
   }
 
   rewriter.updateRootInPlace(
@@ -447,8 +448,7 @@ void CgraFitToOpenEdgePass::runOnOperation() {
     auto funcOps = modOp.getOps<func::FuncOp>();
     if (!funcOps.empty()) {
       auto funcOp = *funcOps.begin();
-      if (failed(raiseConstOperation<func::FuncOp>(funcOp)) ||
-          failed(removeUnusedConstOp<func::FuncOp>(funcOp)))
+      if (failed(removeUnusedConstOp<func::FuncOp>(funcOp)))
         signalPassFailure();
     }
   }

@@ -41,7 +41,7 @@ template <typename FuncOp> LogicalResult removeUnusedConstOp(FuncOp funcOp);
 LogicalResult removeEqualWidthBWOp(cgra::FuncOp funcOp);
 
 /// Use add operation to generate a value if Imm field is not allowed.
-arith::AddIOp generateImmAddOp(arith::ConstantOp constOp,
+arith::AddIOp generateImmAddOp(arith::ConstantOp constOp, Operation *user,
                                PatternRewriter &rewriter);
 
 /// Check whether the constant operation has been adapted to generate by
