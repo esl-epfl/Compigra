@@ -192,7 +192,6 @@ struct CfCondBrOpConversion : OpConversionPattern<cf::CondBranchOp> {
 template <typename MemRefOp>
 Operation *computeOffSet(MemRefOp memOp, Operation *baseAddr,
                          SmallVector<Operation *> strideVals,
-                         Operation *eleStride,
                          ConversionPatternRewriter &rewriter) {
   Operation *offSet = nullptr;
 
@@ -218,9 +217,7 @@ Operation *computeOffSet(MemRefOp memOp, Operation *baseAddr,
       break;
     }
 
-    // llvm::errs() << "    stride: " << strideVals.size() << "\n";
     Value stride = strideVals[dim]->getResult(0);
-    // llvm::errs() << "    compute stride: \n";
     auto dimStride = rewriter.create<arith::MulIOp>(
         memOp.getLoc(), rewriter.getI32Type(), castOp.getResult(), stride);
     if (offSet)
@@ -232,6 +229,24 @@ Operation *computeOffSet(MemRefOp memOp, Operation *baseAddr,
   }
 
   return offSet;
+}
+
+static int preComputeOffset(Operation *offSetOp, Operation *byteOp) {
+
+  if (arith::IndexCastOp cstOffset =
+          dyn_cast_or_null<arith::IndexCastOp>(offSetOp)) {
+    // directly compute the offset
+    auto srcOffset = dyn_cast_or_null<arith::ConstantIndexOp>(
+        cstOffset.getOperand().getDefiningOp());
+    if (!srcOffset)
+      return -1;
+
+    long byteWidth = 4;
+    if (auto cstByte = dyn_cast_or_null<arith::ConstantIntOp>((byteOp)))
+      byteWidth = cstByte.value();
+    return byteWidth * srcOffset.value();
+  }
+  return -1;
 }
 
 /// Lower memref.load/ memref.store to cgra.lwi/cgra.swi
@@ -256,19 +271,23 @@ struct CfMemRefOpConversion : OpConversionPattern<MemRefOp> {
       return failure();
     unsigned argIndex = arg.getArgNumber();
     Operation *baseOp = baseAddrs[argIndex];
-    // llvm::errs() << op << "\n";
-    // llvm::errs() << "     ref: " << ref << "\n";
 
     // get the index of the memory reference
     rewriter.setInsertionPoint(op);
-    auto offSetOp = computeOffSet<MemRefOp>(op, baseOp, strideValMap.at(baseOp),
-                                            byteOp, rewriter);
+    auto offSetOp =
+        computeOffSet<MemRefOp>(op, baseOp, strideValMap.at(baseOp), rewriter);
 
     Operation *addrOp = nullptr;
     if (offSetOp) {
-      Operation *byteOffset = rewriter.create<arith::MulIOp>(
-          loc, rewriter.getI32Type(), offSetOp->getResult(0),
-          byteOp->getResult(0));
+      Operation *byteOffset;
+      int byteWidth = preComputeOffset(offSetOp, byteOp);
+      if (byteWidth >= 0) {
+        byteOffset = rewriter.create<arith::ConstantIntOp>(loc, byteWidth, 32);
+      } else {
+        byteOffset = rewriter.create<arith::MulIOp>(loc, rewriter.getI32Type(),
+                                                    offSetOp->getResult(0),
+                                                    byteOp->getResult(0));
+      }
       addrOp = rewriter.create<arith::AddIOp>(loc, rewriter.getI32Type(),
                                               baseOp->getResult(0),
                                               byteOffset->getResult(0));
@@ -304,7 +323,7 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
   std::vector<int> memAlloc;
   std::vector<std::vector<int>> memRefDims;
 
-  int lastPtr = 0;
+  int lastPtr = 128;
   for (auto [ind, arg] : llvm::enumerate(funcOp.getArguments())) {
     if (!arg.getType().isa<MemRefType>())
       return failure();
@@ -373,6 +392,14 @@ void compigra::populateCfToCgraConversionPatterns(
                                                       constAddr, offValMap);
 }
 
+static LogicalResult raiseConstOpToTop(func::FuncOp funcOp) {
+  for (auto cstOp :
+       llvm::make_early_inc_range(funcOp.getOps<arith::ConstantOp>())) {
+    cstOp->moveBefore(&funcOp.getBlocks().front().front());
+  }
+  return success();
+}
+
 void CfToCgraConversionPass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
   OpBuilder builder(modOp);
@@ -401,6 +428,14 @@ void CfToCgraConversionPass::runOnOperation() {
   if (failed(
           applyPartialConversion(getOperation(), target, std::move(patterns))))
     signalPassFailure();
+
+  // raise the constant operation to the top level
+  auto funcOps = modOp.getOps<func::FuncOp>();
+  if (!funcOps.empty()) {
+    auto funcOp = *funcOps.begin();
+    if (failed(raiseConstOpToTop(funcOp)))
+      signalPassFailure();
+  }
   // llvm::errs() << modOp << "\n";
 }
 

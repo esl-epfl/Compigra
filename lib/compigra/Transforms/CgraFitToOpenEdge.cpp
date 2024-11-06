@@ -300,6 +300,36 @@ OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
   addDynamicallyLegalOp<cgra::LwiOp>([&](cgra::LwiOp lwiOp) {
     return isValidDataType(lwiOp.getResult().getType());
   });
+
+  addDynamicallyLegalOp<arith::AddIOp>([&](arith::AddIOp addOp) {
+    auto opA = addOp.getOperand(0).getDefiningOp();
+    auto opB = addOp.getOperand(1).getDefiningOp();
+    // if one of the operands is argument, it is legal
+    if (!opA || !opB)
+      return true;
+
+    if (isa<arith::ConstantOp>(opA) && isa<arith::ConstantOp>(opB)) {
+      auto valueA = opA->getAttr("value").cast<IntegerAttr>().getInt();
+      auto valueB = opB->getAttr("value").cast<IntegerAttr>().getInt();
+      if (valueA == 0 || valueB == 0)
+        return true;
+      if (opA->getAttr("value") != opB->getAttr("value"))
+        return false;
+    }
+    return true;
+  });
+}
+
+LogicalResult SAddOpRewrite::matchAndRewrite(arith::AddIOp addOp,
+                                             PatternRewriter &rewriter) const {
+  rewriter.setInsertionPoint(addOp);
+  arith::ConstantOp zeroCst = rewriter.create<arith::ConstantOp>(
+      addOp.getLoc(), addOp.getType(), rewriter.getI32IntegerAttr(0));
+  auto newOpA = rewriter.create<arith::AddIOp>(
+      addOp.getLoc(), addOp.getOperand(0), zeroCst.getResult());
+  rewriter.updateRootInPlace(addOp,
+                             [&] { addOp->setOperand(0, newOpA.getResult()); });
+  return success();
 }
 
 LogicalResult
@@ -430,6 +460,7 @@ void CgraFitToOpenEdgePass::runOnOperation() {
   SmallVector<Operation *> insertedOps;
   patterns.add<ConstantOpRewrite>(ctx, insertedOps);
   patterns.add<LwiOpRewrite>(ctx);
+  patterns.add<SAddOpRewrite>(ctx);
 
   // adapt the constant operation to meet the requirement of Imm field of
   // openedge CGRA

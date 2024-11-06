@@ -102,6 +102,12 @@ struct LwiOpRewrite : public OpRewritePattern<cgra::LwiOp> {
                                 PatternRewriter &rewriter) const override;
 };
 
+struct SAddOpRewrite : public OpRewritePattern<arith::AddIOp> {
+  SAddOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
+  LogicalResult matchAndRewrite(arith::AddIOp addOp,
+                                PatternRewriter &rewriter) const override;
+};
+
 } // namespace
 
 #endif // CGRA_FIT_TO_OPENEDGE_H
