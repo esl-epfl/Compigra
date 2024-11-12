@@ -16,7 +16,7 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
-// LLVM passes
+// Cgra passes
 //===----------------------------------------------------------------------===//
 
 def OpenEdgeASMGen : Pass<"gen-openedge-asm"> {
@@ -28,8 +28,17 @@ def OpenEdgeASMGen : Pass<"gen-openedge-asm"> {
            "  Specify the name of the fucntion to convert. ">,
     Option<"mapResult", "map-result", "std::string", "",
            "  Specify the map result by the SAT-MapIt">,
-    Option<"nGrid", "grid", "int", "",
-           "  Number of grid blocks">,
+    Option<"nGrid", "grid", "int", "", "  Number of grid blocks">,
+  ];
+}
+
+def ASMGenTemporalCGRA : Pass<"gen-temporal-cgra-asm"> {
+  let summary = "Generate temporal cgra code";
+  let constructor = "compigra::createASMGenTemporalCGRA()";
+  let dependentDialects = ["cgra::CgraDialect"];
+  let options = [
+    Option<"nRow", "row", "int", "", "  Number of PE in one row">,
+    Option<"nCol", "col", "int", "", "  Number of PE in one column">,
   ];
 }
 

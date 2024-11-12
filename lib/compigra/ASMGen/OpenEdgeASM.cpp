@@ -1,4 +1,4 @@
-//===- OpenEdge.cpp - Declare the functions for gen OpenEdge ASM*- C++ -*-===//
+//===- OpenEdge.cpp - Implements the functions for OpenEdge ASM*- C++ --*-===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.

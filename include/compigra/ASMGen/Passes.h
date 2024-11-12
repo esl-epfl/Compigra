@@ -14,6 +14,7 @@
 #ifndef COMPIGRA_ASM_GEN_PASSES_H
 #define COMPIGRA_ASM_GEN_PASSES_H
 
+#include "compigra/ASMGen/ASMGenTempCGRA.h"
 #include "compigra/ASMGen/OpenEdgeASM.h"
 
 namespace compigra {
@@ -21,8 +22,8 @@ namespace compigra {
 #define GEN_PASS_REGISTRATION
 #include "compigra/ASMGen/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName,
-                                                 StringRef mapResult,
-                                                 int nGrid);
+std::unique_ptr<mlir::Pass>
+createOpenEdgeASMGen(StringRef funcName, StringRef mapResult, int nGrid);
+std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow, int nCol);
 } // end namespace compigra
 #endif // COMPIGRA_ASM_GEN_PASSES_H
