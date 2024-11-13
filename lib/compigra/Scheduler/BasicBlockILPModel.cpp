@@ -38,7 +38,7 @@ static bool visibleOutside(Value val) {
 }
 
 void BasicBlockILPModel::setLiveValue(SetVector<Value> liveIn,
-                                          SetVector<Value> liveOut) {
+                                      SetVector<Value> liveOut) {
   // this->liveIn = liveIn;
   // this->liveOut = liveOut;
   liveOutExter.clear();
@@ -208,15 +208,17 @@ static LogicalResult placeToCntPe(GRBModel &model,
     model.addQConstr(cntPe == left * fLeft + right * fRight + top * fTop +
                                   bottom * fBottom + self * fSelf,
                      "N_" + prefix);
-
     model.addConstr(fLeft + fRight + fTop + fBottom + fSelf == 1,
                     "N_" + prefix);
   } else {
-
     model.addQConstr(cntPe == left * fLeft + right * fRight + top * fTop +
                                   bottom * fBottom + self * fSelf);
-
     model.addConstr(fLeft + fRight + fTop + fBottom + fSelf == 1);
+  }
+  model.optimize();
+  if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
+      model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+    return failure();
   }
   return success();
 }
@@ -280,9 +282,18 @@ LogicalResult BasicBlockILPModel::createHardwareConstraints(
       model.addConstr(xRow + 1 == nRow * uBottom + bottomRow);
       model.addConstr(bottom == bottomRow * nCol + xCol);
 
-      placeToCntPe(model, SmallVector<GRBVar, 5>{x, left, right, top, bottom},
-                   y, varName.at(op), varName.at(prodOp),
-                   "H_" + std::to_string(constrId));
+      if (failed(placeToCntPe(
+              model, SmallVector<GRBVar, 5>{x, left, right, top, bottom}, y,
+              varName.at(op), varName.at(prodOp),
+              "H_" + std::to_string(constrId)))) {
+
+        // llvm::errs() << "failed to place "
+        strategy = FailureStrategy::Mov;
+        spill = prodOp->getResult(0);
+        failUser = op;
+        return failure();
+      }
+
       constrId++;
     }
   }
@@ -532,7 +543,13 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
                                  varName, true, pe))) {
       strategy = FailureStrategy::Split;
       spill = val;
-      llvm::errs() << "Failed to create global live out for " << val << "\n";
+      llvm::errs() << "Failed to create global live out for " << val << " ";
+      if (isa<BlockArgument>(val))
+        for (auto [ind, bb] : llvm::enumerate(block->getParent()->getBlocks()))
+          if (&bb == val.getParentBlock()) {
+            llvm::errs() << ind << "\n";
+            break;
+          }
       return failure();
     }
   }
@@ -556,7 +573,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 60;
+  int time_limit = 100;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function
@@ -581,9 +598,18 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   createLocalDominanceConstraints(model, timeVarMap);
 
-  createLocalLivenessConstraints(model, timeVarMap, peVarMap, varName);
+  if (failed(createLocalLivenessConstraints(model, timeVarMap, peVarMap,
+                                            varName))) {
+    strategy = FailureStrategy::Abort;
+    return failure();
+  }
+  llvm::errs() << "Created local liveness constraints\n";
 
-  createHardwareConstraints(model, timeVarMap, peVarMap, varName);
+  if (failed(createHardwareConstraints(model, timeVarMap, peVarMap, varName))) {
+    // strategy = FailureStrategy::Abort;
+    return failure();
+  }
+  llvm::errs() << "Created hardware constraints\n";
 
   if (failed(createGlobalLiveOutInterConstraints(model, timeVarMap, peVarMap,
                                                  varName))) {
@@ -605,6 +631,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
     int solCount = model.get(GRB_IntAttr_SolCount);
     if (solCount == 0) {
       llvm::errs() << "No solution found within " << time_limit << "s\n";
+      strategy = FailureStrategy::Abort;
       return failure();
     }
     // If solCount > 0, continue with partial solution

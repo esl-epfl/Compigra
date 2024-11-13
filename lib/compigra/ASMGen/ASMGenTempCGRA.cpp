@@ -39,7 +39,7 @@ struct ASMGenTemporalCGRAPass
     OpBuilder builder(funcOp);
     TemporalCGRAScheduler scheduler(region, 3, 3, 3, builder);
     scheduler.createSchedulerAndSolve();
-    llvm::errs() << modOp << "\n";
+    // llvm::errs() << modOp << "\n";
     // if (failed(scheduler.createSchedulerAndSolve()))
     //   return signalPassFailure();
   }

@@ -111,7 +111,8 @@ static BlockArgument getCntBlockArgument(Value val, Block *succBlk) {
   return nullptr;
 }
 
-static SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg) {
+static SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg,
+                                                bool eraseUse = false) {
   SmallVector<Value, 2> srcOprands;
   Block *blk = arg.getOwner();
   unsigned argIndex = arg.getArgNumber();
@@ -119,12 +120,19 @@ static SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg) {
     Operation *termOp = predBlk->getTerminator();
     if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(termOp)) {
       srcOprands.push_back(branchOp.getOperand(argIndex));
+      if (eraseUse)
+        branchOp.eraseOperand(argIndex);
     } else if (auto branchOp =
                    dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
       if (predBlk == branchOp.getSuccessor(0)) {
         srcOprands.push_back(branchOp.getTrueOperand(argIndex));
+        // remove argIndex from the false operand
+        if (eraseUse)
+          branchOp.eraseOperand(argIndex + 2);
       } else {
         srcOprands.push_back(branchOp.getFalseOperand(argIndex));
+        if (eraseUse)
+          branchOp.eraseOperand(argIndex + 2 + branchOp.getNumTrueOperands());
       }
     }
   }
@@ -420,9 +428,16 @@ void TemporalCGRAScheduler::saveSubILPModelResult(
 
 void TemporalCGRAScheduler::insertMovOp(Value origVal, Operation *user) {
   builder.setInsertionPoint(user);
+  // determine whether origVal is fixed point type or integer type
+  Type valType = origVal.getType();
   auto zero = builder.create<arith::ConstantIntOp>(user->getLoc(), 0,
-                                                   builder.getIntegerType(32));
-  auto movOp = builder.create<arith::AddIOp>(user->getLoc(), origVal, zero);
+                                                   origVal.getType());
+  Operation *movOp;
+  if (isa<IntegerType>(valType))
+    movOp = builder.create<arith::AddIOp>(user->getLoc(), origVal, zero);
+  else if (isa<Float32Type>(valType))
+    movOp = builder.create<arith::AddFOp>(user->getLoc(), origVal, zero);
+
   user->replaceUsesOfWith(origVal, movOp->getResult(0));
 }
 
@@ -452,11 +467,12 @@ void TemporalCGRAScheduler::insertLSOps(Value origVal, unsigned memLoc,
           builder.create<cgra::LwiOp>(suc->getOperations().front().getLoc(),
                                       origVal.getType(), constOp->getResult(0));
       phiVal.replaceAllUsesWith(loadOp->getResult(0));
+      suc->eraseArgument(phiVal.getArgNumber());
+
       // insert swi op for all source operands
-      SmallVector<Value, 2> srcVals = getSrcOprandsOfPhi(phiVal);
+      SmallVector<Value, 2> srcVals = getSrcOprandsOfPhi(phiVal, true);
       for (auto src : srcVals) {
         insertLSOps(src, lastPtr, false);
-        // erase BlockArgument from the IR
       }
     }
     return;
@@ -481,11 +497,11 @@ void TemporalCGRAScheduler::insertLSOps(Value origVal, unsigned memLoc,
         scheduleSeq.begin(),
         std::find(scheduleSeq.begin(), scheduleSeq.end(), userBlock));
     // TODO[@YX]: avoid insert unnecessary lwi ops
-    if (userBlock == origVal.getParentBlock())
-      continue;
+
     if (blockIndex < scheduleIdx) {
       placeLSOpsToBlock(userBlock);
-      // return;
+      // if (userBlock == origVal.getParentBlock())
+      //   continue;
     }
 
     if (lwiOps.count(userBlock) != 0) {
@@ -568,7 +584,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
     scheduler.setLiveInPrerequisite(getExternalLiveIn(block),
                                     getInternalLiveIn(block));
 
-    int maxIter = 3;
+    int maxIter = 5;
     Operation *failUser = nullptr;
     Value spill = nullptr;
     int movNum = 1;
@@ -594,14 +610,14 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
           bool pushPhiToMem =
               isPhiRelatedValue(spill) && !spill.isa<BlockArgument>();
           insertLSOps(spill, UINT_MAX, pushPhiToMem);
-          if (pushPhiToMem) {
-            // observe the asm
-            return success();
-          }
           computeLiveValue();
           scheduler.setLiveValue(liveIns[block], liveOuts[block]);
           scheduler.setLiveInPrerequisite(getExternalLiveIn(block),
                                           getInternalLiveIn(block));
+        }
+        if (scheduler.getFailureStrategy() == FailureStrategy::Abort) {
+          llvm::errs() << "Failed to schedule block " << bb << "\n";
+          return failure();
         }
 
         maxIter--;
