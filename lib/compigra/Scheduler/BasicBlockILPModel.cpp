@@ -1,4 +1,4 @@
-//===- TemporalCGRAScheduler.cpp - Implement the class/functions of basic block
+//===- BasicBlockILPModel.cpp - Implement the class/functions of basic block
 // ILP model to schedule the executions of operations*- C++-* -------------===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
@@ -46,10 +46,10 @@ void BasicBlockILPModel::setLiveValue(SetVector<Value> liveIn,
 
   // split liveOut to be liveOutInter and liveOutExter
   for (auto val : liveOut) {
-    if (visibleOutside(val))
-      liveOutExter.push_back({val, UINT32_MAX});
-    else
-      liveOutInter.push_back({val, UINT32_MAX});
+    // if (visibleOutside(val))
+    //   liveOutExter.push_back({val, UINT32_MAX});
+    // else
+    liveOutInter.push_back({val, UINT32_MAX});
   }
 }
 
@@ -81,7 +81,7 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
                   const std::map<Operation *, GRBVar> opTimeVar,
                   const std::map<Operation *, GRBVar> opPeVar,
                   const std::map<Operation *, std::string> varName,
-                  bool strict = false, int constPE = -1) {
+                  bool strict = false, int constPE = -1, bool check = true) {
   GRBVar x, startT;
   if (srcOp) {
     x = opPeVar.at(srcOp);
@@ -158,12 +158,27 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
                                     srcOpName);
   }
   // check whether the model is feasible
-  model.optimize();
-  if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
-      model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)
-    return success();
+  if (check) {
+    model.optimize();
+    if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
+        model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)
+      return success();
+    return failure();
+  }
+  return success();
+}
 
-  return failure();
+void BasicBlockILPModel::createRAWConstraints(
+    GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar) {
+  for (auto pair : opRAWs) {
+    auto [dstOp, srcOp] = pair;
+    if (opTimeVar.count(srcOp) == 0 || opTimeVar.count(dstOp) == 0)
+      continue;
+    GRBVar x = opTimeVar.at(dstOp);
+    GRBVar y = opTimeVar.at(srcOp);
+    model.addConstr(x <= y + 1);
+    llvm::errs() << "RAW: " << *dstOp << " << " << *srcOp << "\n";
+  }
 }
 
 LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
@@ -171,7 +186,8 @@ LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
 
   // Consumer must be executed after the producer
   Operation *termOp = block->getTerminator();
-  for (auto [op, var] : opTimeVar) {
+  for (auto op : scheduleOps) {
+    GRBVar var = opTimeVar.at(op);
     model.addConstr(var <= opTimeVar.at(termOp));
 
     for (auto userOp : op->getUsers()) {
@@ -185,7 +201,7 @@ LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
 static LogicalResult placeToCntPe(GRBModel &model,
                                   SmallVector<GRBVar, 5> allowPe, GRBVar cntPe,
                                   std::string op1Name, std::string op2Name,
-                                  std::string prefix = "") {
+                                  std::string prefix = "", bool check = true) {
   GRBVar self = allowPe[0];
   GRBVar left = allowPe[1];
   GRBVar right = allowPe[2];
@@ -215,10 +231,12 @@ static LogicalResult placeToCntPe(GRBModel &model,
                                   bottom * fBottom + self * fSelf);
     model.addConstr(fLeft + fRight + fTop + fBottom + fSelf == 1);
   }
-  model.optimize();
-  if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
-      model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
-    return failure();
+  if (check) {
+    model.optimize();
+    if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
+        model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+      return failure();
+    }
   }
   return success();
 }
@@ -228,7 +246,11 @@ LogicalResult BasicBlockILPModel::createHardwareConstraints(
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
   unsigned constrId = 0;
-  for (auto [op, x] : opPeVar) {
+  bool checkSol = false;
+  for (auto op : scheduleOps) {
+    if (op == checkptr)
+      checkSol = true;
+    GRBVar x = opPeVar.at(op);
     SetVector<Operation *> producers;
     for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
       auto defOp = opVal.getDefiningOp();
@@ -285,12 +307,25 @@ LogicalResult BasicBlockILPModel::createHardwareConstraints(
       if (failed(placeToCntPe(
               model, SmallVector<GRBVar, 5>{x, left, right, top, bottom}, y,
               varName.at(op), varName.at(prodOp),
-              "H_" + std::to_string(constrId)))) {
+              "H_" + std::to_string(constrId), checkSol))) {
 
         // llvm::errs() << "failed to place "
-        strategy = FailureStrategy::Mov;
+        // if (strategy == FailureStrategy::Mov)
+        //   strategy = FailureStrategy::Mov;
         spill = prodOp->getResult(0);
         failUser = op;
+        checkptr = op;
+        llvm::errs() << "internal split for " << *prodOp << " -> " << *op
+                     << "\n";
+        if (strategy == FailureStrategy::Mov)
+          llvm::errs() << "strategy : mov"
+                       << "\n";
+        if (strategy == FailureStrategy::Split)
+          llvm::errs() << "strategy : split"
+                       << "\n";
+        if (strategy == FailureStrategy::Abort)
+          llvm::errs() << "strategy : abort"
+                       << "\n";
         return failure();
       }
 
@@ -352,8 +387,11 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInInterConstraints(
       model.addConstr(opPeVar.at(user) == pe);
       model.optimize();
       if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
-          model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL)
+          model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+        spill = val;
+        failUser = user;
         return failure();
+      }
     }
   }
   return success();
@@ -414,19 +452,26 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
     GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
-  for (auto [consumer, x] : opPeVar) {
+  bool check = false;
+  for (auto consumer : scheduleOps) {
     std::vector<Operation *> producers;
+    // llvm::errs() << "Create liveness constraints for: " << *consumer << "\n";
     for (auto [ind, opVal] : llvm::enumerate(consumer->getOperands())) {
       auto defOp = opVal.getDefiningOp();
       if (defOp && opPeVar.count(defOp) > 0)
         producers.push_back(opVal.getDefiningOp());
     }
+    if (consumer == checkptr)
+      check = true;
 
     for (auto prodOp : producers) {
       if (failed(blockPeAssignment(model, prodOp, consumer, opTimeVar, opPeVar,
-                                   varName))) {
+                                   varName, check))) {
         llvm::errs() << "Failed to create local liveness for " << *prodOp
                      << "\n";
+        spill = prodOp->getResult(0);
+        failUser = consumer;
+        checkptr = consumer;
         return failure();
       }
     }
@@ -437,6 +482,7 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
 LogicalResult BasicBlockILPModel::initVariablesForBlock(
     GRBModel &model, std::map<Operation *, GRBVar> &opTimeVar,
     std::map<Operation *, GRBVar> &opPeVar) {
+  scheduleOps.clear();
   for (auto [opId, op] : llvm::enumerate(block->getOperations())) {
     // Skip the constant operations which is mapped to Imm field
     if (isa<arith::ConstantOp>(op))
@@ -450,6 +496,7 @@ LogicalResult BasicBlockILPModel::initVariablesForBlock(
         model.addVar(0.0, nCol * nRow - 1, 0.0, GRB_INTEGER,
                      "pe_" + std::to_string(bbId) + "_" + std::to_string(opId));
     varName[&op] = std::to_string(bbId) + "_" + std::to_string(opId);
+    scheduleOps.push_back(&op);
   }
   return success();
 }
@@ -474,8 +521,6 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     // GRBVar useSum = model.addVar(0, availUse[p], 0, GRB_INTEGER);
     GRBLinExpr accumulatedSum = 0;
     for (auto [val, index] : liveOutInter) {
-      if (p == 0)
-        llvm::errs() << "LiveOutInter: " << val << "\n";
       Operation *defOp = val.getDefiningOp();
       if (!defOp || opTimeVar.count(defOp) == 0)
         continue;
@@ -499,6 +544,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
                      << "\n";
         strategy = FailureStrategy::Split;
         spill = val;
+        failUser = nullptr;
         return failure();
       }
     }
@@ -573,7 +619,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 100;
+  int time_limit = 600;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function
@@ -588,28 +634,28 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   if (failed(createGlobalLiveInInterConstraints(model, timeVarMap, peVarMap)))
     return failure();
-
   llvm::errs() << "Created global live in inter constraints\n";
 
   if (failed(createGlobalLiveInExterConstraints(model, timeVarMap, peVarMap)))
     return failure();
-
   llvm::errs() << "Created global live in exter constraints\n";
 
-  createLocalDominanceConstraints(model, timeVarMap);
+  createRAWConstraints(model, timeVarMap);
 
-  if (failed(createLocalLivenessConstraints(model, timeVarMap, peVarMap,
-                                            varName))) {
-    strategy = FailureStrategy::Abort;
-    return failure();
-  }
-  llvm::errs() << "Created local liveness constraints\n";
+  createLocalDominanceConstraints(model, timeVarMap);
 
   if (failed(createHardwareConstraints(model, timeVarMap, peVarMap, varName))) {
     // strategy = FailureStrategy::Abort;
     return failure();
   }
   llvm::errs() << "Created hardware constraints\n";
+
+  if (failed(createLocalLivenessConstraints(model, timeVarMap, peVarMap,
+                                            varName))) {
+    // strategy = FailureStrategy::Abort;
+    return failure();
+  }
+  llvm::errs() << "Created local liveness constraints\n";
 
   if (failed(createGlobalLiveOutInterConstraints(model, timeVarMap, peVarMap,
                                                  varName))) {
@@ -619,6 +665,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   if (failed(createGlobalLiveOutExterConstraints(model, timeVarMap, peVarMap)))
     return failure();
+  llvm::errs() << "Created global live out exter constraints\n";
 
   // Optimize the model
 

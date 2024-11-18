@@ -3,6 +3,7 @@ add_compigra_library(MLIRCompigraKernelSchedule
   ModuloScheduleAdapter.cpp
   TemporalCGRAScheduler.cpp 
   BasicBlockILPModel.cpp
+  BasicBlockOpAssignment.cpp
 
   LINK_LIBS PUBLIC
   MLIRIR

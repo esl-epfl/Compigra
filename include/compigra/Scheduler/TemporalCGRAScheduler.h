@@ -49,11 +49,15 @@ public:
   }
 
 private:
-  std::map<Operation *, ScheduleUnit> globalConstrs;
+  // std::map<Operation *, ScheduleUnit> globalConstrs;
   std::vector<std::pair<unsigned, Value>> memStack;
 
   std::map<Block *, SetVector<Value>> liveIns;
   std::map<Block *, SetVector<Value>> liveOuts;
+
+  std::map<Operation *, ScheduleUnit> getBlockSubSolution(Block *block);
+
+  SetVector<std::pair<Operation *, Operation *>> opRAWs;
 
   liveVec liveValInterPlaces;
   liveVec liveValExterPlaces;
@@ -69,13 +73,25 @@ private:
   liveVec getInternalLiveIn(Block *block);
 
   OpBuilder builder;
+  // TODO[@YW]: add the function for rollback the useless Mov
   void insertMovOp(Value origVal, Operation *user);
-  void insertLSOps(Value saveVal, unsigned memLoc = UINT_MAX,
-                   bool processCntPhi = false);
-  void placeLSOpsToBlock(Block *block);
+  cgra::LwiOp insertLoadOp(Operation *refOp, unsigned addr, Value origVal,
+                           unsigned opIndex = -1);
+
+  LogicalResult splitDFGWithLSOps(Value saveVal, Operation *failUser = nullptr,
+                                  unsigned memLoc = UINT_MAX,
+                                  bool processCntPhi = false);
+  void insertInternalLSOps(Operation *srcOp, Operation *dstOp);
+  void placeLwiOpToBlock(Block *block, Operation *refOp, unsigned opIndex,
+                         cgra::LwiOp lwiOp);
+  LogicalResult placeLwiOpToBlock(Block *block, BlockArgument arg,
+                                  cgra::LwiOp lwiOp);
+  void placeSwiOpToBlock(Block *block, Operation *refOp, cgra::SwiOp swiOp);
 
   // sequence of blocks to be scheduled
   std::vector<Block *> scheduleSeq;
+
+  void calculateTemporalSpatialSchedule(const std::string fileName);
 
   void makeScheduleSeq();
   unsigned scheduleIdx = 0;

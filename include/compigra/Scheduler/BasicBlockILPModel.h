@@ -1,4 +1,4 @@
-//===- TemporalCGRAScheduler.h - Declares the class/functions of basic block
+//===- BasicBlockILPModel.h - Declares the class/functions of basic block
 // ILP model to schedule the executions of operations*- C++-* -------------===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
@@ -46,7 +46,7 @@ enum class FailureStrategy { Abort, Mov, Split };
 class BasicBlockILPModel : public CGRAKernelScheduler<ScheduleUnitBB> {
 public:
   BasicBlockILPModel(unsigned maxReg, unsigned nRow, unsigned nCol,
-                         Block *block, unsigned bbId, OpBuilder builder)
+                     Block *block, unsigned bbId, OpBuilder builder)
       : CGRAKernelScheduler(maxReg, nRow, nCol), block(block), bbId(bbId),
         builder(builder) {}
 
@@ -65,12 +65,12 @@ public:
   void setLiveInPrerequisite(const liveVec liveInExter,
                              const liveVec liveInInter) {
     // print liveInExter and liveInInter
-    for (auto [val, ind] : liveInExter) {
-      llvm::errs() << "LiveInExter: " << val << " " << ind << "\n";
-    }
-    for (auto [val, ind] : liveInInter) {
-      llvm::errs() << "LiveInInter: " << val << " " << ind << "\n";
-    }
+    // for (auto [val, ind] : liveInExter) {
+    //   llvm::errs() << "LiveInExter: " << val << " " << ind << "\n";
+    // }
+    // for (auto [val, ind] : liveInInter) {
+    //   llvm::errs() << "LiveInInter: " << val << " " << ind << "\n";
+    // }
     this->liveInInter = liveInInter;
     this->liveInExter = liveInExter;
   }
@@ -82,6 +82,14 @@ public:
   Value getSpillVal() { return spill; }
   Operation *getFailUser() { return failUser; }
 
+  void setCheckPoint(Operation *op) { checkptr = op; }
+  Operation *getCheckPoint() { return checkptr; }
+
+  void
+  setRAWPair(const SetVector<std::pair<Operation *, Operation *>> constrRAWs) {
+    this->opRAWs = constrRAWs;
+  }
+
 private:
   // Interface for the the global schduler if the ILP model does not have
   // solution
@@ -91,6 +99,9 @@ private:
   Value spill = nullptr;
   Operation *failUser = nullptr;
   OpBuilder builder;
+  Operation *checkptr = nullptr;
+
+  SetVector<std::pair<Operation *, Operation *>> opRAWs;
 
   Block *block;
   unsigned bbId;
@@ -103,6 +114,7 @@ private:
   liveVec liveInExter;
   liveVec liveOutInter;
   liveVec liveOutExter;
+  std::vector<Operation *> scheduleOps;
 
 #ifdef HAVE_GUROBI
   /// Initialize the mapping variables for the block operations.
@@ -112,6 +124,9 @@ private:
 
   LogicalResult createLocalDominanceConstraints(
       GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar);
+
+  void createRAWConstraints(GRBModel &model,
+                            const std::map<Operation *, GRBVar> opTimeVar);
 
   LogicalResult createLocalLivenessConstraints(
       GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
