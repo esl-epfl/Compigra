@@ -12,6 +12,7 @@
 
 #include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/IR/Dominance.h"
 
 using namespace mlir;
@@ -58,7 +59,6 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     // Branch and constant operation is not interfered with other
     // operations
     Operation *op = it->second;
-    llvm::errs() << "---" << *op << "\n";
     if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
       continue;
     if (op->getNumResults() > 0)
@@ -72,6 +72,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
         def[op].insert(getValueIndex(op->getResult(0), opMap));
       }
   }
+  llvm::errs() << "opMap size: " << opMap.size() << "\n";
 
   // Add operands to the graph
   for (auto it = opList.rbegin(); it != opList.rend(); ++it) {
@@ -79,7 +80,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
       continue;
     for (auto [opInd, operand] : llvm::enumerate(op->getOperands())) {
-      auto defOp = getCntDefOpIndirectly(operand, op->getBlock())[0];
+      auto defOp = getCntDefOpIndirectly(operand)[0];
       if (isa<LLVM::ConstantOp>(defOp))
         continue;
       // Skip the branch operator
@@ -88,12 +89,13 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
 
       // TODO[@YYY]: handle the block argument(phi node) case
       if (getValueIndex(operand, opMap) == -1) {
+        llvm::errs() << operand << " not found in opMap\n";
         opMap[ind] = operand;
         graph.addVertex(ind);
         // if the operand is a block argument and its source operation is
         // executed inside the PE, add it to the vertex set
         if (isa<BlockArgument>(operand)) {
-          auto producer = getCntDefOpIndirectly(operand, op->getBlock())[0];
+          auto producer = getCntDefOpIndirectly(operand)[0];
           // if find producer in opList
           if (std::any_of(opList.begin(), opList.end(),
                           [producer](const auto &entry) {
@@ -106,6 +108,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
       use[op].insert(getValueIndex(operand, opMap));
     }
   }
+  llvm::errs() << "calculate use done\n";
 
   std::vector<Operation *> sortedOps;
   for (auto [t, op] : opList)

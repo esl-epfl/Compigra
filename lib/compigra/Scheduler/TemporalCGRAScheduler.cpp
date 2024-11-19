@@ -16,6 +16,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include <iomanip> // For std::setw
 
 using namespace mlir;
 using namespace compigra;
@@ -855,13 +856,6 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
     scheduleIdx++;
   }
 
-  // write into complete liveOut result
-  // print solution
-  // llvm::errs() << "\n====================\n";
-  // for (auto [op, su] : solution) {
-  //   llvm::errs() << "Operation: " << *op << " Time: " << su.time
-  //                << " PE: " << su.pe << "\n";
-  // }
   calculateTemporalSpatialSchedule("temporalSpatialSchedule.csv");
   return success();
 }
@@ -894,8 +888,54 @@ void TemporalCGRAScheduler::calculateTemporalSpatialSchedule(
     std::string str;
     llvm::raw_string_ostream rso(str);
     rso << *op;
-    csvFile << rso.str() << "&"
-            << "time"
-            << "&" << su.time << "&" << su.pe << "\n";
+    csvFile << rso.str() << "&" << su.time << "&" << su.pe << "\n";
+  }
+}
+
+// Function to split a string by a delimiter
+static std::vector<std::string> split(const std::string &str, char delimiter) {
+  std::vector<std::string> tokens;
+  std::stringstream ss(str);
+  std::string token;
+
+  while (std::getline(ss, token, delimiter)) {
+    tokens.push_back(token);
+  }
+  return tokens;
+}
+
+LogicalResult
+TemporalCGRAScheduler::readScheduleResult(const std::string filename) {
+  std::vector<std::vector<std::string>> data;
+  std::map<std::string, ScheduleUnitBB> scheduleResult;
+  std::ifstream file(filename);
+
+  if (!file.is_open()) {
+    llvm::errs() << "Error: Could not open the file " << filename << "\n";
+    return failure();
+  }
+
+  std::string line;
+  while (std::getline(file, line)) {
+    // Split the line by commas and store the result
+    std::vector<std::string> row = split(line, '&');
+    scheduleResult[row[0]] = {std::stoi(row[1]), std::stoi(row[2])};
+    data.push_back(row);
+  }
+
+  file.close();
+
+  for (auto &op : region.getOps()) {
+    std::string opName;
+    llvm::raw_string_ostream rso(opName);
+    rso << op;
+    if (scheduleResult.find(opName) != scheduleResult.end()) {
+      auto su = scheduleResult[opName];
+      solution[&op] = {su.time, su.pe, -1};
+      std::ostringstream oss;
+      oss << std::left << std::setw(70) << opName << std::setw(10) << su.time
+          << std::setw(10) << su.pe;
+      llvm::errs() << oss.str() << "\n";
+    }
   }
 }

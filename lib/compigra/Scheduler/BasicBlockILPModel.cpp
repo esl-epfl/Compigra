@@ -668,8 +668,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   llvm::errs() << "Created global live out exter constraints\n";
 
   // Optimize the model
-
-  model.write("model_" + std::to_string(bbId) + ".lp");
+  // model.write("model_" + std::to_string(bbId) + ".lp");
   model.optimize();
 
   if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
@@ -685,19 +684,6 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   } else {
     llvm::errs() << "Model is infeasible\n";
     return failure();
-  }
-
-  std::ofstream csvFile("output_" + std::to_string(bbId) + ".csv");
-  model.write("solution_" + std::to_string(bbId) + ".sol");
-
-  for (auto [op, var] : timeVarMap) {
-    std::string str;
-    llvm::raw_string_ostream rso(str);
-    rso << *op;
-    csvFile << rso.str() << "&" << var.get(GRB_StringAttr_VarName) << "&"
-            << var.get(GRB_DoubleAttr_X) << "&"
-            << peVarMap[op].get(GRB_StringAttr_VarName) << "&"
-            << peVarMap[op].get(GRB_DoubleAttr_X) << "\n";
   }
 
   writeLiveOutResult(peVarMap);

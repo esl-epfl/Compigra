@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/ASMGen/ASMGenTempCGRA.h"
+#include "compigra/ASMGen/OpenEdgeASM.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
@@ -34,14 +35,27 @@ struct ASMGenTemporalCGRAPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     auto funcOp = *modOp.getOps<func::FuncOp>().begin();
+    std::string outDir = "schedule.txt";
 
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
     TemporalCGRAScheduler scheduler(region, 3, 3, 3, builder);
-    scheduler.createSchedulerAndSolve();
     // llvm::errs() << modOp << "\n";
-    // if (failed(scheduler.createSchedulerAndSolve()))
+    scheduler.readScheduleResult("temporalSpatialSchedule.csv");
+    OpenEdgeASMGen asmGen(region, 3, nRow);
+    // if (failed(scheduler.createSchedulerAndSolve())) {
+    //   llvm::errs() << "Failed to create scheduler and solve\n";
     //   return signalPassFailure();
+    // }
+
+    // assign schedule results and produce assembly
+    asmGen.setSolution(scheduler.getSolution());
+    llvm::errs() << "Allocate Register...\n";
+    if (failed(asmGen.allocateRegisters(scheduler.knownRes))) {
+      llvm::errs() << "Failed to allocate registers\n";
+      return signalPassFailure();
+    }
+    asmGen.printKnownSchedule(true, 0, outDir);
   }
 };
 

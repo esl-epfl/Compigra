@@ -39,8 +39,7 @@ SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val);
 /// Functions to get the operation that is connected to the value via branch.
 /// If the value has definition, return the operation that defines the value.
 /// Otherwise, return the producer operations that propagate to the value.
-SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
-                                                  Block *targetBlock = nullptr);
+SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val);
 
 template <typename T> class CGRAKernelScheduler {
 public:

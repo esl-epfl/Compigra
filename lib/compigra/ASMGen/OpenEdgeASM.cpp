@@ -15,6 +15,7 @@
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
@@ -129,7 +130,7 @@ std::map<int, int> getLimitationUseWithPhiNode(
     // BlockArgument arg = dyn_cast<BlockArgument>(opMap.at(node));
     auto arg = opMap.at(node);
 
-    auto defOps = getCntDefOpIndirectly(arg, arg.getParentBlock());
+    auto defOps = getCntDefOpIndirectly(arg);
     // allocate register for the phi node
     std::unordered_set<int> usedColors;
     for (auto u : graph.adjList[node]) {
@@ -343,12 +344,12 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
   auto pcCtrlFlow = getPcCtrlFlow();
   // print pcCtrlFlow
-  for (auto [time, suc] : pcCtrlFlow) {
-    llvm::errs() << "Time: " << time << " ->{ ";
-    for (auto s : suc)
-      llvm::errs() << s << ", ";
-    llvm::errs() << "}\n";
-  }
+  // for (auto [time, suc] : pcCtrlFlow) {
+  //   llvm::errs() << "Time: " << time << " ->{ ";
+  //   for (auto s : suc)
+  //     llvm::errs() << s << ", ";
+  //   llvm::errs() << "}\n";
+  // }
 
   for (size_t pe = 0; pe < nRow * nCol; ++pe) {
     llvm::errs() << "\nPE = " << pe << "\n";
@@ -403,7 +404,7 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
       if (allUserOutside)
         solution[op].reg = maxReg;
     }
-
+    llvm::errs() << "PE " << pe << " reference done\n";
     // allocate register for the operations in the PE
     if (failed(allocateOutRegInPE(ops, solution, maxReg, pcCtrlFlow))) {
       llvm::errs() << "Failed to allocate register for PE " << pe << "\n";
@@ -545,8 +546,7 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
 
     // Get defition operation
     if (op->getNumOperands() > leftId && inst.opA == "Unknown") {
-      auto producerA =
-          getCntDefOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
+      auto producerA = getCntDefOpIndirectly(op->getOperand(leftId))[0];
       if (isa<LLVM::ConstantOp>(producerA))
         // assign opA to be Imm
         inst.opA = std::to_string(
@@ -560,8 +560,7 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
     }
 
     if (op->getNumOperands() > leftId + 1 && inst.opB == "Unknown") {
-      auto producerB =
-          getCntDefOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
+      auto producerB = getCntDefOpIndirectly(op->getOperand(leftId + 1))[0];
       if (isa<LLVM::ConstantOp>(producerB))
         // assign opA to be Imm
         inst.opB = std::to_string(
@@ -637,8 +636,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   if (op->getNumOperands() > 0) {
     // check whether the operand is immediate
-    auto cntOp =
-        getCntDefOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(leftId))[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opA = imm ? " " + std::to_string(imm) : " ZERO";
@@ -648,8 +646,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   std::string opB = "";
   if (op->getNumOperands() > 1) {
-    auto cntOp =
-        getCntDefOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(leftId + 1))[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       opB = imm ? "," + std::to_string(imm) : ",ZERO";
@@ -665,7 +662,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   }
 
   if (isa<cgra::BzfaOp, cgra::BsfaOp>(op)) {
-    auto cntOp = getCntDefOpIndirectly(op->getOperand(0), op->getBlock())[0];
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(0))[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       addition = imm ? " " + std::to_string(imm) : " ZERO";
@@ -706,11 +703,7 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
   for (int t = getKernelStart(); t <= endTime; t++) {
     // Get the operations scheduled at the time step
     auto ops = getOperationsAtTime(t);
-    // print ops
-    // for (auto [pe, op] : ops) {
-    //   llvm::errs() << "Time = " << t << " PE = " << pe << " ";
-    //   llvm::errs() << *op << "\n";
-    // }
+
     std::vector<std::string> asmCodeLine;
     bool isNOP = true;
     for (int i = 0; i < nRow; i++) {

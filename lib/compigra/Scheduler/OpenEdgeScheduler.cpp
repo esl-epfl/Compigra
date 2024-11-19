@@ -14,6 +14,7 @@
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
 #endif
@@ -93,8 +94,7 @@ SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val) {
   return cntOps;
 }
 
-SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
-                                                  Block *targetBlock) {
+SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val) {
   SmallVector<Operation *, 4> cntOps;
   if (!val.isa<BlockArgument>()) {
     cntOps.push_back(val.getDefiningOp());
@@ -102,37 +102,31 @@ SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
   }
 
   // if the value is not block argument, return empty vector
-  // TODO[@YYY]: remove targetBlock from parameter list
   Block *block = val.getParentBlock();
   Value propVal;
 
   int argInd = val.cast<BlockArgument>().getArgNumber();
   for (auto pred : block->getPredecessors()) {
     Operation *termOp = pred->getTerminator();
-    // Return operation does not propagate block argument
-    if (isa<LLVM::ReturnOp>(termOp))
-      continue;
-
-    if (isa<LLVM::BrOp>(termOp)) {
+    if (isa<LLVM::BrOp>(termOp) || isa<cf::BranchOp>(termOp)) {
       // the corresponding block argument is the argInd'th operator
       propVal = termOp->getOperand(argInd);
-      auto defOps = getCntDefOpIndirectly(propVal, targetBlock);
+      auto defOps = getCntDefOpIndirectly(propVal);
       cntOps.append(defOps.begin(), defOps.end());
     } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
       // The terminator would be beq, bne, blt, bge, etc, the propagated value
       // is counted from 2nd operand.
-      if (targetBlock == condBr.getTrueDest())
+      if (block == condBr.getTrueDest())
         propVal = condBr.getTrueOperand(argInd);
-      else if (targetBlock == condBr.getFalseDest()) {
+      else if (block == condBr.getFalseDest()) {
         propVal = condBr.getFalseOperand(argInd);
       } else
         continue;
 
-      auto defOps = getCntDefOpIndirectly(propVal, targetBlock);
+      auto defOps = getCntDefOpIndirectly(propVal);
       cntOps.append(defOps.begin(), defOps.end());
     }
   }
-
   return cntOps;
 }
 } // namespace compigra
@@ -639,7 +633,7 @@ void OpenEdgeKernelScheduler::initOpSpaceConstraints(
 
       // The getCntDefOpIndirectly gets definition operations of the operand
       // which should be unique unless the operand is block argument.
-      auto defOps = getCntDefOpIndirectly(opVal, op->getBlock());
+      auto defOps = getCntDefOpIndirectly(opVal);
       for (auto defOp : defOps) {
         producers.push_back(defOp);
       }

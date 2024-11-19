@@ -48,6 +48,8 @@ public:
     blockEndT[block] = timeEnd;
   }
 
+  LogicalResult readScheduleResult(const std::string fileName);
+
 private:
   // std::map<Operation *, ScheduleUnit> globalConstrs;
   std::vector<std::pair<unsigned, Value>> memStack;
