@@ -31,7 +31,7 @@ Operation *getCntUseOpIndirectly(OpOperand &useOpr) {
   unsigned argIndex = useOpr.getOperandNumber();
   // If the userOp is branchOp or conditionalOp, analyze which operation uses
   // the block argument
-  if (isa<LLVM::BrOp>(cntOp)) {
+  if (isa<LLVM::BrOp>(cntOp) || isa<cf::BranchOp>(cntOp)) {
     Block *userBlock = cntOp->getBlock()->getSuccessor(0);
     auto users = userBlock->getArgument(argIndex).getUsers();
     cntOp = *users.begin();
@@ -61,7 +61,7 @@ SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val) {
   for (auto &use : val.getUses()) {
     auto user = use.getOwner();
     auto argIndex = use.getOperandNumber();
-    if (isa<LLVM::BrOp>(user)) {
+    if (isa<LLVM::BrOp>(user) || isa<cf::BranchOp>(user)) {
       Block *currBlock = user->getBlock();
       Block *userBlock = user->getBlock()->getSuccessor(0);
       // find the corresponding users that use the block argument

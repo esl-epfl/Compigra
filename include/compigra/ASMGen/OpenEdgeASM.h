@@ -96,6 +96,7 @@ private:
   Region &region;
   unsigned maxReg;
   unsigned nRow, nCol;
+  SmallVector<Operation *> dropJumpOps;
 
   // The shedule result might not start from 0, the baseTime is the additional
   // time step to ensure the schedule kernel starts from startPC;
@@ -129,9 +130,11 @@ private:
 
   /// Operation map to fit into OpenEdge ISA format
   std::map<std::string, std::string> isaMap = {
-      {"ADD", "SADD"}, {"SUB", "SSUB"}, {"MUL", "SMUL"}, {"DIV", "SDIV"},
-      {"OR", "LOR"},   {"XOR", "LXOR"}, {"LSHR", "SRT"}, {"ASHR", "SRA"},
-      {"SHL", "SLT"},  {"AND", "LAND"}, {"BR", "JUMP"}};
+      {"ADD", "SADD"},  {"ADDI", "SADD"}, {"ADDF", "SADD"}, {"SUB", "SSUB"},
+      {"SUBI", "SSUB"}, {"SUBF", "SSUB"}, {"MULI", "SMUL"}, {"MULF", "FXPMUL"},
+      {"MUL", "SMUL"},  {"DIV", "SDIV"},  {"OR", "LOR"},    {"XOR", "LXOR"},
+      {"LSHR", "SRT"},  {"ASHR", "SRA"},  {"SHL", "SLT"},   {"AND", "LAND"},
+      {"BR", "JUMP"}};
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",

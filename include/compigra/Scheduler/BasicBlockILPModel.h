@@ -14,7 +14,9 @@
 #ifndef BASIC_BLOCK_ILP_MODEL_H
 #define BASIC_BLOCK_ILP_MODEL_H
 
+#include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
 #endif
@@ -32,8 +34,6 @@ struct ScheduleUnitBB {
 
 // Vector to store the live value and its corresponding PE.
 using liveVec = std::vector<std::pair<Value, unsigned>>;
-
-bool isPhiRelatedValue(Value val);
 
 /// Strategy to handle BasicBlockILPModel failure, if Abort, abort the
 /// schedule, if Mov, insert an add operation which can extend the value
@@ -54,7 +54,24 @@ public:
 
   std::map<Operation *, ScheduleUnitBB> getSolution() { return solution; }
 
-  void setLiveValue(SetVector<Value> liveIn, SetVector<Value> liveOut);
+  void setLiveValue(SetVector<Value> liveIn, SetVector<Value> liveOut) {
+    liveOutExter.clear();
+    liveOutInter.clear();
+
+    // split liveOut to be liveOutInter and liveOutExter
+    for (auto val : liveOut) {
+      // if (visibleOutside(val))
+      //   liveOutExter.push_back({val, UINT32_MAX});
+      // else
+      liveOutInter.push_back({val, UINT32_MAX});
+    }
+
+    // liveInExter.clear();
+    // liveInInter.clear();
+    // for (auto val : liveIn) {
+    //   liveInInter.push_back({val, UINT32_MAX});
+    // }
+  }
   void setStoreAddr(unsigned addr) { storeAddr = addr; }
 
   // void removeSpillOut(Value val) { liveOut.remove(val); }
@@ -65,14 +82,20 @@ public:
   void setLiveInPrerequisite(const liveVec liveInExter,
                              const liveVec liveInInter) {
     // print liveInExter and liveInInter
-    // for (auto [val, ind] : liveInExter) {
-    //   llvm::errs() << "LiveInExter: " << val << " " << ind << "\n";
-    // }
-    // for (auto [val, ind] : liveInInter) {
-    //   llvm::errs() << "LiveInInter: " << val << " " << ind << "\n";
-    // }
+    for (auto [val, ind] : liveInExter) {
+      llvm::errs() << "LiveInExter: " << val << " " << ind << "\n";
+    }
+    for (auto [val, ind] : liveInInter) {
+      llvm::errs() << "LiveInInter: " << val << " " << ind << "\n";
+    }
     this->liveInInter = liveInInter;
     this->liveInExter = liveInExter;
+  }
+
+  void setLiveOutPrerequisite(const liveVec liveOutExter,
+                              const liveVec liveOutInter) {
+    this->liveOutInter = liveOutInter;
+    this->liveOutExter = liveOutExter;
   }
   void setFailureStrategy(FailureStrategy strategy) {
     this->strategy = strategy;
@@ -89,6 +112,8 @@ public:
   setRAWPair(const SetVector<std::pair<Operation *, Operation *>> constrRAWs) {
     this->opRAWs = constrRAWs;
   }
+
+  void saveSubILPModelResult(std::string filename);
 
 private:
   // Interface for the the global schduler if the ILP model does not have

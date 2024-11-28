@@ -35,20 +35,20 @@ struct ASMGenTemporalCGRAPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     auto funcOp = *modOp.getOps<func::FuncOp>().begin();
-    std::string outDir = "schedule.txt";
+    std::string outDir = "out";
 
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
-    TemporalCGRAScheduler scheduler(region, 3, 3, 3, builder);
+    TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
     // llvm::errs() << modOp << "\n";
-    scheduler.readScheduleResult("temporalSpatialSchedule.csv");
-    OpenEdgeASMGen asmGen(region, 3, nRow);
-    // if (failed(scheduler.createSchedulerAndSolve())) {
-    //   llvm::errs() << "Failed to create scheduler and solve\n";
-    //   return signalPassFailure();
-    // }
+    if (failed(scheduler.createSchedulerAndSolve())) {
+      llvm::errs() << "Failed to create scheduler and solve\n";
+      return signalPassFailure();
+    }
 
     // assign schedule results and produce assembly
+    // scheduler.readScheduleResult("temporalSpatialSchedule.csv");
+    OpenEdgeASMGen asmGen(region, 3, nRow);
     asmGen.setSolution(scheduler.getSolution());
     llvm::errs() << "Allocate Register...\n";
     if (failed(asmGen.allocateRegisters(scheduler.knownRes))) {

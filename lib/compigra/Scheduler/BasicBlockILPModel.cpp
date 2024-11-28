@@ -37,22 +37,6 @@ static bool visibleOutside(Value val) {
   return true;
 }
 
-void BasicBlockILPModel::setLiveValue(SetVector<Value> liveIn,
-                                      SetVector<Value> liveOut) {
-  // this->liveIn = liveIn;
-  // this->liveOut = liveOut;
-  liveOutExter.clear();
-  liveOutInter.clear();
-
-  // split liveOut to be liveOutInter and liveOutExter
-  for (auto val : liveOut) {
-    // if (visibleOutside(val))
-    //   liveOutExter.push_back({val, UINT32_MAX});
-    // else
-    liveOutInter.push_back({val, UINT32_MAX});
-  }
-}
-
 #ifdef HAVE_GUROBI
 static void addUnequalVarConstr(GRBModel &model, GRBVar x, GRBVar y) {
   GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
@@ -190,9 +174,15 @@ LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
     GRBVar var = opTimeVar.at(op);
     model.addConstr(var <= opTimeVar.at(termOp));
 
-    for (auto userOp : op->getUsers()) {
-      if (opTimeVar.count(userOp) > 0)
-        model.addConstr(var + 1 <= opTimeVar.at(userOp));
+    for (auto &use : op->getUses()) {
+      auto userOp = use.getOwner();
+      if (opTimeVar.count(userOp) == 0)
+        continue;
+      // if (isa<cf::BranchOp>(userOp))
+      //   continue;
+      // if (isa<cgra::ConditionalBranchOp>(userOp) && use.getOperandNumber() >= 2)
+      //   continue;
+      model.addConstr(var + 1 <= opTimeVar.at(userOp));
     }
   }
   return success();
@@ -223,9 +213,9 @@ static LogicalResult placeToCntPe(GRBModel &model,
   if (prefix != "") {
     model.addQConstr(cntPe == left * fLeft + right * fRight + top * fTop +
                                   bottom * fBottom + self * fSelf,
-                     "N_" + prefix);
+                     "Nbr_" + prefix);
     model.addConstr(fLeft + fRight + fTop + fBottom + fSelf == 1,
-                    "N_" + prefix);
+                    "NbrF_" + prefix);
   } else {
     model.addQConstr(cntPe == left * fLeft + right * fRight + top * fTop +
                                   bottom * fBottom + self * fSelf);
@@ -246,10 +236,7 @@ LogicalResult BasicBlockILPModel::createHardwareConstraints(
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
   unsigned constrId = 0;
-  bool checkSol = false;
   for (auto op : scheduleOps) {
-    if (op == checkptr)
-      checkSol = true;
     GRBVar x = opPeVar.at(op);
     SetVector<Operation *> producers;
     for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
@@ -307,11 +294,8 @@ LogicalResult BasicBlockILPModel::createHardwareConstraints(
       if (failed(placeToCntPe(
               model, SmallVector<GRBVar, 5>{x, left, right, top, bottom}, y,
               varName.at(op), varName.at(prodOp),
-              "H_" + std::to_string(constrId), checkSol))) {
+              "H_" + std::to_string(constrId), true))) {
 
-        // llvm::errs() << "failed to place "
-        // if (strategy == FailureStrategy::Mov)
-        //   strategy = FailureStrategy::Mov;
         spill = prodOp->getResult(0);
         failUser = op;
         checkptr = op;
@@ -380,7 +364,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInInterConstraints(
   unsigned constrId = 0;
   for (auto [val, pe] : liveInInter) {
     for (auto user : val.getUsers()) {
-      if (opPeVar.count(user) == 0)
+      if (opPeVar.count(user) == 0 || pe == UINT32_MAX)
         continue;
 
       // the user operation should be assigned to the same PE
@@ -405,7 +389,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
   unsigned constrId = 0;
   for (auto [val, pe] : liveInExter) {
     for (auto user : val.getUsers()) {
-      if (opPeVar.count(user) == 0)
+      if (opPeVar.count(user) == 0 || pe == UINT32_MAX)
         continue;
 
       // block the PE until the liveIn value is consumed
@@ -483,7 +467,8 @@ LogicalResult BasicBlockILPModel::initVariablesForBlock(
     GRBModel &model, std::map<Operation *, GRBVar> &opTimeVar,
     std::map<Operation *, GRBVar> &opPeVar) {
   scheduleOps.clear();
-  for (auto [opId, op] : llvm::enumerate(block->getOperations())) {
+  unsigned opId = 0;
+  for (auto &op : block->getOperations()) {
     // Skip the constant operations which is mapped to Imm field
     if (isa<arith::ConstantOp>(op))
       continue;
@@ -497,6 +482,7 @@ LogicalResult BasicBlockILPModel::initVariablesForBlock(
                      "pe_" + std::to_string(bbId) + "_" + std::to_string(opId));
     varName[&op] = std::to_string(bbId) + "_" + std::to_string(opId);
     scheduleOps.push_back(&op);
+    opId++;
   }
   return success();
 }
@@ -508,6 +494,8 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
   // the inter value should be distributed among the PEs
   std::vector<int> availUse(nRow * nCol, 2);
   for (auto &[val, index] : liveInInter) {
+    if (index == UINT32_MAX)
+      continue;
     availUse[index] -= 1;
   }
   // CANCEL PRINT
@@ -521,6 +509,8 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     // GRBVar useSum = model.addVar(0, availUse[p], 0, GRB_INTEGER);
     GRBLinExpr accumulatedSum = 0;
     for (auto [val, index] : liveOutInter) {
+      if (index == UINT32_MAX)
+        continue;
       Operation *defOp = val.getDefiningOp();
       if (!defOp || opTimeVar.count(defOp) == 0)
         continue;
@@ -575,7 +565,6 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
     }
 
     // keep the liveOut value if it is get from the external block
-
     auto it = std::find_if(
         liveInExter.begin(), liveInExter.end(),
         [val](std::pair<Value, unsigned> p) { return p.first == val; });
@@ -585,6 +574,8 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
       return failure();
     }
     unsigned pe = it->second;
+    if (pe == UINT32_MAX)
+      continue;
     if (failed(blockPeAssignment(model, nullptr, termOp, opTimeVar, opPeVar,
                                  varName, true, pe))) {
       strategy = FailureStrategy::Split;
@@ -611,6 +602,18 @@ LogicalResult BasicBlockILPModel::createObjetiveFunction(
   GRBLinExpr obj = opTimeVar.at(termOp);
   model.setObjective(obj, GRB_MINIMIZE);
   return success();
+}
+
+void BasicBlockILPModel::saveSubILPModelResult(std::string filename) {
+  std::ofstream csvFile(filename);
+  // If the model is infeasible, write the model to solution
+  for (auto [op, res] : solution) {
+    std::string str;
+    llvm::raw_string_ostream rso(str);
+    rso << *op;
+    csvFile << rso.str() << "&" << res.time << "&" << res.pe << "\n";
+  }
+  csvFile.close();
 }
 
 LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
@@ -668,7 +671,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   llvm::errs() << "Created global live out exter constraints\n";
 
   // Optimize the model
-  // model.write("model_" + std::to_string(bbId) + ".lp");
+  model.write("model_" + std::to_string(bbId) + ".lp");
   model.optimize();
 
   if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
@@ -688,7 +691,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   writeLiveOutResult(peVarMap);
   writeILPResult(timeVarMap, peVarMap);
-
+  saveSubILPModelResult("sub_ilp_" + std::to_string(bbId) + ".csv");
   return success();
 }
 

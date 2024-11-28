@@ -23,6 +23,21 @@ using namespace mlir;
 bool doesADominateB(Operation *opA, Operation *opB, Operation *topLevelOp);
 
 namespace compigra {
+int getValueIndex(Value val,
+                  const std::map<int, std::pair<Operation *, Value>> opMap);
+SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg,
+                                         bool eraseUse = false);
+
+/// Determine whether the value is block argument, or the source operand of the
+/// block argument
+bool isPhiRelatedValue(Value val);
+
+/// Get the successor block of the user of the `val` as block argument.
+SmallVector<Block *, 4> getCntBlocksThroughPhi(Value val);
+
+/// Get the corresponding block argument of the `val` in the `succBlk`.
+BlockArgument getCntBlockArgument(Value val, Block *succBlk);
+
 /// Interference graph created for the PE in CGRA of internal register
 /// allocation.
 template <typename T> class InterferenceGraph {
@@ -38,7 +53,7 @@ public:
 
   // Initialize the vertex, which is the vertex that belongs to this PE and need
   // to be considered for register allocation.
-  void initVertex(T v) { vertices.push_back(v); }
+  // void initVertex(T v) { vertices.push_back(v); }
 
   void addEdge(T v1, T v2) {
     addVertex(v1);
@@ -59,15 +74,15 @@ public:
 
   bool interference(T v1, T v2);
 
-  bool needColor(T v) {
-    if (std::find(vertices.begin(), vertices.end(), v) != vertices.end())
-      return true;
-    return false;
-  }
+  // bool needColor(T v) {
+  //   if (adjList.find(v) == adjList.end())
+  //     return false;
+  //   return true;
+  // }
   // Vertices of the graph are interferring with other nodes, but does not
   // necessary belong to this PE. vertices records the vertices in the graph and
   // belong to this PE which need to be considered for register allocation.
-  std::vector<T> vertices;
+  // std::vector<T> vertices;
   std::map<T, std::unordered_set<T>> adjList;
   std::map<T, char> colorMap;
 };
@@ -77,7 +92,7 @@ public:
 /// opMap.
 InterferenceGraph<int>
 createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
-                        std::map<int, Value> &opMap,
+                        std::map<int, std::pair<Operation *, Value>> &defMap,
                         std::map<int, std::unordered_set<int>> ctrlFlow);
 
 /// Get the successor operations of the `op`. The control flow of CGRA could be

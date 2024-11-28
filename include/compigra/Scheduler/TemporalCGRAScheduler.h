@@ -14,6 +14,7 @@
 #ifndef TEMPORAL_CGRA_SCHEDULER_H
 #define TEMPORAL_CGRA_SCHEDULER_H
 
+#include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/BasicBlockILPModel.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 
@@ -73,10 +74,14 @@ private:
 
   liveVec getExternalLiveIn(Block *block);
   liveVec getInternalLiveIn(Block *block);
+  liveVec getExternalLiveOut(Block *block);
+  liveVec getInternalLiveOut(Block *block);
 
   OpBuilder builder;
   // TODO[@YW]: add the function for rollback the useless Mov
   void insertMovOp(Value origVal, Operation *user);
+
+  void rollBackMovOp(Value failVal);
   cgra::LwiOp insertLoadOp(Operation *refOp, unsigned addr, Value origVal,
                            unsigned opIndex = -1);
 
@@ -88,7 +93,7 @@ private:
                          cgra::LwiOp lwiOp);
   LogicalResult placeLwiOpToBlock(Block *block, BlockArgument arg,
                                   cgra::LwiOp lwiOp);
-  void placeSwiOpToBlock(Block *block, Operation *refOp, cgra::SwiOp swiOp);
+  void placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp);
 
   // sequence of blocks to be scheduled
   std::vector<Block *> scheduleSeq;
