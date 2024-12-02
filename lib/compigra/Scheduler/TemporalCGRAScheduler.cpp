@@ -117,46 +117,9 @@ void TemporalCGRAScheduler::computeLiveValue() {
           insertToSet(val, liveIn);
 
       for (auto succ : block.getSuccessors()) {
-        // ====================TBRM====================
-        // auto it = region.getBlocks().begin();
-        // auto it_ptr = it;
-        // std::advance(it_ptr, 4);
-        // auto it_suc_ptr = it;
-        // std::advance(it_suc_ptr, 5);
-        // auto &dst_blk = *it_ptr;
-        // auto &succ_blk = *it_suc_ptr;
-        // ====================TBRM====================
-
         // add to succesor's liveOut
-        for (auto val : liveIns[succ]) {
-          // ====================TBRM====================
-          //   if (&block == &dst_blk && (succ == &succ_blk) &&
-          //       val.isa<BlockArgument>()) {
-          //     for (auto [ind, bb] : llvm::enumerate(region))
-          //       if (&bb == val.getParentBlock()) {
-          //         llvm::errs() << "~~~~liveIn: " << ind << "\n";
-          //         break;
-          //       }
-          //   }
-          // ====================TBRM====================
-
+        for (auto val : liveIns[succ])
           updateLiveOutBySuccessorLiveIn(val, &block, liveOut);
-        }
-
-        // ====================TBRM====================
-        // if (&block == &dst_blk && (succ == &succ_blk)) {
-        //   for (auto val : liveOut) {
-        //     if (val.isa<BlockArgument>()) {
-        //       for (auto [ind, bb] : llvm::enumerate(region))
-        //         if (&bb == val.getParentBlock()) {
-        //           llvm::errs() << "~~~ " << ind << " ";
-        //           break;
-        //         }
-        //     }
-        //     llvm::errs() << "~~~ " << val << "\n";
-        //   }
-        // }
-        // ====================TBRM====================
       }
       if (liveIn != liveIns[&block] || liveOut != liveOuts[&block]) {
         liveIns[&block] = liveIn;
@@ -531,18 +494,16 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
       pe = it->second;
   }
   if (refOp) {
-    llvm::errs() << solution.at(refOp).time << " " << solution.at(refOp).pe
-                 << "\n";
     nextCycle = solution.at(refOp).time + 1;
     pe = solution.at(refOp).pe;
   }
 
-  unsigned left_pe = (pe - nCol + nRow * nCol) % (nRow * nCol);
-  unsigned right_pe = (pe + nCol) % (nRow * nCol);
-  unsigned top_pe = (pe - nCol) % (nRow * nCol);
-  unsigned bottom_pe = (pe + nCol) % (nRow * nCol);
+  unsigned leftPE = (pe - nCol + nRow * nCol) % (nRow * nCol);
+  unsigned rightPE = (pe + nCol) % (nRow * nCol);
+  unsigned topPE = (pe - nCol) % (nRow * nCol);
+  unsigned bottomPE = (pe + nCol) % (nRow * nCol);
 
-  std::vector<unsigned> peList = {pe, left_pe, right_pe, top_pe, bottom_pe};
+  std::vector<unsigned> peList = {pe, leftPE, rightPE, topPE, bottomPE};
 
   std::map<Operation *, ScheduleUnit> subResult;
   std::vector<ScheduleUnit> subSchedule;
@@ -556,6 +517,16 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
   // check whether pe, left_pe, right_pe, top_pe and bottom_pe are available
   // during nextCycle.
   bool isAvailable = false;
+  // the termintor must be placed no earlier than swiOp
+  Operation *termOp = block->getTerminator();
+  auto &termSu = solution[termOp];
+  unsigned swiPE = pe;
+  if (termSu.time < nextCycle) {
+    termSu.time++;
+    if (termSu.pe == pe)
+      swiPE = rightPE;
+  }
+
   for (auto p : peList) {
     auto it = std::find_if(
         subSchedule.begin(), subSchedule.end(),
@@ -568,6 +539,7 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
     }
   }
   if (!isAvailable) {
+    llvm::errs() << "Failed to find available pe for " << swiOp << "\n";
     // place swiOp to the next available pe, delay all the schedule after
     // nextCycle
     for (auto &[op, su] : solution) {
@@ -575,7 +547,7 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
       if (op->getBlock() == block && su.time >= nextCycle)
         su.time++;
     }
-    solution[swiOp] = {(int)nextCycle, (int)pe, -1};
+    solution[swiOp] = {(int)nextCycle, (int)swiPE, -1};
   }
 }
 
@@ -783,74 +755,80 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
   for (auto [bb, block] : llvm::enumerate(scheduleSeq)) {
     llvm::errs() << "\nBlock " << bb << " is scheduling\n";
 
-    BasicBlockILPModel scheduler(maxReg, nRow, nCol, block, bb, builder);
-    // scheduler.setLiveValue(liveIns[block], liveOuts[block]);
-    scheduler.setLiveOutPrerequisite(getExternalLiveOut(block),
-                                     getInternalLiveOut(block));
-    scheduler.setLiveInPrerequisite(getExternalLiveIn(block),
-                                    getInternalLiveIn(block));
+    BasicBlockILPModel bbILPModel(maxReg, nRow, nCol, block, bb, builder);
+    bbILPModel.setLiveOutPrerequisite(getExternalLiveOut(block),
+                                      getInternalLiveOut(block));
+    bbILPModel.setLiveInPrerequisite(getExternalLiveIn(block),
+                                     getInternalLiveIn(block));
 
     int maxIter = 15;
     Operation *failUser = nullptr;
     Operation *checkptr = nullptr;
     Value spill = nullptr;
     int movNum = 3;
-    scheduler.setFailureStrategy(FailureStrategy::Mov);
-    while (maxIter > 0) {
-      if (succeeded(scheduler.createSchedulerAndSolve()))
-        break;
+    bbILPModel.setFailureStrategy(FailureStrategy::Mov);
 
-      if (scheduler.getFailureStrategy() == FailureStrategy::Mov) {
-        handleMovAttempFailure(failUser, spill, scheduler, movNum, 3);
-        if (movNum < 0) {
-          // step back, remove the additional sadd zero ops
-          scheduler.setFailureStrategy(FailureStrategy::Split);
-          rollBackMovOp(scheduler.getSpillVal());
-          maxIter += 3;
-          continue;
-        }
-        scheduler.setCheckPoint(nullptr);
-        spill = scheduler.getSpillVal();
-        failUser = scheduler.getFailUser();
-        scheduler.setCheckPoint(failUser);
-        insertMovOp(spill, failUser);
+    // try to schedule the block
+    bool findSolution = false;
+    while (maxIter > 0) {
+      // Run the ILP model
+      if (succeeded(bbILPModel.createSchedulerAndSolve())) {
+        findSolution = true;
+        break;
       }
-      if (scheduler.getFailureStrategy() == FailureStrategy::Split) {
+
+      // handle the failure according to the failure strategy
+      if (bbILPModel.getFailureStrategy() == FailureStrategy::Mov) {
+        spill = bbILPModel.getSpillVal();
+        failUser = bbILPModel.getFailUser();
+        // Determine whether still adopt the mov strategy
+        handleMovAttempFailure(failUser, spill, bbILPModel, movNum, 3);
+        if (movNum > 0) {
+          bbILPModel.setCheckPoint(nullptr);
+          // bbILPModel.setCheckPoint(failUser);
+          insertMovOp(spill, failUser);
+        } else {
+          // step back, remove the additional sadd zero ops
+          bbILPModel.setFailureStrategy(FailureStrategy::Split);
+          rollBackMovOp(bbILPModel.getSpillVal());
+          maxIter += 3;
+        }
+      }
+      if (bbILPModel.getFailureStrategy() == FailureStrategy::Split) {
         // split the liveOut value
-        spill = scheduler.getSpillVal();
-        failUser = scheduler.getFailUser();
+        spill = bbILPModel.getSpillVal();
+        failUser = bbILPModel.getFailUser();
         bool pushPhiToMem =
             isPhiRelatedValue(spill) && !spill.isa<BlockArgument>();
         if (failed(splitDFGWithLSOps(spill, failUser, UINT_MAX, pushPhiToMem)))
           return failure();
+        // Rerun the liveness analysis
         computeLiveValue();
-        scheduler.setLiveValue(liveIns[block], liveOuts[block]);
-        scheduler.setLiveInPrerequisite(getExternalLiveIn(block),
-                                        getInternalLiveIn(block));
-        scheduler.setRAWPair(opRAWs);
+        bbILPModel.setLiveOutPrerequisite(getExternalLiveOut(block),
+                                          getInternalLiveOut(block));
+        bbILPModel.setLiveInPrerequisite(getExternalLiveIn(block),
+                                         getInternalLiveIn(block));
+        bbILPModel.setRAWPair(opRAWs);
         movNum = 3;
-        scheduler.setFailureStrategy(FailureStrategy::Mov);
+        bbILPModel.setFailureStrategy(FailureStrategy::Mov);
       }
-      if (scheduler.getFailureStrategy() == FailureStrategy::Abort) {
+      if (bbILPModel.getFailureStrategy() == FailureStrategy::Abort) {
         llvm::errs() << "Optimization abort\n";
         return failure();
       }
-
       maxIter--;
     }
 
-    if (maxIter == 0) {
+    if (!findSolution) {
       llvm::errs() << "Failed to schedule block " << bb << "\n";
       return failure();
     }
-    saveSubILPModelResult(scheduler.getSolution());
-
-    writeLiveOutResult(scheduler.getExternalLiveOutResult(),
-                       scheduler.getInternalLiveOutResult());
+    writeLiveOutResult(bbILPModel.getExternalLiveOutResult(),
+                       bbILPModel.getInternalLiveOutResult());
+    saveSubILPModelResult(bbILPModel.getSolution());
+    scheduleIdx++;
     // if (bb == 10)
     //   break;
-
-    scheduleIdx++;
   }
 
   calculateTemporalSpatialSchedule("temporalSpatialSchedule.csv");
@@ -918,7 +896,6 @@ TemporalCGRAScheduler::readScheduleResult(const std::string filename) {
   while (std::getline(file, line)) {
     // Split the line by commas and store the result
     std::vector<std::string> row = split(line, '&');
-    // scheduleResult[row[0]] = {std::stoi(row[1]), std::stoi(row[2])};
     data.push_back(row);
   }
 
@@ -944,17 +921,4 @@ TemporalCGRAScheduler::readScheduleResult(const std::string filename) {
       llvm::errs() << oss.str() << "\n";
     }
   }
-  // for (auto &op : region.getOps()) {
-  //   std::string opName;
-  //   llvm::raw_string_ostream rso(opName);
-  //   rso << op;
-  //   if (scheduleResult.find(opName) != scheduleResult.end()) {
-  //     auto su = scheduleResult[opName];
-  //     solution[&op] = {su.time, su.pe, -1};
-  //     std::ostringstream oss;
-  //     oss << std::left << std::setw(70) << opName << std::setw(10) << su.time
-  //         << std::setw(10) << su.pe;
-  //     llvm::errs() << oss.str() << "\n";
-  //   }
-  // }
 }

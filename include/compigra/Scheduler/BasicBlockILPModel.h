@@ -54,24 +54,6 @@ public:
 
   std::map<Operation *, ScheduleUnitBB> getSolution() { return solution; }
 
-  void setLiveValue(SetVector<Value> liveIn, SetVector<Value> liveOut) {
-    liveOutExter.clear();
-    liveOutInter.clear();
-
-    // split liveOut to be liveOutInter and liveOutExter
-    for (auto val : liveOut) {
-      // if (visibleOutside(val))
-      //   liveOutExter.push_back({val, UINT32_MAX});
-      // else
-      liveOutInter.push_back({val, UINT32_MAX});
-    }
-
-    // liveInExter.clear();
-    // liveInInter.clear();
-    // for (auto val : liveIn) {
-    //   liveInInter.push_back({val, UINT32_MAX});
-    // }
-  }
   void setStoreAddr(unsigned addr) { storeAddr = addr; }
 
   // void removeSpillOut(Value val) { liveOut.remove(val); }
@@ -120,7 +102,6 @@ private:
   // solution
   unsigned storeAddr;
   FailureStrategy strategy = FailureStrategy::Abort;
-  // Value spillIn = nullptr;
   Value spill = nullptr;
   Operation *failUser = nullptr;
   OpBuilder builder;
@@ -130,9 +111,6 @@ private:
 
   Block *block;
   unsigned bbId;
-
-  // SetVector<Value> liveIn;
-  // SetVector<Value> liveOut;
 
   // Hash map to store the live value for each PE
   liveVec liveInInter;

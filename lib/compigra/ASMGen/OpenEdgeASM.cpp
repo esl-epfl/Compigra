@@ -470,6 +470,8 @@ int OpenEdgeASMGen::getEarliestExecutionTime(Block *block) {
   for (Operation &op : block->getOperations()) {
     time = std::min(time, getEarliestExecutionTime(&op));
   }
+  llvm::errs() << "Block " << block->getOperations().front() << " start at "
+               << time << "\n";
   return time;
 }
 
@@ -681,9 +683,7 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   if (isa<cgra::ConditionalBranchOp>(op)) {
     auto block = op->getSuccessor(0);
     // print the first operation of block
-    llvm::errs() << "Block: " << (block->getOperations().front()) << "\n";
     int sucTime = getEarliestExecutionTime(block);
-    llvm::errs() << sucTime << " " << baseTime << "\n";
     addition = ", " + std::to_string(sucTime + baseTime);
   }
 

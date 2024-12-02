@@ -40,7 +40,6 @@ struct ASMGenTemporalCGRAPass
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
     TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
-    // llvm::errs() << modOp << "\n";
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";
       return signalPassFailure();
@@ -50,7 +49,6 @@ struct ASMGenTemporalCGRAPass
     // scheduler.readScheduleResult("temporalSpatialSchedule.csv");
     OpenEdgeASMGen asmGen(region, 3, nRow);
     asmGen.setSolution(scheduler.getSolution());
-    llvm::errs() << "Allocate Register...\n";
     if (failed(asmGen.allocateRegisters(scheduler.knownRes))) {
       llvm::errs() << "Failed to allocate registers\n";
       return signalPassFailure();

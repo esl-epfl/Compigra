@@ -35,6 +35,7 @@ public:
 
 private:
   Region &region;
+  OpBuilder builder;
 
   std::map<Block *, int> blockStartT;
   std::map<Block *, int> blockEndT;
@@ -49,59 +50,100 @@ public:
     blockEndT[block] = timeEnd;
   }
 
+  // Read the schedule result from the written file, usually avoid to call
+  // `createSchedulerAndSolve` function for runtime efficiency.
   LogicalResult readScheduleResult(const std::string fileName);
 
 private:
-  // std::map<Operation *, ScheduleUnit> globalConstrs;
-  std::vector<std::pair<unsigned, Value>> memStack;
-
+  // ======================== Liveness Data Structures =======================
+  // Corresponding livein and liveout values of each block
   std::map<Block *, SetVector<Value>> liveIns;
   std::map<Block *, SetVector<Value>> liveOuts;
 
-  std::map<Operation *, ScheduleUnit> getBlockSubSolution(Block *block);
-
-  SetVector<std::pair<Operation *, Operation *>> opRAWs;
-
+  // All Internal live value and its located PE.
   liveVec liveValInterPlaces;
+  // All External live value and its located PE.
   liveVec liveValExterPlaces;
 
-  void saveSubILPModelResult(const std::map<Operation *, ScheduleUnitBB> res);
-
+  // ====================== Liveness Analysis Functions ======================
+  /// Get the livein and liveout values for each block.
   void computeLiveValue();
 
-  void writeLiveOutResult(const liveVec liveOutExter,
-                          const liveVec liveOutInter);
-
+  /// Get the internal and external livein and liveout values for each block.
   liveVec getExternalLiveIn(Block *block);
   liveVec getInternalLiveIn(Block *block);
   liveVec getExternalLiveOut(Block *block);
   liveVec getInternalLiveOut(Block *block);
 
-  OpBuilder builder;
-  // TODO[@YW]: add the function for rollback the useless Mov
+  // ===================== Result Read & Write Functions ======================
+  /// Get the solution for one block
+  std::map<Operation *, ScheduleUnit> getBlockSubSolution(Block *block);
+
+  /// Save the ILP model result for corresponding operations.
+  void saveSubILPModelResult(const std::map<Operation *, ScheduleUnitBB> res);
+
+  /// Read the live value placement result to liveValInterPlaces and
+  /// liveValExterPlaces.
+  void writeLiveOutResult(const liveVec liveOutExter,
+                          const liveVec liveOutInter);
+
+  /// Each basic block has its own ILP model to schedule the operations. which
+  /// is assumed to start from T = 0. To fullfill the temporal spatial schedule,
+  /// the basic block start time should be placed to ensure the basic block
+  /// execution does not overlap.
+  /// The function adopts sequential placement of the blocks and writes the
+  /// final temporal spatial schedule to the file.
+  void calculateTemporalSpatialSchedule(const std::string fileName);
+
+  // ================ ILP Model Failure Handling Data Structures ===============
+  // Read-after-write (RAW) dependencies, where the first element is the srcOp
+  // and the second element is the dstOp. The srcOp and the dstOp must be in the
+  // same block as CFG would automatically ensure the RAW dependencies between
+  // the different blocks.
+  SetVector<std::pair<Operation *, Operation *>> opRAWs;
+
+  // stack to store the value evicted to memory, the first element is the
+  // address, the second element is the corresponding value.
+  std::vector<std::pair<unsigned, Value>> memStack;
+
+  // ================== ILP Model Failure Handling Functions ==================
+  /// Insert an mov operation to extend the value propagation range.
   void insertMovOp(Value origVal, Operation *user);
 
+  /// Remove all new inserted mov operations.
   void rollBackMovOp(Value failVal);
-  cgra::LwiOp insertLoadOp(Operation *refOp, unsigned addr, Value origVal,
-                           unsigned opIndex = -1);
 
+  /// Insert load and store operations to split the producer and consumer.
   LogicalResult splitDFGWithLSOps(Value saveVal, Operation *failUser = nullptr,
                                   unsigned memLoc = UINT_MAX,
                                   bool processCntPhi = false);
+
+  /// Insert load and store operations to split the producer and consumer which
+  /// are in the same basic blocks.
   void insertInternalLSOps(Operation *srcOp, Operation *dstOp);
+
+  /// Insert a load operation from `addr`. This load operation is placed after
+  /// refOp
+  cgra::LwiOp insertLoadOp(Operation *refOp, unsigned addr, Value origVal,
+                           unsigned opIndex = -1);
+
+  /// If the block has been scheduled, place the lwi/swi operation to the
+  /// block's original schedule result without rerun its ILP model.
   void placeLwiOpToBlock(Block *block, Operation *refOp, unsigned opIndex,
                          cgra::LwiOp lwiOp);
+
   LogicalResult placeLwiOpToBlock(Block *block, BlockArgument arg,
                                   cgra::LwiOp lwiOp);
+
   void placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp);
 
-  // sequence of blocks to be scheduled
+  // ======================= Schedule Sequence of BBs =======================
+  // Sequence of blocks to be scheduled
   std::vector<Block *> scheduleSeq;
-
-  void calculateTemporalSpatialSchedule(const std::string fileName);
+  // Index of the current block in the scheduleSeq
+  unsigned scheduleIdx = 0;
 
   void makeScheduleSeq();
-  unsigned scheduleIdx = 0;
 
 public:
   std::map<Operation *, Instruction> knownRes;

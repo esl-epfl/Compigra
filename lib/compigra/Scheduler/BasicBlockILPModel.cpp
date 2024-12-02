@@ -178,10 +178,10 @@ LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
       auto userOp = use.getOwner();
       if (opTimeVar.count(userOp) == 0)
         continue;
-      // if (isa<cf::BranchOp>(userOp))
-      //   continue;
-      // if (isa<cgra::ConditionalBranchOp>(userOp) && use.getOperandNumber() >= 2)
-      //   continue;
+      if (isa<cf::BranchOp>(userOp))
+        continue;
+      if (isa<cgra::ConditionalBranchOp>(userOp) && use.getOperandNumber() >= 2)
+        continue;
       model.addConstr(var + 1 <= opTimeVar.at(userOp));
     }
   }
@@ -508,9 +508,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
   for (unsigned p = 0; p < nRow * nCol; p++) {
     // GRBVar useSum = model.addVar(0, availUse[p], 0, GRB_INTEGER);
     GRBLinExpr accumulatedSum = 0;
-    for (auto [val, index] : liveOutInter) {
-      if (index == UINT32_MAX)
-        continue;
+    for (auto [val, _] : liveOutInter) {
       Operation *defOp = val.getDefiningOp();
       if (!defOp || opTimeVar.count(defOp) == 0)
         continue;
@@ -647,10 +645,9 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   createLocalDominanceConstraints(model, timeVarMap);
 
-  if (failed(createHardwareConstraints(model, timeVarMap, peVarMap, varName))) {
-    // strategy = FailureStrategy::Abort;
+  if (failed(createHardwareConstraints(model, timeVarMap, peVarMap, varName)))
     return failure();
-  }
+
   llvm::errs() << "Created hardware constraints\n";
 
   if (failed(createLocalLivenessConstraints(model, timeVarMap, peVarMap,
