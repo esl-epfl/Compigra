@@ -470,8 +470,6 @@ int OpenEdgeASMGen::getEarliestExecutionTime(Block *block) {
   for (Operation &op : block->getOperations()) {
     time = std::min(time, getEarliestExecutionTime(&op));
   }
-  llvm::errs() << "Block " << block->getOperations().front() << " start at "
-               << time << "\n";
   return time;
 }
 

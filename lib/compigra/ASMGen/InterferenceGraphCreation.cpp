@@ -66,7 +66,7 @@ SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg, bool eraseUse) {
         branchOp.eraseOperand(argIndex);
     } else if (auto branchOp =
                    dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
-      if (predBlk == branchOp.getSuccessor(0)) {
+      if (blk == branchOp.getSuccessor(0)) {
         srcOprands.push_back(branchOp.getTrueOperand(argIndex));
         // remove argIndex from the false operand
         if (eraseUse)

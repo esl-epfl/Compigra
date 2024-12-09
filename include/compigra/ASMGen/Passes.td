@@ -39,6 +39,8 @@ def ASMGenTemporalCGRA : Pass<"gen-temporal-cgra-asm"> {
   let options = [
     Option<"nRow", "row", "int", "", "  Number of PE in one row">,
     Option<"nCol", "col", "int", "", "  Number of PE in one column">,
+    Option<"asmOutDir", "asm-out", "std::string", "",
+           "  Specify the directory of the assembly file">,
   ];
 }
 

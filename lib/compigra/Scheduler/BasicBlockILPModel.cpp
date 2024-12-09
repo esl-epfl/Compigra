@@ -449,8 +449,9 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
       check = true;
 
     for (auto prodOp : producers) {
-      if (failed(blockPeAssignment(model, prodOp, consumer, opTimeVar, opPeVar,
-                                   varName, check))) {
+      if (failed(blockPeAssignment(
+              model, prodOp, consumer, opTimeVar, opPeVar, varName,
+              isa<cgra::ConditionalBranchOp>(consumer), -1, check))) {
         llvm::errs() << "Failed to create local liveness for " << *prodOp
                      << "\n";
         spill = prodOp->getResult(0);

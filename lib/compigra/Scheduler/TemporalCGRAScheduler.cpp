@@ -219,6 +219,9 @@ static void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals) {
     }
     if (auto cbr =
             dyn_cast_or_null<cgra::ConditionalBranchOp>(use.getOwner())) {
+      // Only for flag comparison not for phi value propagation
+      if (index < 2)
+        continue;
       bool isTrueOpr = index >= 2 && index < 2 + cbr.getNumTrueDestOperands();
       if (isTrueOpr) {
         getAllPhiRelatedValues(cbr.getTrueDest()->getArgument(index - 2),
@@ -230,8 +233,6 @@ static void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals) {
       }
     }
   }
-
-  // return relatedVals;
 }
 
 static void pushResultToLiveVec(liveVec &liveVec, Value val, unsigned index) {
@@ -517,7 +518,6 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
   // check whether pe, left_pe, right_pe, top_pe and bottom_pe are available
   // during nextCycle.
   bool isAvailable = false;
-  // the termintor must be placed no earlier than swiOp
   Operation *termOp = block->getTerminator();
   auto &termSu = solution[termOp];
   unsigned swiPE = pe;
@@ -526,7 +526,7 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
     if (termSu.pe == pe)
       swiPE = rightPE;
   }
-
+  // seek whether there slot inside the bb execution to accommodate the swiOp
   for (auto p : peList) {
     auto it = std::find_if(
         subSchedule.begin(), subSchedule.end(),
@@ -538,6 +538,7 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
       break;
     }
   }
+
   if (!isAvailable) {
     llvm::errs() << "Failed to find available pe for " << swiOp << "\n";
     // place swiOp to the next available pe, delay all the schedule after
@@ -823,12 +824,11 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
       llvm::errs() << "Failed to schedule block " << bb << "\n";
       return failure();
     }
+    llvm::errs() << scheduleIdx << "th block is scheduled\n";
     writeLiveOutResult(bbILPModel.getExternalLiveOutResult(),
                        bbILPModel.getInternalLiveOutResult());
     saveSubILPModelResult(bbILPModel.getSolution());
     scheduleIdx++;
-    // if (bb == 10)
-    //   break;
   }
 
   calculateTemporalSpatialSchedule("temporalSpatialSchedule.csv");

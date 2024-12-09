@@ -29,8 +29,8 @@ namespace compigra {
 #define GEN_PASS_DEF_ASMGENTEMPORALCGRA
 #define GEN_PASS_DECL_ASMGENTEMPORALCGRA
 #include "compigra/ASMGen/Passes.h.inc"
-std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow = 3,
-                                                     int nCol = 3);
+std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow = 3, int nCol = 3,
+                                                     StringRef asmOutDir = "");
 } // namespace compigra
 
 #endif // ASM_GEN_TEMPORAL_CGRA_H

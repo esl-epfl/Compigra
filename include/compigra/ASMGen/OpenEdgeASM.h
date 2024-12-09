@@ -133,8 +133,8 @@ private:
       {"ADD", "SADD"},  {"ADDI", "SADD"}, {"ADDF", "SADD"}, {"SUB", "SSUB"},
       {"SUBI", "SSUB"}, {"SUBF", "SSUB"}, {"MULI", "SMUL"}, {"MULF", "FXPMUL"},
       {"MUL", "SMUL"},  {"DIV", "SDIV"},  {"OR", "LOR"},    {"XOR", "LXOR"},
-      {"LSHR", "SRT"},  {"ASHR", "SRA"},  {"SHL", "SLT"},   {"AND", "LAND"},
-      {"BR", "JUMP"}};
+      {"LSHR", "SRT"},  {"ASHR", "SRA"},  {"SHL", "SLT"},   {"SHLI", "SLT"},
+      {"AND", "LAND"},  {"BR", "JUMP"}};
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",
