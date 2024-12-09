@@ -37,9 +37,9 @@ All the passes including front end optimization and back end assembly generation
 ```bash
 ./bin/compigra-opt -h
 ```
-<span style="font-size:1.5em;">[[DATE25 submission](./DATE25.md)]</span> 
+<span style="font-size:1.5em;">[[ARC25 submission](./ARC25.md)]</span> 
 
-You could refer [DATE25](./DATE25.md) for detailed explanations on the passes we use in the end-to-end compilation flow for the DATE25 submission.
+You could refer [ARC25](./ARC25.md) for detailed explanations on the passes we use in the end-to-end compilation flow for the ARC25 submission.
 
 ## Simulate your result
 ### Software simulation

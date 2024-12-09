@@ -1,71 +1,71 @@
 T = 0
-SADD R0, -1,ZERO         
-SADD ROUT, 12,ZERO       
-NOP                      
-NOP                      
 NOP                      
 NOP                      
 SADD ROUT, 12,ZERO       
 NOP                      
 NOP                      
 NOP                      
+SADD R1, ZERO,ZERO       
 SADD ROUT, 4088,ZERO     
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
+NOP                      
+SADD ROUT, 12,ZERO       
+NOP                      
 T = 1
 NOP                      
 NOP                      
 NOP                      
-NOP                      
-SADD ROUT, ZERO,ZERO     
-SLT ROUT, RCR,12         
+SLT ROUT, RCB,12         
 SADD ROUT, 7,ZERO        
 NOP                      
 NOP                      
-SLT ROUT, RCR,12         
-SADD ROUT, ZERO,40       
 NOP                      
 NOP                      
-SLT R0, RCB,12           
 NOP                      
 NOP                      
-T = 2
-SLT ROUT, R0,24          
-SADD ROUT, 2052,RCB      
+NOP                      
+SADD R0, -1,ZERO         
+NOP                      
 SLT ROUT, RCB,12         
-NOP                      
-NOP                      
-SADD ROUT, ZERO,RCB      
-NOP                      
-NOP                      
-NOP                      
+SLT ROUT, RCL,12         
+T = 2
+SADD ROUT, ZERO,RCL      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-SADD ROUT, 2048,R0       
+SLT ROUT, RCL,12         
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+NOP                      
+SADD ROUT, 2048,RCB      
+SLT R0, R0,24            
+NOP                      
 NOP                      
 NOP                      
 T = 3
 NOP                      
-SADD ROUT, RCB,RCL       
-NOP                      
-SADD R0, 4095,RCL        
+SADD ROUT, 4095,RCB      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
+SADD R0, ZERO,40         
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, 2052,RCB      
 NOP                      
-LWI ROUT, RCR            
+SADD R0, RCB,R0          
 NOP                      
 NOP                      
-NOP                      
+LWI R0, RCT              
 T = 4
 NOP                      
 NOP                      
@@ -73,8 +73,8 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, R1,ZERO       
 NOP                      
-SADD R1, RCR,ZERO        
 NOP                      
 NOP                      
 NOP                      
@@ -87,11 +87,11 @@ T = 5
 NOP                      
 NOP                      
 NOP                      
-SMUL ROUT, RCB,4         
 NOP                      
 NOP                      
+SMUL ROUT, RCR,4         
 NOP                      
-SADD R0, R1,1            
+SADD ROUT, RCL,1         
 NOP                      
 NOP                      
 NOP                      
@@ -103,7 +103,6 @@ NOP
 T = 6
 NOP                      
 NOP                      
-SADD ROUT, RCL,RCR       
 NOP                      
 NOP                      
 NOP                      
@@ -111,6 +110,7 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, RCR,RCT       
 NOP                      
 NOP                      
 NOP                      
@@ -126,69 +126,68 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+LWI ROUT, RCR            
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-LWI ROUT, RCB            
 NOP                      
 T = 8
 NOP                      
 NOP                      
-SSUB ROUT, RCT,RCL       
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-BEQ RCT,RCL, 14          
-NOP                      
+BEQ RCR,R0, 14           
 NOP                      
 NOP                      
 SSUB ROUT, ZERO,RCL      
+NOP                      
+NOP                      
+SSUB ROUT, RCT,R0        
+NOP                      
+NOP                      
+NOP                      
 T = 9
 NOP                      
 NOP                      
 NOP                      
-BZFA ROUT, R0,RCT, RCL   
 NOP                      
 NOP                      
 NOP                      
-SADD R1, R0,ZERO         
-NOP                      
+SADD ROUT, RCR,ZERO      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
 NOP                      
+SSUB R1, RCT,ZERO        
+BZFA ROUT, RCB,RCT, RCL  
 NOP                      
-SSUB R0, RCL,ZERO        
+SADD R2, R0,ZERO         
 T = 10
 NOP                      
 NOP                      
 NOP                      
-SMUL ROUT, RCB,4         
+NOP                      
+NOP                      
+SMUL ROUT, RCR,4         
+NOP                      
+SADD ROUT, RCL,1         
 NOP                      
 NOP                      
 NOP                      
-SADD R0, R1,1            
+NOP                      
+BSFA ROUT, RCR,RCT, R0   
 NOP                      
 NOP                      
 NOP                      
-NOP                      
-NOP                      
-SADD ROUT, RCL,ZERO      
-NOP                      
-BSFA ROUT, RCB,RCL, R0   
 T = 11
 NOP                      
 NOP                      
-SADD ROUT, RCL,RCR       
 NOP                      
 NOP                      
 NOP                      
@@ -196,12 +195,13 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, RCR,RCT       
 NOP                      
 NOP                      
-SSUB R0, RCR,RCL         
 NOP                      
 NOP                      
 NOP                      
+SSUB R1, R2,RCR          
 T = 12
 NOP                      
 NOP                      
@@ -211,36 +211,35 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+LWI ROUT, RCR            
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-BSFA ROUT, RCL,RCR, R0   
 NOP                      
-LWI ROUT, RCB            
 NOP                      
+BSFA R0, RCR,R2, R0      
 T = 13
 NOP                      
 NOP                      
-SSUB ROUT, RCT,RCL       
 NOP                      
 NOP                      
 NOP                      
 NOP                      
-NOP                      
-NOP                      
-NOP                      
-NOP                      
-BNE RCT,RCL, 9           
-NOP                      
+BNE RCR,R0, 9            
 NOP                      
 NOP                      
 SSUB ROUT, ZERO,RCL      
+NOP                      
+NOP                      
+SSUB ROUT, RCT,R0        
+NOP                      
+NOP                      
+NOP                      
 T = 14
 NOP                      
 NOP                      
 NOP                      
-BZFA ROUT, R0,RCT, RCL   
 NOP                      
 NOP                      
 NOP                      
@@ -250,9 +249,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SSUB R0, RCT,ZERO        
+BZFA ROUT, RCB,RCT, RCL  
 NOP                      
-NOP                      
-SSUB R0, RCL,ZERO        
+SADD R1, R0,ZERO         
 T = 15
 NOP                      
 NOP                      
@@ -266,10 +266,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+BSFA ROUT, RCR,RCT, R0   
 NOP                      
-SADD ROUT, RCL,ZERO      
 NOP                      
-BSFA ROUT, RCB,RCL, R0   
+NOP                      
 T = 16
 NOP                      
 NOP                      
@@ -283,10 +283,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
-SSUB R0, RCR,RCL         
 NOP                      
 NOP                      
 NOP                      
+SSUB R0, R1,RCR          
 T = 17
 NOP                      
 NOP                      
@@ -300,12 +300,11 @@ NOP
 NOP                      
 NOP                      
 NOP                      
-BSFA R1, RCL,RCR, R0     
 NOP                      
 NOP                      
 NOP                      
+BSFA R1, RCR,R1, R0      
 T = 18
-SADD R0, 12,ZERO         
 NOP                      
 NOP                      
 NOP                      
@@ -313,6 +312,7 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+SADD ROUT, 12,ZERO       
 NOP                      
 NOP                      
 NOP                      
@@ -322,10 +322,10 @@ NOP
 NOP                      
 NOP                      
 T = 19
-SLT ROUT, R0,12          
 NOP                      
 NOP                      
 NOP                      
+SLT ROUT, RCB,12         
 NOP                      
 NOP                      
 NOP                      
@@ -351,10 +351,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+NOP                      
+NOP                      
+NOP                      
 SADD R0, 2048,RCB        
-NOP                      
-NOP                      
-NOP                      
 T = 21
 NOP                      
 NOP                      
@@ -368,10 +368,10 @@ NOP
 NOP                      
 NOP                      
 NOP                      
+NOP                      
+NOP                      
+NOP                      
 SWI R1,R0                
-NOP                      
-NOP                      
-NOP                      
 T = 22
 EXIT                     
 NOP                      
