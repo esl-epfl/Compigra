@@ -207,7 +207,7 @@ Operation *computeOffSet(MemRefOp memOp, Operation *baseAddr,
     // llvm::errs() << "     come to dim: " << dim << "\n";
     auto castOp = rewriter.create<arith::IndexCastOp>(
         memOp.getLoc(), rewriter.getIntegerType(32), indice);
-    if (indice == memOp.getIndices().back()) {
+    if (dim == memOp.getIndices().size() - 1) {
       if (offSet)
         offSet = rewriter.create<arith::AddIOp>(
             memOp.getLoc(), rewriter.getI32Type(), offSet->getResult(0),
