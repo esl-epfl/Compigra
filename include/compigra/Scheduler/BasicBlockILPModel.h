@@ -137,7 +137,7 @@ private:
       const std::map<Operation *, std::string> varName);
 
   LogicalResult
-  createHardwareConstraints(GRBModel &model,
+  createRoutingConstraints(GRBModel &model,
                             const std::map<Operation *, GRBVar> opTimeVar,
                             const std::map<Operation *, GRBVar> opPeVar,
                             const std::map<Operation *, std::string> varName);

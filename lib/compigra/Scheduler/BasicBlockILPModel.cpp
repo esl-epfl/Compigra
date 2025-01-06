@@ -231,7 +231,7 @@ static LogicalResult placeToCntPe(GRBModel &model,
   return success();
 }
 
-LogicalResult BasicBlockILPModel::createHardwareConstraints(
+LogicalResult BasicBlockILPModel::createRoutingConstraints(
     GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
@@ -436,7 +436,7 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
     GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
-  bool check = false;
+  bool check = true;
   for (auto consumer : scheduleOps) {
     std::vector<Operation *> producers;
     // llvm::errs() << "Create liveness constraints for: " << *consumer << "\n";
@@ -445,8 +445,8 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
       if (defOp && opPeVar.count(defOp) > 0)
         producers.push_back(opVal.getDefiningOp());
     }
-    if (consumer == checkptr)
-      check = true;
+    // if (consumer == checkptr)
+    //   check = true;
 
     for (auto prodOp : producers) {
       if (failed(blockPeAssignment(
@@ -621,7 +621,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 600;
+  int time_limit = 2400;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function
@@ -646,7 +646,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   createLocalDominanceConstraints(model, timeVarMap);
 
-  if (failed(createHardwareConstraints(model, timeVarMap, peVarMap, varName)))
+  if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
     return failure();
 
   llvm::errs() << "Created hardware constraints\n";
