@@ -14,6 +14,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/DialectConversion.h"
 
 namespace compigra {
 
@@ -21,7 +22,7 @@ namespace compigra {
 #define GEN_PASS_DECL_CFFIXINDEXWIDTH
 #include "compigra/Transforms/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
+std::unique_ptr<mlir::Pass> createCfFixIndexWidth(unsigned bitwidth = 32);
 
 } // namespace compigra
 

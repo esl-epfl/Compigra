@@ -27,7 +27,7 @@ namespace compigra {
 #define GEN_PASS_REGISTRATION
 #include "compigra/Transforms/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass> createCfFixIndexWidth();
+std::unique_ptr<mlir::Pass> createCfFixIndexWidth(unsigned bitwidth);
 std::unique_ptr<mlir::Pass> createCfMapToFullPredict();
 std::unique_ptr<mlir::Pass> createCgraFitToOpenEdge(StringRef outputDAG);
 
