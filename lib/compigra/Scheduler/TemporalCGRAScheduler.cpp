@@ -408,8 +408,6 @@ TemporalCGRAScheduler::getBlockSubSolution(Block *block) {
 void TemporalCGRAScheduler::placeLwiOpToBlock(Block *block, Operation *refOp,
                                               unsigned opIndex,
                                               cgra::LwiOp lwiOp) {
-  llvm::errs() << "Not Implemented Error change pre-scheduled result\n";
-  // bool isPhi =
   // print the existing schedule result
   std::map<Operation *, ScheduleUnit> subResult;
   std::vector<ScheduleUnit> subSchedule;
@@ -420,26 +418,38 @@ void TemporalCGRAScheduler::placeLwiOpToBlock(Block *block, Operation *refOp,
     }
   }
 
-  // print the subResult according to su.time
-  std::sort(subSchedule.begin(), subSchedule.end(),
-            [](ScheduleUnit a, ScheduleUnit b) {
-              return (a.time < b.time) || (a.time == b.time && a.pe < b.pe);
-            });
-  unsigned timeStart = 0;
-  llvm::errs() << timeStart << "\n";
-  // if su.time != timeStart, print \n
-  for (auto su : subSchedule) {
-    if (su.time != timeStart) {
-      timeStart = su.time;
-      llvm::errs() << "\n";
-      llvm::errs() << timeStart << "\n";
-    }
-    llvm::errs() << su.pe << " ";
+  int prevCycle = solution.at(refOp).time - 1;
+  unsigned pe = solution.at(refOp).pe;
+
+  unsigned leftPE = (pe - nCol + nRow * nCol) % (nRow * nCol);
+  unsigned rightPE = (pe + nCol) % (nRow * nCol);
+  unsigned topPE = (pe - nCol) % (nRow * nCol);
+  unsigned bottomPE = (pe + nCol) % (nRow * nCol);
+  std::vector<unsigned> peList = {pe, leftPE, rightPE, topPE, bottomPE};
+
+  // check whether pe, left_pe, right_pe, top_pe and bottom_pe are available
+  // during nextCycle.
+  unsigned lwiPE = pe;
+  if (prevCycle < 0) {
+    prevCycle = 0;
+    for (auto &[op, su] : solution)
+      if (op->getBlock() == block)
+        su.time++;
   }
-  llvm::errs() << "\n";
-  llvm::errs() << solution.at(refOp).time << " " << solution.at(refOp).pe
-               << "\n";
-  llvm::errs() << "===========================\n";
+  // seek whether there slot inside the bb execution to accommodate the lwiOp
+  for (auto p : peList) {
+    auto it = std::find_if(
+        subSchedule.begin(), subSchedule.end(),
+        [&](ScheduleUnit su) { return su.time == prevCycle && su.pe == p; });
+    // if the pe is not occupied, place the swiOp to the pe
+    if (it == subSchedule.end()) {
+      solution[lwiOp] = {(int)prevCycle, (int)p, -1};
+      // accomodate the lwiOp execution time and unit
+      return;
+    }
+  }
+
+  solution[lwiOp] = {(int)prevCycle, (int)lwiPE, -1};
 }
 
 LogicalResult TemporalCGRAScheduler::placeLwiOpToBlock(Block *block,
@@ -517,9 +527,12 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
 
   // check whether pe, left_pe, right_pe, top_pe and bottom_pe are available
   // during nextCycle.
-  bool isAvailable = false;
   Operation *termOp = block->getTerminator();
   auto &termSu = solution[termOp];
+  // the terminator must be executed at the end of the block, if nextCycle
+  // exceed the terminator time, delay the terminator.
+  // If the terminator is executed at the PE which produce the value to be
+  // stored, let the store operation executed to its neighbour PE.
   unsigned swiPE = pe;
   if (termSu.time < nextCycle) {
     termSu.time++;
@@ -534,22 +547,19 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
     // if the pe is not occupied, place the swiOp to the pe
     if (it == subSchedule.end()) {
       solution[swiOp] = {(int)nextCycle, (int)p, -1};
-      isAvailable = true;
-      break;
+      return;
     }
   }
 
-  if (!isAvailable) {
-    llvm::errs() << "Failed to find available pe for " << swiOp << "\n";
-    // place swiOp to the next available pe, delay all the schedule after
-    // nextCycle
-    for (auto &[op, su] : solution) {
-      llvm::errs() << "delay " << op << "1 CC\n";
-      if (op->getBlock() == block && su.time >= nextCycle)
-        su.time++;
-    }
-    solution[swiOp] = {(int)nextCycle, (int)swiPE, -1};
+  llvm::errs() << "Failed to find available pe for " << swiOp << "\n";
+  // place swiOp to the next available pe, delay all the schedule after
+  // nextCycle
+  for (auto &[op, su] : solution) {
+    llvm::errs() << "delay " << op << "1 CC\n";
+    if (op->getBlock() == block && su.time >= nextCycle)
+      su.time++;
   }
+  solution[swiOp] = {(int)nextCycle, (int)swiPE, -1};
 }
 
 cgra::LwiOp TemporalCGRAScheduler::insertLoadOp(Operation *refOp, unsigned addr,

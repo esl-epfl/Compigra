@@ -320,28 +320,26 @@ LogicalResult CgraLowering::replaceCmpOps(ConversionPatternRewriter &rewriter) {
     }
 
     // Replace the select operation with bsfa/bzfa operation.
-    if (!selOps.empty()) {
-      // replace the bsfa with select operation
-      for (auto selOp : selOps) {
-        rewriter.setInsertionPoint(selOp);
-        if (predicate == LLVM::ICmpPredicate::eq) {
-          rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
-              selOp, selOp->getResult(0).getType(), selectFlag,
-              SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
-        } else if (predicate == LLVM::ICmpPredicate::ne) {
-          rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
-              selOp, selOp->getResult(0).getType(), selectFlag,
-              SmallVector<Value>({selOp->getOperand(2), selOp->getOperand(1)}));
-        } else {
-          rewriter.replaceOpWithNewOp<cgra::BsfaOp>(
-              selOp, selOp->getResult(0).getType(), selectFlag,
-              SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
-        }
+    // replace the bsfa with select operation
+    for (auto selOp : selOps) {
+      rewriter.setInsertionPoint(selOp);
+      if (predicate == LLVM::ICmpPredicate::eq) {
+        rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
+            selOp, selOp->getResult(0).getType(), selectFlag,
+            SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
+      } else if (predicate == LLVM::ICmpPredicate::ne) {
+        rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
+            selOp, selOp->getResult(0).getType(), selectFlag,
+            SmallVector<Value>({selOp->getOperand(2), selOp->getOperand(1)}));
+      } else {
+        rewriter.replaceOpWithNewOp<cgra::BsfaOp>(
+            selOp, selOp->getResult(0).getType(), selectFlag,
+            SmallVector<Value>({selOp->getOperand(1), selOp->getOperand(2)}));
       }
     }
 
     // Replace the cond_br operation with corresponding branch operation in cgra
-    if (replaceBranch && !condBrOps.empty()) {
+    if (replaceBranch) {
       for (auto brOp : condBrOps) {
         eraseBrOps.push_back(brOp);
         LLVM::CondBrOp condBrOp = dyn_cast<LLVM::CondBrOp>(brOp);

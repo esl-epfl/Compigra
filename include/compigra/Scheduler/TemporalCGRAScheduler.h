@@ -129,6 +129,9 @@ private:
 
   /// If the block has been scheduled, place the lwi/swi operation to the
   /// block's original schedule result without rerun its ILP model.
+
+  // block: the block to place the lwi/swi operation
+  // refOp and opIndex specify the value to be replaced by the lwi operation
   void placeLwiOpToBlock(Block *block, Operation *refOp, unsigned opIndex,
                          cgra::LwiOp lwiOp);
 
