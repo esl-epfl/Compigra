@@ -184,11 +184,8 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     if (!isPhiRelatedValue(op->getResult(0)))
       continue;
 
-    llvm::errs() << "Phi related value: " << op->getResult(0) << "\n";
     for (auto suc : getCntBlocksThroughPhi(op->getResult(0))) {
       auto arg = getCntBlockArgument(op->getResult(0), suc);
-      llvm::errs() << "Block argument: " << arg << " "
-                   << suc->getOperations().front() << "\n";
       defMap[ind] = {nullptr, arg};
       ind++;
     }
@@ -259,18 +256,18 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
   }
 
   // print def and use
-  for (auto &[ind, val] : defMap) {
-    llvm::errs() << "def[" << ind << "]: ";
-    if (val.first)
-      llvm::errs() << *(val.first) << "\n";
-    else
-      llvm::errs() << val.second << "\n";
-    // print its use
-    llvm::errs() << "   use: ";
-    for (auto useInd : use[ind])
-      llvm::errs() << useInd << " ";
-    llvm::errs() << "\n";
-  }
+  // for (auto &[ind, val] : defMap) {
+  //   llvm::errs() << "def[" << ind << "]: ";
+  //   if (val.first)
+  //     llvm::errs() << *(val.first) << "\n";
+  //   else
+  //     llvm::errs() << val.second << "\n";
+  //   // print its use
+  //   llvm::errs() << "   use: ";
+  //   for (auto useInd : use[ind])
+  //     llvm::errs() << useInd << " ";
+  //   llvm::errs() << "\n";
+  // }
 
   std::vector<Operation *> sortedOps;
   for (auto [t, op] : opList)

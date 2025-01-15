@@ -201,8 +201,8 @@ LogicalResult compigra::allocateOutRegInPE(
   // }
 
   // print opMap and interference graph
-  llvm::errs() << "--------------Interference Graph-----------------\n";
-  graph.printGraph();
+  // llvm::errs() << "--------------Interference Graph-----------------\n";
+  // graph.printGraph();
 
   // allocate register using graph coloring
   // TODO[@YYY]: Spill the graph if the number of registers is not
@@ -530,6 +530,7 @@ static std::string getOperandSrcReg(int peA, int peB, int srcReg, int nRow,
   if (((peA + nCol) % (nRow * nCol)) == peB)
     return "RCB";
 
+  llvm::errs() << "ERROR: " << peA << " " << peB << "\n";
   return "ERROR";
 }
 

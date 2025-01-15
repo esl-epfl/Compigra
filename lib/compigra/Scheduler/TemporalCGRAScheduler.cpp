@@ -278,17 +278,20 @@ liveVec TemporalCGRAScheduler::getExternalLiveIn(Block *block) {
   // TODO[@YW]: add the function for determine whether the val should be
   // external live in
 
-  // for (auto val : bbLiveIn) {
-  //   // search whether the val is in the liveOutExterPlaces
-  //   auto it = std::find_if(
-  //       liveValExterPlaces.begin(), liveValExterPlaces.end(),
-  //       [&](std::pair<Value, unsigned> p) { return p.first == val; });
+  for (auto val : bbLiveIn) {
+    bool isExternal = false;
+    if (!isExternal)
+      continue;
+    // search whether the val is in the liveOutExterPlaces
+    auto it = std::find_if(
+        liveValExterPlaces.begin(), liveValExterPlaces.end(),
+        [&](std::pair<Value, unsigned> p) { return p.first == val; });
 
-  //   if (it != liveValExterPlaces.end()) {
-  //     auto index = it->second;
-  //     liveInExter.push_back({val, index});
-  //   }
-  // }
+    if (it != liveValExterPlaces.end()) {
+      auto index = it->second;
+      liveInExter.push_back({val, index});
+    }
+  }
   return liveInExter;
 }
 
@@ -297,6 +300,9 @@ liveVec TemporalCGRAScheduler::getInternalLiveIn(Block *block) {
   liveVec liveInInter;
 
   for (auto val : bbLiveIn) {
+    bool isInternal = true;
+    if (!isInternal)
+      continue;
     // search whether the val is in the liveOutInterPlaces
     auto it = std::find_if(
         liveValInterPlaces.begin(), liveValInterPlaces.end(),
@@ -315,8 +321,25 @@ liveVec TemporalCGRAScheduler::getInternalLiveIn(Block *block) {
 liveVec TemporalCGRAScheduler::getExternalLiveOut(Block *block) {
   auto bbLiveOut = liveOuts[block];
   liveVec liveOutExter;
-  // TODO[@YW]: add the function for determine whether the val should be
-  // external live out
+
+  for (auto val : bbLiveOut) {
+    // TODO[@YW]: add the function for determine whether the val should be
+    // external live out
+    bool isExternal = false;
+    if (!isExternal)
+      continue;
+
+    auto it = std::find_if(
+        liveValExterPlaces.begin(), liveValExterPlaces.end(),
+        [&](std::pair<Value, unsigned> p) { return p.first == val; });
+
+    if (it != liveValExterPlaces.end()) {
+      auto index = it->second;
+      liveOutExter.push_back({val, index});
+    } else {
+      liveOutExter.push_back({val, UINT32_MAX});
+    }
+  }
   return liveOutExter;
 }
 
@@ -325,6 +348,9 @@ liveVec TemporalCGRAScheduler::getInternalLiveOut(Block *block) {
   liveVec liveOutInter;
 
   for (auto val : bbLiveOut) {
+    bool isInternal = true;
+    if (!isInternal)
+      continue;
     // search whether the val is in the liveOutInterPlaces
     auto it = std::find_if(
         liveValInterPlaces.begin(), liveValInterPlaces.end(),
@@ -812,7 +838,6 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
                                           getInternalLiveOut(block));
         bbILPModel.setLiveInPrerequisite(getExternalLiveIn(block),
                                          getInternalLiveIn(block));
-        // bbILPModel.setRAWPair(opRAWs);
         movNum = 3;
         bbILPModel.setFailureStrategy(FailureStrategy::Mov);
       }

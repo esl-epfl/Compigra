@@ -179,7 +179,6 @@ void BasicBlockILPModel::createMemoryConsistencyConstraints(
 
   for (auto [_, seq] : memAccessSeq) {
     Operation *prevOp = seq[0];
-    llvm::errs() << "RAW: " << *prevOp << "\n";
     for (auto [ind, op] : llvm::enumerate(seq)) {
       if (ind == 0)
         continue;
@@ -187,9 +186,7 @@ void BasicBlockILPModel::createMemoryConsistencyConstraints(
       GRBVar y = opTimeVar.at(prevOp);
       model.addConstr(x >= y + 1);
       prevOp = op;
-      llvm::errs() << " << " << *op << "\n";
     }
-    llvm::errs() << "\n";
   }
 }
 
