@@ -429,13 +429,8 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
       } else if (isa<cgra::ConditionalBranchOp>(user) &&
                  use.getOperandNumber() > 1) {
         // if it is propagated to the successor block through bne, beq, blt, bge
-        if (user->getBlock()->getSuccessor(0) == loopBlock) {
-          // LLVM to CGRA conversion should adapt the loopblock to be the first
-          // block successor
-          Value arg = getCntBlockArgInPredcessor(use.getOperandNumber() - 2,
-                                                 loopBlock, loopBlock);
+        if (user->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber() - 2;
-        }
       } else {
         userInd = getNodeIndex(user);
       }
@@ -479,18 +474,6 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
     return failure();
 
   return success();
-}
-
-/// Function to split a string by whitespace
-static std::unordered_set<int> getOpIdSplit(std::istringstream &stream) {
-  std::unordered_set<int> tokens;
-
-  int number;
-  while (stream >> number) {
-    llvm::errs() << number << " ";
-    tokens.insert(number);
-  }
-  return tokens;
 }
 
 void satmapit::parsePKE(const std::string &line, unsigned termId,

@@ -69,16 +69,17 @@ public:
 private:
   Region &region;
   OpBuilder &builder;
-  Block::OpListType &loopOpList;
+  unsigned II = -1;
+  std::map<int, int> execTime;
   std::map<int, std::unordered_set<int>> opTimeMap;
   std::vector<std::unordered_set<int>> bbTimeMap;
+  Block::OpListType &loopOpList;
+
   Block *templateBlock = nullptr;
   Block *loopFalseBlk = nullptr;
   Block *initBlock = nullptr;
   Block *finiBlock = nullptr;
   unsigned loopOpNum = 0;
-  unsigned II = -1;
-  std::map<int, int> execTime;
 
 public:
   /// Adapt the CFG with the modulo scheduling result.

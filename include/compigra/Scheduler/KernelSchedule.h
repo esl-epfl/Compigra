@@ -39,8 +39,7 @@ SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val);
 /// Functions to get the operation that is connected to the value via branch.
 /// If the value has definition, return the operation that defines the value.
 /// Otherwise, return the producer operations that propagate to the value.
-SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val,
-                                                  Block *targetBlock = nullptr);
+SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val);
 
 template <typename T> class CGRAKernelScheduler {
 public:
@@ -85,9 +84,8 @@ public:
 protected:
   Region &region;
 
-public:
 #ifdef HAVE_GUROBI
-
+public:
   /// Initialize the optimization objective function, which is to minimize the
   /// kernel total PCs size.
   void initObjectiveFunction(GRBModel &model, GRBVar &funcStartT,
@@ -139,6 +137,7 @@ public:
   void initOpTimeSpaceConstraints(GRBModel &model,
                                   std::map<Operation *, GRBVar> &timeOpVar,
                                   std::map<Operation *, GRBVar> &spaceOpVar);
+
 #endif
 
 private:
@@ -158,9 +157,7 @@ public:
                       const std::map<int, Instruction> instructions,
                       std::vector<int> &totalExec, int gap = 0);
 
-  // void printKownSchedule();
   std::map<Operation *, Instruction> knownRes;
-
   std::map<Operation *, std::string> varNamePost;
 };
 } // namespace compigra

@@ -22,16 +22,6 @@ using namespace mlir;
 
 namespace compigra {
 
-// struct MergeOpInfo {
-//   Operation *op;
-//   Value val;
-//   SmallVector<Value> backedges;
-// };
-
-using BlockValues = DenseMap<Block *, std::vector<Value>>;
-// using BlockOps = DenseMap<Block *, std::vector<MergeOpInfo>>;
-using ValueMap = DenseMap<Value, Value>;
-
 /// Struct for describing the memory allocation policy of the address space
 /// between the host processor and the CGRA.
 struct MemoryInterface {

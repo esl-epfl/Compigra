@@ -1,4 +1,4 @@
-//===- OpenEdge.cpp - Declare the functions for gen OpenEdge ASM*- C++ -*-===//
+//===- OpenEdge.cpp - Implements the functions for OpenEdge ASM*- C++ --*-===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,6 +15,9 @@
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
@@ -110,26 +113,27 @@ static char allocatePhysicalRegOnIG(std::unordered_set<int> interfNodes,
   return color;
 }
 
-static int getValueIndex(Value val, std::map<int, Value> opResult) {
-  for (auto [ind, res] : opResult)
-    if (res.getDefiningOp() == val.getDefiningOp())
-      return ind;
-  return -1;
-}
+// static int getValueIndex(Value val, std::map<int, Value> opResult) {
+//   for (auto [ind, res] : opResult)
+//     if (res.getDefiningOp() == val.getDefiningOp())
+//       return ind;
+//   return -1;
+// }
 
 // TODO[@YYY]: allocate register for the phi node (could be other PE, e.g.
 // RCL, RCR, RCT, RCB)
 std::map<int, int> getLimitationUseWithPhiNode(
-    const std::vector<int> phiNodes, const std::map<int, Value> opMap,
+    const std::vector<int> phiNodes,
+    const std::map<int, std::pair<Operation *, Value>> opMap,
     const std::map<int, mlir::Operation *> opList,
     compigra::InterferenceGraph<int> &graph, unsigned maxReg) {
   std::map<int, int> limitedUse;
   for (int node : phiNodes) {
     // phi node should be block argument of the basic block
     // BlockArgument arg = dyn_cast<BlockArgument>(opMap.at(node));
-    auto arg = opMap.at(node);
+    auto arg = opMap.at(node).second.cast<BlockArgument>();
 
-    auto defOps = getCntDefOpIndirectly(arg, arg.getParentBlock());
+    auto defOps = getCntDefOpIndirectly(arg);
     // allocate register for the phi node
     std::unordered_set<int> usedColors;
     for (auto u : graph.adjList[node]) {
@@ -184,12 +188,21 @@ LogicalResult compigra::allocateOutRegInPE(
     std::map<Operation *, ScheduleUnit> &solution, unsigned maxReg,
     std::map<int, std::unordered_set<int>> pcCtrlFlow) {
   // init Operation result to integer
-  std::map<int, Value> opMap;
+  std::map<int, std::pair<Operation *, Value>> opMap;
   auto graph = createInterferenceGraph(opList, opMap, pcCtrlFlow);
+  // print opMap
+  // for (auto [ind, pair] : opMap) {
+  //   llvm::errs() << ind << ": ";
+  //   if (pair.first)
+  //     llvm::errs() << *pair.first << " ";
+  //   else if (pair.second)
+  //     llvm::errs() << pair.second << " ";
+  //   llvm::errs() << "\n";
+  // }
 
   // print opMap and interference graph
-  llvm::errs() << "--------------Interference Graph-----------------\n";
-  graph.printGraph();
+  // llvm::errs() << "--------------Interference Graph-----------------\n";
+  // graph.printGraph();
 
   // allocate register using graph coloring
   // TODO[@YYY]: Spill the graph if the number of registers is not
@@ -203,7 +216,7 @@ LogicalResult compigra::allocateOutRegInPE(
   std::vector<int> phiList;
   llvm::errs() << "PEO: [";
   for (auto v : peo) {
-    Value val = opMap[v];
+    Value val = opMap[v].second;
     llvm::errs() << " " << v;
     // first mark phi node as limited use
     if (isa<BlockArgument>(val)) {
@@ -213,13 +226,6 @@ LogicalResult compigra::allocateOutRegInPE(
     }
 
     auto defOp = val.getDefiningOp();
-    // check whether v has been pre-colored
-    llvm::errs() << "(" << *defOp << " NEED?: " << graph.needColor(v) << ")";
-    if (!graph.needColor(v)) {
-      // Use produced pe + 100 as the color of the vertex to avoid conflict
-      graph.colorMap[v] = solution[defOp].pe + 100;
-      continue;
-    }
 
     if (solution[defOp].reg >= 0)
       graph.colorMap[v] = solution[defOp].reg;
@@ -235,75 +241,61 @@ LogicalResult compigra::allocateOutRegInPE(
 
   // Color the vertices in the order of PEO
   for (auto v : peo) {
-    Value val = opMap[v];
+    Value val = opMap[v].second;
     auto defOp = val.getDefiningOp();
     if (!defOp)
       continue;
 
-    if (graph.needColor(v)) {
-      if (solution[defOp].reg >= 0) {
-        graph.colorMap[v] = solution[defOp].reg;
-        llvm::errs() << v << ": " << std::to_string(graph.colorMap[v]) << "\n";
-        continue;
-      }
+    // if (!graph.needColor(v))
+    // continue;
 
-      // allocate register according to the limited use of the phi node
-      if (limitedUse.find(v) != limitedUse.end()) {
-        // TODO[@YYY]: check the validity of the limitation
-        graph.colorMap[v] = limitedUse[v];
-        llvm::errs() << v << ": "
-                     << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
-                     << val << "\n";
-        solution[defOp].reg = limitedUse[v];
-        continue;
-      }
-
-      std::unordered_set<int> usedColors;
-      // allocate register using the interference graph
-      for (auto u : graph.adjList[v]) {
-        if (graph.colorMap.find(u) != graph.colorMap.end())
-          usedColors.insert(graph.colorMap[u]);
-      }
-
-      // char color = 0;
-      // while (usedColors.find(color) != usedColors.end()) {
-      //   color++;
-      //   if (color >= maxReg) {
-      //     llvm::errs() << "FAILED ALLOCATE REGISTER\n";
-
-      //     // maxReg is Rout. In principle, the register should not be
-      //     // assigned to Rout if it is used internally.
-      //     return failure();
-      //   }
-      // }
-      char color = allocatePhysicalRegOnIG(graph.adjList[v], graph.colorMap,
-                                           usedColors, maxReg);
-      if (color >= maxReg) {
-        llvm::errs() << "FAILED ALLOCATE REGISTER for " << v << "\n";
-        return failure();
-      }
-      graph.colorMap[v] = color;
-      llvm::errs() << v << ": ALLOCATE R" << std::to_string(color) << " TO "
-                   << val << "\n";
-      solution[defOp].reg = color;
+    if (solution[defOp].reg >= 0) {
+      graph.colorMap[v] = solution[defOp].reg;
+      llvm::errs() << v << ": " << std::to_string(graph.colorMap[v]) << "\n";
+      continue;
     }
+
+    // allocate register according to the limited use of the phi node
+    if (limitedUse.find(v) != limitedUse.end()) {
+      // TODO[@YYY]: check the validity of the limitation
+      graph.colorMap[v] = limitedUse[v];
+      llvm::errs() << v << ": "
+                   << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
+                   << val << "\n";
+      solution[defOp].reg = limitedUse[v];
+      continue;
+    }
+
+    std::unordered_set<int> usedColors;
+    // allocate register using the interference graph
+    for (auto u : graph.adjList[v]) {
+      if (graph.colorMap.find(u) != graph.colorMap.end())
+        usedColors.insert(graph.colorMap[u]);
+    }
+
+    // char color = 0;
+    // while (usedColors.find(color) != usedColors.end()) {
+    //   color++;
+    //   if (color >= maxReg) {
+    //     llvm::errs() << "FAILED ALLOCATE REGISTER\n";
+
+    //     // maxReg is Rout. In principle, the register should not be
+    //     // assigned to Rout if it is used internally.
+    //     return failure();
+    //   }
+    // }
+    char color = allocatePhysicalRegOnIG(graph.adjList[v], graph.colorMap,
+                                         usedColors, maxReg);
+    if (color >= maxReg) {
+      llvm::errs() << "FAILED ALLOCATE REGISTER for " << v << "\n";
+      return failure();
+    }
+    graph.colorMap[v] = color;
+    llvm::errs() << v << ": ALLOCATE R" << std::to_string(color) << " TO "
+                 << val << "\n";
+    solution[defOp].reg = color;
   }
   return success();
-}
-
-/// Function to print the map of instructions
-static void
-printInstructions(const std::map<Operation *, Instruction> &instructions) {
-  for (const auto &pair : instructions) {
-    const Instruction &inst = pair.second;
-    llvm::errs() << "Op: " << *pair.first << "\n"
-                 << "Name: " << inst.name << " "
-                 << "Time: " << inst.time << " "
-                 << "PE: " << inst.pe << " "
-                 << "Rout: " << inst.Rout << " "
-                 << "OpA: " << inst.opA << " "
-                 << "OpB: " << inst.opB << "\n\n";
-  }
 }
 
 static bool isRegisterDigit(const std::string &reg, unsigned maxReg) {
@@ -325,7 +317,8 @@ std::map<int, std::unordered_set<int>> OpenEdgeASMGen::getPcCtrlFlow() {
     auto opList = getOperationsAtTime(i);
     // if opList does not contain any branch ops, pc increment by 1
     for (auto [pe, op] : opList) {
-      if (isa<LLVM::BrOp>(op) || isa<cgra::ConditionalBranchOp>(op)) {
+      if (isa<LLVM::BrOp>(op) || isa<cgra::ConditionalBranchOp>(op) ||
+          isa<cf::BranchOp>(op)) {
         auto block = op->getBlock();
         int time = i;
         int sucTime = getEarliestExecutionTime(block->getSuccessor(0));
@@ -358,18 +351,16 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
   auto pcCtrlFlow = getPcCtrlFlow();
   // print pcCtrlFlow
-  for (auto [time, suc] : pcCtrlFlow) {
-    llvm::errs() << "Time: " << time << " ->{ ";
-    for (auto s : suc)
-      llvm::errs() << s << ", ";
-    llvm::errs() << "}\n";
-  }
+  // for (auto [time, suc] : pcCtrlFlow) {
+  //   llvm::errs() << "Time: " << time << " ->{ ";
+  //   for (auto s : suc)
+  //     llvm::errs() << s << ", ";
+  //   llvm::errs() << "}\n";
+  // }
 
   for (size_t pe = 0; pe < nRow * nCol; ++pe) {
     llvm::errs() << "\nPE = " << pe << "\n";
     auto ops = getOperationsAtPE(pe);
-
-    bool update = false;
     // Allocate registers if it can be inferred from the known result.
     for (auto [time, op] : ops) {
       // Check whether the PE of the operation is known, if yes, skip
@@ -398,8 +389,6 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
           int leftOpId = 0;
           if (isa<cgra::BsfaOp, cgra::BzfaOp>(user))
             leftOpId = 1;
-          bool isLeftOpr =
-              op->getResult(0) == user->getOperand(leftOpId) ? 1 : 0;
           std::string regStr =
               leftOpId ? instSolution[user].opA : instSolution[user].opB;
           if (regStr == "ROUT") {
@@ -419,10 +408,12 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
         // if the user PE is not restricted, don't allocate register for now
       }
-      if (allUserOutside)
+      if (allUserOutside) {
         solution[op].reg = maxReg;
+        llvm::errs() << *op << " -> " << maxReg << "\n";
+      }
     }
-
+    llvm::errs() << "PE " << pe << " reference done\n";
     // allocate register for the operations in the PE
     if (failed(allocateOutRegInPE(ops, solution, maxReg, pcCtrlFlow))) {
       llvm::errs() << "Failed to allocate register for PE " << pe << "\n";
@@ -445,7 +436,9 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   llvm::errs() << "Register allocation done\n";
 
   // write register allocation results to instructions
-  convertToInstructionMap();
+  if (failed(convertToInstructionMap()))
+    return failure();
+
   return success();
 }
 
@@ -507,28 +500,18 @@ static std::string padString(const std::string &str, size_t width) {
                            ' '); // Pad with spaces on the right
 }
 
-static int getOpIndex(Operation *op) {
-  auto block = op->getBlock();
-  int index = 0;
-  for (auto &iterOp : block->getOperations()) {
-    if (op == &iterOp)
-      return index;
-    index++;
-  }
-  return -1;
-}
-
 /// Function for retrieve the operand knowning the src operation and user
 /// operand's definition operand's PES.
 /// e.g. Suppose %a = op %b, ..., return the string of the %b for %a, such
 /// as R0, R1,... or RCT, RCB, RCR, RCL.
 static std::string getOperandSrcReg(int peA, int peB, int srcReg, int nRow,
                                     int nCol, unsigned maxReg) {
-  if (peA == peB)
+  if (peA == peB) {
     if (srcReg == maxReg)
       return "ROUT";
     else
       return "R" + std::to_string(srcReg);
+  }
 
   // check userPE in the neighbour of srcPE
   // check whether peB on peA right
@@ -547,7 +530,19 @@ static std::string getOperandSrcReg(int peA, int peB, int srcReg, int nRow,
   if (((peA + nCol) % (nRow * nCol)) == peB)
     return "RCB";
 
+  llvm::errs() << "ERROR: " << peA << " " << peB << "\n";
   return "ERROR";
+}
+
+static std::string getConstantString(Operation *op) {
+  if (isa<LLVM::ConstantOp>(op))
+    return std::to_string(op->getAttrOfType<IntegerAttr>("value").getInt());
+  if (auto constOp = dyn_cast_or_null<arith::ConstantIntOp>(op))
+    return std::to_string(constOp.getValue().cast<IntegerAttr>().getInt());
+  if (auto constOp = dyn_cast_or_null<arith::ConstantFloatOp>(op))
+    return std::to_string(
+        constOp.getValue().cast<FloatAttr>().getValueAsDouble());
+  return "Unknown";
 }
 
 LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
@@ -572,12 +567,11 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
 
     // Get defition operation
     if (op->getNumOperands() > leftId && inst.opA == "Unknown") {
-      auto producerA =
-          getCntDefOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
-      if (isa<LLVM::ConstantOp>(producerA))
-        // assign opA to be Imm
-        inst.opA = std::to_string(
-            producerA->getAttrOfType<IntegerAttr>("value").getInt());
+      auto producerA = getCntDefOpIndirectly(op->getOperand(leftId))[0];
+      if (isa<LLVM::ConstantOp>(producerA) ||
+          isa<arith::ConstantOp>(producerA) ||
+          isa<arith::ConstantFloatOp>(producerA))
+        inst.opA = getConstantString(producerA);
       else if (solution.find(producerA) != solution.end())
         inst.opA =
             getOperandSrcReg(unit.pe, solution[producerA].pe,
@@ -587,12 +581,12 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
     }
 
     if (op->getNumOperands() > leftId + 1 && inst.opB == "Unknown") {
-      auto producerB =
-          getCntDefOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
-      if (isa<LLVM::ConstantOp>(producerB))
+      auto producerB = getCntDefOpIndirectly(op->getOperand(leftId + 1))[0];
+      if (isa<LLVM::ConstantOp>(producerB) ||
+          isa<arith::ConstantOp>(producerB) ||
+          isa<arith::ConstantFloatOp>(producerB))
         // assign opA to be Imm
-        inst.opB = std::to_string(
-            producerB->getAttrOfType<IntegerAttr>("value").getInt());
+        inst.opB = getConstantString(producerB);
       else if (solution.find(producerB) != solution.end())
         inst.opB =
             getOperandSrcReg(unit.pe, solution[producerB].pe,
@@ -609,7 +603,7 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
 std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
                                                   bool dropNeighbourBr) {
   // If it is return, return EXIT
-  if (isa<LLVM::ReturnOp>(op))
+  if (isa<LLVM::ReturnOp, func::ReturnOp>(op))
     return "EXIT";
 
   // Drop the dialect prefix
@@ -639,14 +633,14 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
     opName = isaMap[opName];
 
   // If the operation is branchOp, find the branch target
-  if (auto brOp = dyn_cast<LLVM::BrOp>(op)) {
-    auto block = brOp->getSuccessor(0);
+  if (isa<LLVM::BrOp, cf::BranchOp>(op)) {
+    Block *block = op->getSuccessor(0);
     int sucTime = getEarliestExecutionTime(block);
     int curTime = getEarliestExecutionTime(op);
     if (sucTime == curTime + 1 && dropNeighbourBr)
       return "NOP";
-    return "JUMP " + std::to_string(sucTime + baseTime) + ", " +
-           std::to_string(startPC);
+    return "JUMP " + std::to_string(startPC) + ", " +
+           std::to_string(sucTime + baseTime);
   }
 
   std::string ROUT = "";
@@ -664,22 +658,22 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
 
   if (op->getNumOperands() > 0) {
     // check whether the operand is immediate
-    auto cntOp =
-        getCntDefOpIndirectly(op->getOperand(leftId), op->getBlock())[0];
-    if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
-      int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
-      opA = imm ? " " + std::to_string(imm) : " ZERO";
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(leftId))[0];
+    if (isa<LLVM::ConstantOp, arith::ConstantIntOp, arith::ConstantFloatOp>(
+            cntOp)) {
+      std::string imm = getConstantString(cntOp);
+      opA = std::stod(imm) ? " " + imm : " ZERO";
     } else
       opA = " " + instSolution[op].opA;
   }
 
   std::string opB = "";
   if (op->getNumOperands() > 1) {
-    auto cntOp =
-        getCntDefOpIndirectly(op->getOperand(leftId + 1), op->getBlock())[0];
-    if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
-      int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
-      opB = imm ? "," + std::to_string(imm) : ",ZERO";
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(leftId + 1))[0];
+    if (isa<LLVM::ConstantOp, arith::ConstantIntOp, arith::ConstantFloatOp>(
+            cntOp)) {
+      std::string imm = getConstantString(cntOp);
+      opB = std::stod(imm) ? " " + imm : " ZERO";
     } else
       opB = "," + instSolution[op].opB;
   }
@@ -687,12 +681,13 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
   std::string addition = "";
   if (isa<cgra::ConditionalBranchOp>(op)) {
     auto block = op->getSuccessor(0);
+    // print the first operation of block
     int sucTime = getEarliestExecutionTime(block);
     addition = ", " + std::to_string(sucTime + baseTime);
   }
 
   if (isa<cgra::BzfaOp, cgra::BsfaOp>(op)) {
-    auto cntOp = getCntDefOpIndirectly(op->getOperand(0), op->getBlock())[0];
+    auto cntOp = getCntDefOpIndirectly(op->getOperand(0))[0];
     if (auto constOp = dyn_cast<LLVM::ConstantOp>(cntOp)) {
       int imm = constOp.getValueAttr().dyn_cast<IntegerAttr>().getInt();
       addition = imm ? " " + std::to_string(imm) : " ZERO";
@@ -729,28 +724,61 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
   // For each time step
   initBaseTime(startPC);
   std::vector<std::vector<std::string>> asmCode;
+
+  // first remove unnecessary time frame which only contains one jump to the
+  // next PC.
+  for (auto brOp : region.getOps<cf::BranchOp>()) {
+    Block *block = brOp.getSuccessor();
+    int sucTime = getEarliestExecutionTime(block);
+    int curTime = getEarliestExecutionTime(brOp);
+    auto ops = getOperationsAtTime(curTime);
+    // find the num of op != NOP in ops
+    if (sucTime == curTime + 1 && ops.size() == 1)
+      dropJumpOps.push_back(brOp);
+  }
+
+  // revise the solution according to the dropJumpOps
+  int startT = getKernelStart();
   int endTime = getKernelEnd();
-  for (int t = getKernelStart(); t <= endTime; t++) {
+  int timeShift = 0;
+  for (int t = startT; t <= endTime; t++) {
+    auto ops = getOperationsAtTime(t);
+    for (auto [_, op] : ops) {
+      ScheduleUnit &unit = solution[op];
+      unit.time -= timeShift;
+    }
+    auto [_, op] = *ops.begin();
+    if (std::find(dropJumpOps.begin(), dropJumpOps.end(), op) !=
+        dropJumpOps.end()) {
+      timeShift++;
+    }
+  }
+
+  for (auto op : dropJumpOps) {
+    solution.erase(op);
+  }
+
+  startT = getKernelStart();
+  endTime = getKernelEnd();
+
+  for (int t = startT; t <= endTime; t++) {
     // Get the operations scheduled at the time step
     auto ops = getOperationsAtTime(t);
-    // print ops
-    // for (auto [pe, op] : ops) {
-    //   llvm::errs() << "Time = " << t << " PE = " << pe << " ";
-    //   llvm::errs() << *op << "\n";
-    // }
+
     std::vector<std::string> asmCodeLine;
     bool isNOP = true;
     for (int i = 0; i < nRow; i++) {
       for (int j = 0; j < nCol; j++) {
-        if (ops.find(i * nCol + j) != ops.end()) {
-          std::string isa = printInstructionToISA(ops[i * nCol + j]);
-          isNOP = (isa != "NOP") ? false : isNOP;
-          asmCodeLine.push_back(isa);
-        } else {
+        if (ops.find(i * nCol + j) == ops.end()) {
           asmCodeLine.push_back("NOP");
+          continue;
         }
+        std::string isa = printInstructionToISA(ops[i * nCol + j], false);
+        isNOP = (isa != "NOP") ? false : isNOP;
+        asmCodeLine.push_back(isa);
       }
     }
+
     if (!isNOP)
       asmCode.push_back(asmCodeLine);
     // If the time step is empty, skip it and revise the base time
@@ -853,7 +881,7 @@ static LogicalResult initBlockArgs(Block *block,
                                    std::map<int, Instruction> &instructions,
                                    OpBuilder &builder) {
   // Get the phi nodes in the block
-  int nPhi = 0;
+  unsigned nPhi = 0;
   for (auto [index, inst] : instructions) {
     if (inst.name != "phi")
       break;
@@ -912,8 +940,8 @@ getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap) {
   return opExecT;
 }
 
-/// Function to use the modulo schedule result to initialize existing results in
-/// the region and
+/// Function to use the modulo schedule result to initialize existing results
+/// in the region and
 LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
                                       const unsigned maxReg,
                                       OpenEdgeKernelScheduler &scheduler,
@@ -942,7 +970,8 @@ LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
     std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
     ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(), II,
                                   execTime, opTimeMap, bbTimeMap);
-    adapter.adaptCFGWithLoopMS();
+    if (failed(adapter.adaptCFGWithLoopMS()))
+      return failure();
 
     // hash map to store the total round of operation execution, where
     // totalRound[ind] represents ind-th operation's in the loop has been
@@ -988,7 +1017,7 @@ static Operation *getFirstOpInRegion(Region &r) {
 }
 
 void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
-  std::string mapResult = "";
+  std::string mapResult = "/home/yuxuan/Projects/24S/Compigra/build/sha4_0.sol";
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";
@@ -998,7 +1027,6 @@ void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
   std::map<std::string, float> peDict;
 
   std::string line;
-  bool parsing = false;
   while (std::getline(file, line)) {
     if (line.find("time_") != std::string::npos) {
       auto key = line.substr(5, line.find(" ") - 5);
@@ -1043,7 +1071,7 @@ struct OpenEdgeASMGenPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-    unsigned maxReg = 6;
+    char maxReg = 3;
     // initial interval
     int II;
 
@@ -1072,7 +1100,7 @@ struct OpenEdgeASMGenPass
       } else {
         int startPC = 0;
         // DEBUG: READ RESULT FROM FILE
-        // readScheduleResult(r, scheduler);
+        readScheduleResult(r, scheduler);
         scheduler.knownRes[getFirstOpInRegion(r)] =
             Instruction{"init", startPC, 0, (int)maxReg, "Unknown", "Unknown"};
       }

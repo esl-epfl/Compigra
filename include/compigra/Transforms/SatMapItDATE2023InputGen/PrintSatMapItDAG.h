@@ -72,17 +72,18 @@ public:
   int getNodeIndex(Value val);
 
 private:
-  SmallVector<Operation *> nodes = {};
   Operation *terminator = nullptr;
-  Block *loopBlock, *initBlock, *finiBlock;
-  unsigned blockArg = 0;
+  SmallVector<Operation *> nodes = {};
+  SmallVector<LLVM::ConstantOp> constants = {};
   SmallVector<BlockArgument> BlockArgs = {};
   SmallVector<Value> liveOutArgs = {};
+
+  Block *loopBlock, *initBlock, *finiBlock;
+  unsigned blockArg = 0;
 
   // operation out of SAT-MapIt schedule block
   SmallVector<Operation *> liveIns = {};
   SmallVector<Operation *> liveOuts = {};
-  SmallVector<LLVM::ConstantOp> constants = {};
 
   // Argument with corresponding definition operations
   using selectOps = SmallVector<Value, 2>;

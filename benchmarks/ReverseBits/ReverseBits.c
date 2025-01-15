@@ -2,7 +2,7 @@
 #include <math.h>
 
 
-unsigned ReverseBits ( unsigned *index_ptr, unsigned *NumBits_ptr, unsigned *rev_ptr )
+void ReverseBits ( unsigned *index_ptr, unsigned *NumBits_ptr, unsigned *rev_ptr )
 {
     unsigned i, rev;
 
@@ -19,7 +19,6 @@ unsigned ReverseBits ( unsigned *index_ptr, unsigned *NumBits_ptr, unsigned *rev
     // *NumBits_ptr = NumBits;
     *rev_ptr = rev;
 
-    return 0;
 }
 
 
@@ -27,7 +26,7 @@ int main(){
   unsigned index = 325;
   unsigned NumBits = 32;
   unsigned result;
-  unsigned rev = ReverseBits(index, NumBits, result);
+  ReverseBits(&index, &NumBits, &result);
   // printf("Index: ");
   // for (int i = sizeof(index) * 8 - 1; i >= 0; i--) {
   //   putchar((index & (1 << i)) ? '1' : '0');
