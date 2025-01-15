@@ -90,11 +90,6 @@ public:
   void setCheckPoint(Operation *op) { checkptr = op; }
   Operation *getCheckPoint() { return checkptr; }
 
-  void
-  setRAWPair(const SetVector<std::pair<Operation *, Operation *>> constrRAWs) {
-    this->opRAWs = constrRAWs;
-  }
-
   void saveSubILPModelResult(std::string filename);
 
 private:
@@ -106,8 +101,6 @@ private:
   Operation *failUser = nullptr;
   OpBuilder builder;
   Operation *checkptr = nullptr;
-
-  SetVector<std::pair<Operation *, Operation *>> opRAWs;
 
   Block *block;
   unsigned bbId;
@@ -128,8 +121,8 @@ private:
   LogicalResult createLocalDominanceConstraints(
       GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar);
 
-  void createRAWConstraints(GRBModel &model,
-                            const std::map<Operation *, GRBVar> opTimeVar);
+  void createMemoryConsistencyConstraints(
+      GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar);
 
   LogicalResult createLocalLivenessConstraints(
       GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
@@ -138,9 +131,9 @@ private:
 
   LogicalResult
   createRoutingConstraints(GRBModel &model,
-                            const std::map<Operation *, GRBVar> opTimeVar,
-                            const std::map<Operation *, GRBVar> opPeVar,
-                            const std::map<Operation *, std::string> varName);
+                           const std::map<Operation *, GRBVar> opTimeVar,
+                           const std::map<Operation *, GRBVar> opPeVar,
+                           const std::map<Operation *, std::string> varName);
 
   LogicalResult createGlobalLiveInInterConstraints(
       GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,

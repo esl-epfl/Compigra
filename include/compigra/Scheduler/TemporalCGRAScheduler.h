@@ -96,12 +96,6 @@ private:
   void calculateTemporalSpatialSchedule(const std::string fileName);
 
   // ================ ILP Model Failure Handling Data Structures ===============
-  // Read-after-write (RAW) dependencies, where the first element is the srcOp
-  // and the second element is the dstOp. The srcOp and the dstOp must be in the
-  // same block as CFG would automatically ensure the RAW dependencies between
-  // the different blocks.
-  SetVector<std::pair<Operation *, Operation *>> opRAWs;
-
   // stack to store the value evicted to memory, the first element is the
   // address, the second element is the corresponding value.
   std::vector<std::pair<unsigned, Value>> memStack;

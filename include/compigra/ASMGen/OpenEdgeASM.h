@@ -132,9 +132,10 @@ private:
   std::map<std::string, std::string> isaMap = {
       {"ADD", "SADD"},  {"ADDI", "SADD"}, {"ADDF", "SADD"}, {"SUB", "SSUB"},
       {"SUBI", "SSUB"}, {"SUBF", "SSUB"}, {"MULI", "SMUL"}, {"MULF", "FXPMUL"},
-      {"MUL", "SMUL"},  {"DIV", "SDIV"},  {"OR", "LOR"},    {"XOR", "LXOR"},
-      {"LSHR", "SRT"},  {"ASHR", "SRA"},  {"SHL", "SLT"},   {"SHLI", "SLT"},
-      {"AND", "LAND"},  {"BR", "JUMP"}};
+      {"MUL", "SMUL"},  {"DIV", "SDIV"},  {"OR", "LOR"},    {"ORI", "LOR"},
+      {"XOR", "LXOR"},  {"XORI", "LXOR"}, {"LSHR", "SRT"},  {"ASHR", "SRA"},
+      {"SHL", "SLT"},   {"SHRSI", "SRA"}, {"SHRUI", "SLT"}, {"SHLI", "SLT"},
+      {"AND", "LAND"},  {"ANDI", "LAND"},  {"BR", "JUMP"}};
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",

@@ -40,6 +40,50 @@ static Block *getCgraBranchDstBlock(Block *block) {
   return nextNode == sucNode ? block->getSuccessors().back() : sucNode;
 }
 
+/// Remove unused operations
+static LogicalResult removeUnusedOps(func::FuncOp funcOp) {
+  SmallVector<Operation *> eraseOps;
+  for (auto &op : funcOp.getOps()) {
+    if (op.getBlock()->getTerminator() == &op || isa<cgra::SwiOp>(op))
+      continue;
+
+    if (op.use_empty()) {
+      eraseOps.push_back(&op);
+
+      // Backtrack the definition Op if its only user has been erased
+      SmallVector<Operation *> toProcess = eraseOps;
+      while (!toProcess.empty()) {
+        Operation *op = toProcess.back();
+        toProcess.pop_back();
+
+        for (Value operand : op->getOperands()) {
+          Operation *predOp = operand.getDefiningOp();
+          if (predOp && predOp->hasOneUse()) {
+            // Erase an operation once
+            if (std::find(eraseOps.begin(), eraseOps.end(), predOp) ==
+                eraseOps.end())
+              eraseOps.push_back(predOp);
+            toProcess.push_back(predOp);
+          }
+        }
+      }
+    }
+  }
+
+  for (Operation *op : eraseOps)
+    op->erase();
+
+  return success();
+}
+
+static LogicalResult raiseConstOpToTop(func::FuncOp funcOp) {
+  for (auto cstOp :
+       llvm::make_early_inc_range(funcOp.getOps<arith::ConstantOp>())) {
+    cstOp->moveBefore(&funcOp.getBlocks().front().front());
+  }
+  return success();
+}
+
 /// Check whether the block should be forced to jump to the next block.
 /// cf.cond_br to cgra.cond_br adaptation is composed of single
 /// conditional + branch. If the negative successor is the next node, the
@@ -559,23 +603,6 @@ void compigra::populateCfToCgraConversionPatterns(
                                             globalConstAddrs);
 }
 
-static LogicalResult raiseConstOpToTop(func::FuncOp funcOp) {
-  for (auto cstOp :
-       llvm::make_early_inc_range(funcOp.getOps<arith::ConstantOp>())) {
-    cstOp->moveBefore(&funcOp.getBlocks().front().front());
-  }
-  return success();
-}
-
-static LogicalResult removeUseEmptyOps(func::FuncOp funcOp) {
-  for (auto cstOp :
-       llvm::make_early_inc_range(funcOp.getOps<arith::ConstantOp>())) {
-    if (cstOp.use_empty())
-      cstOp.erase();
-  }
-  return success();
-}
-
 void CfToCgraConversionPass::runOnOperation() {
   ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
   OpBuilder builder(modOp);
@@ -615,7 +642,7 @@ void CfToCgraConversionPass::runOnOperation() {
   auto funcOps = modOp.getOps<func::FuncOp>();
   if (!funcOps.empty()) {
     auto funcOp = *funcOps.begin();
-    if (failed(raiseConstOpToTop(funcOp)) || failed(removeUseEmptyOps(funcOp)))
+    if (failed(removeUnusedOps(funcOp)) || failed(raiseConstOpToTop(funcOp)))
       signalPassFailure();
   }
 }

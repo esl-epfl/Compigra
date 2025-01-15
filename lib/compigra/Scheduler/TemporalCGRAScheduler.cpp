@@ -369,30 +369,30 @@ void TemporalCGRAScheduler::insertMovOp(Value origVal, Operation *user) {
 
 void TemporalCGRAScheduler::insertInternalLSOps(Operation *srcOp,
                                                 Operation *dstOp) {
-  unsigned lastPtr = 0;
+  unsigned assignAddr = 0;
   auto &refOp = srcOp->getBlock()->getOperations().front();
   if (!memStack.empty())
-    lastPtr = memStack.back().first + 4;
-  memStack.push_back({lastPtr, srcOp->getResult(0)});
+    assignAddr = memStack.back().first + 4;
+  memStack.push_back({assignAddr, srcOp->getResult(0)});
 
   // insert swi op after the srcOp
   builder.setInsertionPointAfter(srcOp);
-  auto addr = builder.create<arith::ConstantIntOp>(refOp.getLoc(), lastPtr,
+  auto addr = builder.create<arith::ConstantIntOp>(refOp.getLoc(), assignAddr,
                                                    builder.getIntegerType(32));
   auto swi = builder.create<cgra::SwiOp>(srcOp->getLoc(), srcOp->getResult(0),
                                          addr->getResult(0));
-  swi->setAttr("memLoc", builder.getI32IntegerAttr(lastPtr));
+  swi->setAttr("memLoc", builder.getI32IntegerAttr(assignAddr));
 
   // insert lwi op before the dstOp
-  // builder.setInsertionPoint(dstOp);
+  builder.setInsertionPoint(dstOp);
   auto loadOp = builder.create<cgra::LwiOp>(
-      swi->getLoc(), dstOp->getResult(0).getType(), addr->getResult(0));
+      dstOp->getLoc(), dstOp->getResult(0).getType(), addr->getResult(0));
   for (auto &use : llvm::make_early_inc_range(srcOp->getResult(0).getUses())) {
     Operation *user = use.getOwner();
     if (user == dstOp)
       user->setOperand(use.getOperandNumber(), loadOp->getResult(0));
   }
-  opRAWs.insert({loadOp, swi});
+  // opRAWs.insert({loadOp, swi});
 }
 
 std::map<Operation *, ScheduleUnit>
@@ -551,11 +551,9 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
     }
   }
 
-  llvm::errs() << "Failed to find available pe for " << swiOp << "\n";
   // place swiOp to the next available pe, delay all the schedule after
   // nextCycle
   for (auto &[op, su] : solution) {
-    llvm::errs() << "delay " << op << "1 CC\n";
     if (op->getBlock() == block && su.time >= nextCycle)
       su.time++;
   }
@@ -565,7 +563,6 @@ void TemporalCGRAScheduler::placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp) {
 cgra::LwiOp TemporalCGRAScheduler::insertLoadOp(Operation *refOp, unsigned addr,
                                                 Value origVal,
                                                 unsigned opIndex) {
-  llvm::errs() << "Create inserted load op\n";
   Block *userBlock = refOp->getBlock();
   unsigned blockIndex = std::distance(
       scheduleSeq.begin(),
@@ -613,14 +610,12 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
       memStack.begin(), memStack.end(),
       [&](std::pair<unsigned, Value> p) { return p.second == origVal; });
   if (memWriteOp != memStack.end()) {
-    llvm::errs() << "WARNING: Already inserted " << origVal << " at " << memLoc
-                 << "\n";
     memLoc = memWriteOp->first;
   }
 
-  unsigned lastPtr = memLoc == UINT_MAX ? 0 : memLoc;
+  unsigned assignAddr = memLoc == UINT_MAX ? 0 : memLoc;
   if (!memStack.empty() && memLoc == UINT_MAX) {
-    lastPtr = memStack.back().first + 4;
+    assignAddr = memStack.back().first + 4;
   }
 
   if (processCntPhi) {
@@ -630,7 +625,7 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
       auto phiVal = getCntBlockArgument(origVal, suc);
       // insert lwi to replace the phi value
       auto loadOp =
-          insertLoadOp(&suc->getOperations().front(), lastPtr, phiVal, true);
+          insertLoadOp(&suc->getOperations().front(), assignAddr, phiVal, true);
       // cannot find position to insert lwi op
       if (!loadOp)
         return failure();
@@ -640,7 +635,7 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
       // insert swi op for all source operands
       SmallVector<Value, 2> srcVals = getSrcOprandsOfPhi(phiVal, true);
       for (auto src : srcVals)
-        if (failed(splitDFGWithLSOps(src, nullptr, lastPtr, false)))
+        if (failed(splitDFGWithLSOps(src, nullptr, assignAddr, false)))
           return failure();
     }
     return success();
@@ -651,8 +646,6 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
     for (auto &use : llvm::make_early_inc_range(origVal.getUses())) {
       Operation *user = use.getOwner();
       Block *userBlock = user->getBlock();
-
-      llvm::errs() << "User: " << *user << "\n";
       // not process intra-bb split here
       if (userBlock == refOp->getBlock())
         continue;
@@ -661,7 +654,7 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
         continue;
       }
       auto loadOp =
-          insertLoadOp(user, lastPtr, origVal, use.getOperandNumber());
+          insertLoadOp(user, assignAddr, origVal, use.getOperandNumber());
       user->setOperand(use.getOperandNumber(), loadOp->getResult(0));
       lwiOps[userBlock] = loadOp;
     }
@@ -678,15 +671,15 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
         std::find(scheduleSeq.begin(), scheduleSeq.end(), refOp->getBlock()));
 
     auto addr = builder.create<arith::ConstantIntOp>(
-        refOp->getLoc(), lastPtr, builder.getIntegerType(32));
+        refOp->getLoc(), assignAddr, builder.getIntegerType(32));
     auto swi = builder.create<cgra::SwiOp>(refOp->getLoc(), origVal,
                                            addr->getResult(0));
-    swi->setAttr("memLoc", builder.getI32IntegerAttr(lastPtr));
+    swi->setAttr("memLoc", builder.getI32IntegerAttr(assignAddr));
     if (blockIndex < scheduleIdx) {
       placeSwiOpToBlock(refOp->getBlock(), swi);
     }
 
-    memStack.push_back({lastPtr, origVal});
+    memStack.push_back({assignAddr, origVal});
   }
   return success();
 }
@@ -819,7 +812,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
                                           getInternalLiveOut(block));
         bbILPModel.setLiveInPrerequisite(getExternalLiveIn(block),
                                          getInternalLiveIn(block));
-        bbILPModel.setRAWPair(opRAWs);
+        // bbILPModel.setRAWPair(opRAWs);
         movNum = 3;
         bbILPModel.setFailureStrategy(FailureStrategy::Mov);
       }

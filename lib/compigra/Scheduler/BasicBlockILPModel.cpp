@@ -152,16 +152,44 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
   return success();
 }
 
-void BasicBlockILPModel::createRAWConstraints(
+void BasicBlockILPModel::createMemoryConsistencyConstraints(
     GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar) {
-  for (auto pair : opRAWs) {
-    auto [dstOp, srcOp] = pair;
-    if (opTimeVar.count(srcOp) == 0 || opTimeVar.count(dstOp) == 0)
+  // Memory access sequence should be consistent
+  // build memory access sequence
+  std::map<unsigned, std::vector<Operation *>> memAccessSeq;
+  for (auto op : scheduleOps) {
+    if (auto lwiOp = dyn_cast_or_null<cgra::LwiOp>(op)) {
+      if (auto cstOp = dyn_cast_or_null<arith::ConstantIntOp>(
+              lwiOp.getAddressOperand().getDefiningOp())) {
+        unsigned addr = cstOp.getValueAttr().cast<IntegerAttr>().getInt();
+        memAccessSeq[addr].push_back(op);
+      }
       continue;
-    GRBVar x = opTimeVar.at(dstOp);
-    GRBVar y = opTimeVar.at(srcOp);
-    model.addConstr(x <= y + 1);
-    llvm::errs() << "RAW: " << *dstOp << " << " << *srcOp << "\n";
+    }
+
+    if (auto swiOp = dyn_cast_or_null<cgra::SwiOp>(op)) {
+      if (auto cstOp = dyn_cast_or_null<arith::ConstantIntOp>(
+              swiOp.getAddressOperand().getDefiningOp())) {
+        unsigned addr = cstOp.getValueAttr().cast<IntegerAttr>().getInt();
+        memAccessSeq[addr].push_back(op);
+      }
+      continue;
+    }
+  }
+
+  for (auto [_, seq] : memAccessSeq) {
+    Operation *prevOp = seq[0];
+    llvm::errs() << "RAW: " << *prevOp << "\n";
+    for (auto [ind, op] : llvm::enumerate(seq)) {
+      if (ind == 0)
+        continue;
+      GRBVar x = opTimeVar.at(op);
+      GRBVar y = opTimeVar.at(prevOp);
+      model.addConstr(x >= y + 1);
+      prevOp = op;
+      llvm::errs() << " << " << *op << "\n";
+    }
+    llvm::errs() << "\n";
   }
 }
 
@@ -642,7 +670,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
     return failure();
   llvm::errs() << "Created global live in exter constraints\n";
 
-  createRAWConstraints(model, timeVarMap);
+  createMemoryConsistencyConstraints(model, timeVarMap);
 
   createLocalDominanceConstraints(model, timeVarMap);
 
