@@ -12,6 +12,7 @@
 
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
+#include "compigra/Support/Utils.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
@@ -327,43 +328,6 @@ void OpenEdgeKernelScheduler::initOpTimeConstraints(
       continue;
     model.addConstr(var <= timeOpVar.at(returnOp) - 1);
   }
-}
-
-/// Determine whether the srcBlk is the predecessor of dstBlk
-static bool isBackEdge(Block *srcBlk, Block *dstBlk) {
-  auto &entryBlock = srcBlk->getParent()->front();
-  // start DFS from entry block, if dstBlk is visited before srcBlk, it is a
-  // back edge
-  std::unordered_set<Block *> visited;
-  std::stack<Block *> stack;
-  stack.push(&entryBlock);
-  while (!stack.empty()) {
-    auto currBlk = stack.top();
-    stack.pop();
-    if (visited.find(currBlk) != visited.end())
-      continue;
-    visited.insert(currBlk);
-    for (auto succBlk : currBlk->getSuccessors()) {
-      if (succBlk == dstBlk)
-        return visited.find(srcBlk) == visited.end();
-      stack.push(succBlk);
-    }
-  }
-  return false;
-}
-
-static bool isBackEdge(Operation *srcOp, Operation *dstOp) {
-  /// if the dstOp directly consumes the result of srcOp, and they are in the
-  /// same block, it is not a back edge
-  if (srcOp->getBlock() == dstOp->getBlock()) {
-    for (auto opr : dstOp->getOperands()) {
-      if (opr == srcOp->getResult(0))
-        return false;
-    }
-    return true;
-  }
-
-  return isBackEdge(srcOp->getBlock(), dstOp->getBlock());
 }
 
 static std::stack<Block *> getBlockPath(Block *srcBlk, Block *dstBlk) {

@@ -81,23 +81,6 @@ SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg, bool eraseUse) {
   return srcOprands;
 }
 
-bool isPhiRelatedValue(Value val) {
-  if (val.isa<BlockArgument>())
-    return true;
-
-  for (auto &use : val.getUses()) {
-    // cf.br carries the block argument
-    if (isa<cf::BranchOp>(use.getOwner()))
-      return true;
-
-    // cgra.cond_br carries the block argument after the condition
-    if (isa<cgra::ConditionalBranchOp>(use.getOwner()) &&
-        use.getOperandNumber() > 1)
-      return true;
-  }
-  return false;
-}
-
 SmallVector<Block *, 4> getCntBlocksThroughPhi(Value val) {
   SmallVector<Block *, 4> cntBlocks;
   for (auto &use : val.getUses()) {
@@ -174,11 +157,6 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
       // init a key in the adjList to represent the operator
       graph.addVertex(ind);
       ind++;
-
-      // init the vertex that belongs to this PE which need to be colored
-      // graph.initVertex(ind);
-      // def[ind].insert(op->getResult(0));
-      // def[op].insert(getValueIndex(op->getResult(0), opMap));
     }
     // if the value is phi related, also add the block argument to the graph
     if (!isPhiRelatedValue(op->getResult(0)))

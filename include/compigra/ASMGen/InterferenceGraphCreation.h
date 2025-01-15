@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/IR/Operation.h"
+#include "compigra/Support/Utils.h"
 #include "mlir/IR/Value.h"
 #include <map>
 #include <unordered_set>
@@ -27,10 +27,6 @@ int getValueIndex(Value val,
                   const std::map<int, std::pair<Operation *, Value>> opMap);
 SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg,
                                          bool eraseUse = false);
-
-/// Determine whether the value is block argument, or the source operand of the
-/// block argument
-bool isPhiRelatedValue(Value val);
 
 /// Get the successor block of the user of the `val` as block argument.
 SmallVector<Block *, 4> getCntBlocksThroughPhi(Value val);

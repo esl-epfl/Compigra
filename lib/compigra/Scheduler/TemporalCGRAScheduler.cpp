@@ -272,14 +272,37 @@ void TemporalCGRAScheduler::writeLiveOutResult(const liveVec liveOutExter,
   }
 }
 
+static unsigned computeShortestLiveHops(Operation *srcOp, Operation *dstOp){
+  unsigned hops = 0;
+  return hops;
+}
+
+bool TemporalCGRAScheduler::isExternalLive(Value val) {
+  // return false;
+  bool isExternal = true;
+  Operation *defOp = val.getDefiningOp();
+  if (defOp && !isPhiRelatedValue(val)){
+    for (auto user : defOp->getUsers()) {
+      // calculate the theoretical live path lenght
+    }
+  }
+  // check all the live values if it is a block argument
+  SetVector<Value> relatedVals;
+  if (isPhiRelatedValue(val)) {
+    getAllPhiRelatedValues(val, relatedVals);
+  } else {
+    relatedVals.insert(val);
+  }
+
+  // For all the values in relatedVals, their theoretical live path cannot
+  // exceed certain hops.
+}
+
 liveVec TemporalCGRAScheduler::getExternalLiveIn(Block *block) {
   auto bbLiveIn = liveIns[block];
   liveVec liveInExter;
-  // TODO[@YW]: add the function for determine whether the val should be
-  // external live in
-
   for (auto val : bbLiveIn) {
-    bool isExternal = false;
+    bool isExternal = isExternalLive(val);
     if (!isExternal)
       continue;
     // search whether the val is in the liveOutExterPlaces
@@ -300,7 +323,7 @@ liveVec TemporalCGRAScheduler::getInternalLiveIn(Block *block) {
   liveVec liveInInter;
 
   for (auto val : bbLiveIn) {
-    bool isInternal = true;
+    bool isInternal = !isExternalLive(val);
     if (!isInternal)
       continue;
     // search whether the val is in the liveOutInterPlaces
@@ -323,9 +346,7 @@ liveVec TemporalCGRAScheduler::getExternalLiveOut(Block *block) {
   liveVec liveOutExter;
 
   for (auto val : bbLiveOut) {
-    // TODO[@YW]: add the function for determine whether the val should be
-    // external live out
-    bool isExternal = false;
+    bool isExternal = isExternalLive(val);
     if (!isExternal)
       continue;
 
@@ -348,7 +369,7 @@ liveVec TemporalCGRAScheduler::getInternalLiveOut(Block *block) {
   liveVec liveOutInter;
 
   for (auto val : bbLiveOut) {
-    bool isInternal = true;
+    bool isInternal = !isExternalLive(val);
     if (!isInternal)
       continue;
     // search whether the val is in the liveOutInterPlaces

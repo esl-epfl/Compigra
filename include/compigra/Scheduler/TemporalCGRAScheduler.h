@@ -17,6 +17,7 @@
 #include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/BasicBlockILPModel.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "compigra/Support/Utils.h"
 
 using namespace mlir;
 
@@ -69,7 +70,13 @@ private:
   /// Get the livein and liveout values for each block.
   void computeLiveValue();
 
-  /// Get the internal and external livein and liveout values for each block.
+  void makeScheduleSeq();
+
+  /// Rules to determine whether the value is internal or external live value.
+  bool isExternalLive(Value val);
+
+  /// Get the internal and external livein and liveout values for each block
+  /// based on the rules defined in isExternalLive.
   liveVec getExternalLiveIn(Block *block);
   liveVec getInternalLiveIn(Block *block);
   liveVec getExternalLiveOut(Block *block);
@@ -139,8 +146,6 @@ private:
   std::vector<Block *> scheduleSeq;
   // Index of the current block in the scheduleSeq
   unsigned scheduleIdx = 0;
-
-  void makeScheduleSeq();
 
 public:
   std::map<Operation *, Instruction> knownRes;
