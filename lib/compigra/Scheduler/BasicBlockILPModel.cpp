@@ -324,8 +324,7 @@ LogicalResult BasicBlockILPModel::createRoutingConstraints(
         spill = prodOp->getResult(0);
         failUser = op;
         checkptr = op;
-        llvm::errs() << "internal split for " << *prodOp << " -> " << *op
-                     << "\n";
+        llvm::errs() << "internal split for " << spill << " -> " << *op << "\n";
         if (strategy == FailureStrategy::Mov)
           llvm::errs() << "strategy : mov"
                        << "\n";
@@ -572,12 +571,25 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
     GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
     const std::map<Operation *, GRBVar> opPeVar) {
   Operation *termOp = block->getTerminator();
-  for (auto [val, _] : liveOutExter) {
+  for (auto [val, prequisitePE] : liveOutExter) {
     // first check can external liveness survive
     Operation *defOp = val.getDefiningOp();
-    llvm::errs() << "LiveOutExter: " << val << "\n";
 
     if (defOp && opTimeVar.count(defOp) > 0) {
+      llvm::errs() << "Prerequisite LiveOutExter: " << val << " "
+                   << prequisitePE << "\n";
+
+      if (prequisitePE != UINT32_MAX)
+        // the user operation should be assigned to the same PE
+        model.addConstr(opPeVar.at(defOp) == prequisitePE);
+      // model.optimize();
+      // if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
+      //     model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+      //   spill = val;
+      //   failUser = user;
+      //   return failure();
+      // }
+
       if (failed(blockPeAssignment(model, defOp, termOp, opTimeVar, opPeVar,
                                    varName, true))) {
         strategy = FailureStrategy::Split;
@@ -659,35 +671,33 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   createObjetiveFunction(model, timeVarMap);
 
-  if (failed(createGlobalLiveInInterConstraints(model, timeVarMap, peVarMap)))
-    return failure();
-  llvm::errs() << "Created global live in inter constraints\n";
-
-  if (failed(createGlobalLiveInExterConstraints(model, timeVarMap, peVarMap)))
-    return failure();
-  llvm::errs() << "Created global live in exter constraints\n";
-
+  // THE ORDER OF CREATING CONSTRAINTS CANNOT BE CHANGED, WHICH COULD AFFECT THE
+  // FAILURE HANDLER.
   createMemoryConsistencyConstraints(model, timeVarMap);
 
   createLocalDominanceConstraints(model, timeVarMap);
 
-  if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
+  if (failed(createGlobalLiveInInterConstraints(model, timeVarMap, peVarMap)))
     return failure();
-
-  llvm::errs() << "Created hardware constraints\n";
-
-  if (failed(createLocalLivenessConstraints(model, timeVarMap, peVarMap,
-                                            varName))) {
-    // strategy = FailureStrategy::Abort;
-    return failure();
-  }
-  llvm::errs() << "Created local liveness constraints\n";
+  llvm::errs() << "Created global live in inter constraints\n";
 
   if (failed(createGlobalLiveOutInterConstraints(model, timeVarMap, peVarMap,
-                                                 varName))) {
+                                                 varName)))
     return failure();
-  }
   llvm::errs() << "Create global live out inter constraints\n";
+
+  if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
+    return failure();
+  llvm::errs() << "Created routing constraints\n";
+
+  if (failed(
+          createLocalLivenessConstraints(model, timeVarMap, peVarMap, varName)))
+    return failure();
+  llvm::errs() << "Created local liveness constraints\n";
+
+  if (failed(createGlobalLiveInExterConstraints(model, timeVarMap, peVarMap)))
+    return failure();
+  llvm::errs() << "Created global live in exter constraints\n";
 
   if (failed(createGlobalLiveOutExterConstraints(model, timeVarMap, peVarMap)))
     return failure();

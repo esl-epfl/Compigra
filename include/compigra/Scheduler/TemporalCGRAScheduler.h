@@ -55,6 +55,8 @@ public:
   // `createSchedulerAndSolve` function for runtime efficiency.
   LogicalResult readScheduleResult(const std::string fileName);
 
+  void setMaxLivePath(unsigned maxLivePath) { this->maxLivePath = maxLivePath; }
+
 private:
   // ======================== Liveness Data Structures =======================
   // Corresponding livein and liveout values of each block
@@ -73,6 +75,8 @@ private:
   void makeScheduleSeq();
 
   /// Rules to determine whether the value is internal or external live value.
+  unsigned maxLivePath = 5;
+
   bool isExternalLive(Value val);
 
   /// Get the internal and external livein and liveout values for each block
