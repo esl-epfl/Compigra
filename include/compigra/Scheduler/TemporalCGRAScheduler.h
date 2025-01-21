@@ -63,10 +63,8 @@ private:
   std::map<Block *, SetVector<Value>> liveIns;
   std::map<Block *, SetVector<Value>> liveOuts;
 
-  // All Internal live value and its located PE.
-  liveVec liveValInterPlaces;
-  // All External live value and its located PE.
-  liveVec liveValExterPlaces;
+  // All live value and its located PE.
+  liveVec liveValAndPEs;
 
   // ====================== Liveness Analysis Functions ======================
   /// Get the livein and liveout values for each block.

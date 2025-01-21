@@ -419,7 +419,13 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
       // block the PE until the liveIn value is consumed
       if (failed(blockPeAssignment(model, nullptr, user, opTimeVar, opPeVar,
                                    varName, false, pe))) {
-        llvm::errs() << "Failed to create global live in for " << val << "\n";
+        strategy = FailureStrategy::Split;
+        spill = val;
+        failUser = nullptr;
+        llvm::errs() << "Failed to create global live in for " << val << " at "
+                     << pe << "\n";
+        llvm::errs() << "Failure handle strategy "
+                     << (strategy == FailureStrategy::Mov) << "\n";
         // store val, replace val with swi value
         return failure();
       }
@@ -478,6 +484,7 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
               isa<cgra::ConditionalBranchOp>(consumer), -1, check))) {
         llvm::errs() << "Failed to create local liveness for " << *prodOp
                      << "\n";
+        strategy = FailureStrategy::Split;
         spill = prodOp->getResult(0);
         failUser = consumer;
         checkptr = consumer;
@@ -594,6 +601,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
                                    varName, true))) {
         strategy = FailureStrategy::Split;
         spill = val;
+        failUser = nullptr;
         llvm::errs() << "Failed to create global live out for " << val << "\n";
         return failure();
       }
@@ -658,7 +666,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 2400;
+  int time_limit = 1200;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function
@@ -703,6 +711,8 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
     return failure();
   llvm::errs() << "Created global live out exter constraints\n";
 
+  // time_limit = 1200;
+  // model.set(GRB_DoubleParam_TimeLimit, time_limit);
   // Optimize the model
   model.write("model_" + std::to_string(bbId) + ".lp");
   model.optimize();
