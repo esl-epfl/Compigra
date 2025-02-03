@@ -16,6 +16,7 @@
 
 #include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "compigra/Support/Utils.h"
 
 #ifdef HAVE_GUROBI
 #include "gurobi_c++.h"
@@ -56,20 +57,13 @@ public:
 
   void setStoreAddr(unsigned addr) { storeAddr = addr; }
 
-  // void removeSpillOut(Value val) { liveOut.remove(val); }
-
   liveVec getExternalLiveOutResult() { return liveOutExter; }
   liveVec getInternalLiveOutResult() { return liveOutInter; }
+  liveVec getExternalLiveInResult() { return liveInExter; }
+  liveVec getInternalLiveInResult() { return liveInInter; }
 
   void setLiveInPrerequisite(const liveVec liveInExter,
                              const liveVec liveInInter) {
-    // print liveInExter and liveInInter
-    for (auto [val, ind] : liveInExter) {
-      llvm::errs() << "LiveInExter: " << val << " " << ind << "\n";
-    }
-    for (auto [val, ind] : liveInInter) {
-      llvm::errs() << "LiveInInter: " << val << " " << ind << "\n";
-    }
     this->liveInInter = liveInInter;
     this->liveInExter = liveInExter;
   }
@@ -160,6 +154,11 @@ private:
 
   void writeILPResult(const std::map<Operation *, GRBVar> opTimeVar,
                       const std::map<Operation *, GRBVar> opPeVar);
+
+  /// Restrict the cntPE to be the neighbour PE of the center PE
+  LogicalResult placeToCntPe(GRBModel &model, GRBVar center, GRBVar cntPe,
+                             std::string op1Name, std::string op2Name,
+                             std::string prefix = "", bool check = true);
 #endif
 public:
   std::map<Operation *, std::string> varName;

@@ -26,6 +26,10 @@ namespace compigra {
 /// block argument
 bool isPhiRelatedValue(Value val);
 
+/// Given a value(block argument or the source operand of the block argument),
+/// get all the related values (all source operands and the block arguments)
+void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals);
+
 /// Get the execution path from srcBlk to dstBlk
 std::stack<Block *> getBlockPath(Block *srcBlk, Block *dstBlk);
 

@@ -56,8 +56,8 @@ static void addUnequalCstConstr(GRBModel &model, GRBVar x, int y) {
   model.addConstr(diffAbs >= 1E-3);
 }
 
-/// Block the PE use until it gets consumed by dstOp. PE can be specified by
-/// variablesI(PE of srcOp) or unsigned constant `pe`. If in strict mode, any
+/// Block the PE use until it gets consumed by dstOp. PE is specified by the PE
+/// of variablesI(PE of srcOp) or unsigned constant `pe`. If in strict mode, any
 /// operation cannot be assigned the PE of srcOp (including the dstOp).
 ///  PREREQUISITE: srcOp and dstOp should be in the same block.
 static LogicalResult
@@ -65,19 +65,11 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
                   const std::map<Operation *, GRBVar> opTimeVar,
                   const std::map<Operation *, GRBVar> opPeVar,
                   const std::map<Operation *, std::string> varName,
-                  bool strict = false, int constPE = -1, bool check = true) {
+                  bool strict = false, bool check = true) {
   GRBVar x, startT;
-  if (srcOp) {
-    x = opPeVar.at(srcOp);
-    startT = opTimeVar.at(srcOp);
-  } else {
-    GRBVar x_ = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-    GRBVar startT_ = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-    x = x_;
-    startT = startT_;
-    model.addConstr(x_ == constPE);
-    model.addConstr(startT_ == 0);
-  }
+
+  x = opPeVar.at(srcOp);
+  startT = opTimeVar.at(srcOp);
 
   auto &y = opPeVar.at(dstOp);
   auto endT = opTimeVar.at(dstOp);
@@ -94,6 +86,81 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
     if (op == srcOp)
       continue;
 
+    if (!strict && op == dstOp)
+      continue;
+
+    GRBVar pe = opPeVar.at(op);
+    // A helper variable to indicate the time gap between the producer and
+    // the consumer, where helper = 1 means startT <= t <= endT.
+    GRBVar h1 = model.addVar(0, 1, 0, GRB_BINARY);
+    model.addConstr(tVar >= startT - 1e3 * (1 - h1));
+    model.addConstr(tVar <= startT + 1e3 * h1 - 1e-2);
+
+    GRBVar h2 = model.addVar(0, 1, 0, GRB_BINARY);
+    model.addConstr(endT >= tVar - 1e3 * (1 - h2));
+
+    if (strict) {
+      model.addConstr(endT <= tVar + 1e3 * h2 - 1e-2);
+    } else {
+      model.addConstr(endT <= tVar + 1e3 * h2);
+    }
+
+    GRBVar h = model.addVar(0, 1, 0, GRB_BINARY);
+    GRBVar xvars[2] = {h1, h2};
+    model.addGenConstrAnd(h, xvars, 2);
+
+    // Set constraints for pe != x if helper == 1
+    GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+    GRBVar diffAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+
+    std::string srcOpName = varName.at(srcOp);
+    model.addConstr(diff == pe - x, "diff" + varName.at(op) + "_" +
+                                        varName.at(dstOp) + "_" + srcOpName);
+    model.addGenConstrAbs(diffAbs, diff);
+
+    model.addGenConstrIndicator(h, 1, diffAbs, GRB_GREATER_EQUAL, 1e-4,
+                                "indicator_" + varName.at(dstOp) + "with" +
+                                    srcOpName);
+  }
+  // check whether the model is feasible
+  if (check) {
+    model.optimize();
+    if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
+        model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)
+      return success();
+    return failure();
+  }
+  return success();
+}
+
+static LogicalResult
+blockPeAssignment(GRBModel &model, GRBVar constPE, std::string srcName,
+                  Operation *dstOp,
+                  const std::map<Operation *, GRBVar> opTimeVar,
+                  const std::map<Operation *, GRBVar> opPeVar,
+                  const std::map<Operation *, std::string> varName,
+                  bool strict = false, bool check = true) {
+  GRBVar x, startT;
+
+  GRBVar x_ = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+  GRBVar startT_ = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+  x = x_;
+  startT = startT_;
+  model.addConstr(x_ == constPE);
+  model.addConstr(startT_ == 0);
+
+  auto &y = opPeVar.at(dstOp);
+  auto endT = opTimeVar.at(dstOp);
+
+  // if x ! = y, consumer and producer are not in the same PE
+  // GRBVar diffXY = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  // model.addConstr(diffXY == y - x);
+  // GRBVar diffXYAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+  // model.addGenConstrAbs(diffXYAbs, diffXY);
+  // GRBVar ifPEEq = model.addVar(0, 1, 0, GRB_BINARY);
+  // model.addConstr(ifPEEq >= diffXYAbs / 1e6);
+
+  for (auto [op, tVar] : opTimeVar) {
     if (!strict && op == dstOp)
       continue;
 
@@ -131,15 +198,13 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
     GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
     GRBVar diffAbs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
 
-    std::string srcOpName =
-        srcOp ? varName.at(srcOp) : "PE" + std::to_string(constPE);
     model.addConstr(diff == pe - x, "diff" + varName.at(op) + "_" +
-                                        varName.at(dstOp) + "_" + srcOpName);
+                                        varName.at(dstOp) + "_" + srcName);
     model.addGenConstrAbs(diffAbs, diff);
 
     model.addGenConstrIndicator(h, 1, diffAbs, GRB_GREATER_EQUAL, 1e-4,
                                 "indicator_" + varName.at(dstOp) + "with" +
-                                    srcOpName);
+                                    srcName);
   }
   // check whether the model is feasible
   if (check) {
@@ -213,15 +278,49 @@ LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
   return success();
 }
 
-static LogicalResult placeToCntPe(GRBModel &model,
-                                  SmallVector<GRBVar, 5> allowPe, GRBVar cntPe,
-                                  std::string op1Name, std::string op2Name,
-                                  std::string prefix = "", bool check = true) {
-  GRBVar self = allowPe[0];
-  GRBVar left = allowPe[1];
-  GRBVar right = allowPe[2];
-  GRBVar top = allowPe[3];
-  GRBVar bottom = allowPe[4];
+LogicalResult BasicBlockILPModel::placeToCntPe(GRBModel &model, GRBVar center,
+                                               GRBVar cntPe,
+                                               std::string op1Name,
+                                               std::string op2Name,
+                                               std::string prefix, bool check) {
+  GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
+  GRBVar right = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
+  GRBVar top = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
+  GRBVar bottom = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
+
+  GRBVar xRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
+  GRBVar xCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
+
+  // Constraints to calculate row and column indices of x
+  // xRow == x / nCol
+  model.addConstr(xRow == (center - xCol) / nCol);
+  // xCol == x % nCol
+  GRBVar u = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  model.addConstr(center == u * nCol + xCol);
+
+  // Calculate left neighbor (wrap around if needed)
+  GRBVar leftCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
+  GRBVar uLeft = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  model.addConstr(xCol - 1 == nCol * uLeft + leftCol);
+  model.addConstr(left == xRow * nCol + leftCol);
+
+  // Calculate right neighbor (wrap around if needed)
+  GRBVar rightCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
+  GRBVar uRight = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  model.addConstr(xCol + 1 == nCol * uRight + rightCol);
+  model.addConstr(right == xRow * nCol + rightCol);
+
+  // Calculate top neighbor (wrap around if needed)
+  GRBVar topRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
+  GRBVar uTop = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  model.addConstr(xRow - 1 == nRow * uTop + topRow);
+  model.addConstr(top == topRow * nCol + xCol);
+
+  // Calculate bottom neighbor (wrap around if needed)
+  GRBVar bottomRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
+  GRBVar uBottom = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  model.addConstr(xRow + 1 == nRow * uBottom + bottomRow);
+  model.addConstr(bottom == bottomRow * nCol + xCol);
 
   // Add constraints that y must be one of the neighbors
   GRBVar fLeft =
@@ -237,13 +336,13 @@ static LogicalResult placeToCntPe(GRBModel &model,
 
   if (prefix != "") {
     model.addQConstr(cntPe == left * fLeft + right * fRight + top * fTop +
-                                  bottom * fBottom + self * fSelf,
+                                  bottom * fBottom + center * fSelf,
                      "Nbr_" + prefix);
     model.addConstr(fLeft + fRight + fTop + fBottom + fSelf == 1,
                     "NbrF_" + prefix);
   } else {
     model.addQConstr(cntPe == left * fLeft + right * fRight + top * fTop +
-                                  bottom * fBottom + self * fSelf);
+                                  bottom * fBottom + center * fSelf);
     model.addConstr(fLeft + fRight + fTop + fBottom + fSelf == 1);
   }
   if (check) {
@@ -270,70 +369,16 @@ LogicalResult BasicBlockILPModel::createRoutingConstraints(
         producers.insert(opVal.getDefiningOp());
     }
 
-    // the consumer should able to access the producer's output
-    // Create helper variables for the possible neighbors
-    GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-    GRBVar right = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-    GRBVar top = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-    GRBVar bottom = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-
-    // Auxiliary variables for calculations
-    GRBVar xRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
-    GRBVar xCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
-
-    // Constraints to calculate row and column indices of x
-    // xRow == x / nCol
-    model.addConstr(xRow == (x - xCol) / nCol);
-    // xCol == x % nCol
-    GRBVar u = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-    model.addConstr(x == u * nCol + xCol);
-
     for (auto prodOp : producers) {
       auto y = opPeVar.at(prodOp);
 
-      // Calculate left neighbor (wrap around if needed)
-      GRBVar leftCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
-      GRBVar uLeft = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(xCol - 1 == nCol * uLeft + leftCol);
-      model.addConstr(left == xRow * nCol + leftCol);
-
-      // Calculate right neighbor (wrap around if needed)
-      GRBVar rightCol = model.addVar(0, nCol - 1, 0, GRB_INTEGER);
-      GRBVar uRight = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(xCol + 1 == nCol * uRight + rightCol);
-      model.addConstr(right == xRow * nCol + rightCol);
-
-      // Calculate top neighbor (wrap around if needed)
-      GRBVar topRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
-      GRBVar uTop = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(xRow - 1 == nRow * uTop + topRow);
-      model.addConstr(top == topRow * nCol + xCol);
-
-      // Calculate bottom neighbor (wrap around if needed)
-      GRBVar bottomRow = model.addVar(0, nRow - 1, 0, GRB_INTEGER);
-      GRBVar uBottom =
-          model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(xRow + 1 == nRow * uBottom + bottomRow);
-      model.addConstr(bottom == bottomRow * nCol + xCol);
-
-      if (failed(placeToCntPe(
-              model, SmallVector<GRBVar, 5>{x, left, right, top, bottom}, y,
-              varName.at(op), varName.at(prodOp),
-              "H_" + std::to_string(constrId), true))) {
+      if (failed(placeToCntPe(model, x, y, varName.at(op), varName.at(prodOp),
+                              "H_" + std::to_string(constrId), true))) {
 
         spill = prodOp->getResult(0);
         failUser = op;
         checkptr = op;
         llvm::errs() << "internal split for " << spill << " -> " << *op << "\n";
-        if (strategy == FailureStrategy::Mov)
-          llvm::errs() << "strategy : mov"
-                       << "\n";
-        if (strategy == FailureStrategy::Split)
-          llvm::errs() << "strategy : split"
-                       << "\n";
-        if (strategy == FailureStrategy::Abort)
-          llvm::errs() << "strategy : abort"
-                       << "\n";
         return failure();
       }
 
@@ -388,6 +433,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInInterConstraints(
   unsigned constrId = 0;
   for (auto [val, pe] : liveInInter) {
     for (auto user : val.getUsers()) {
+      // if the user operation is not in the block, skip
       if (opPeVar.count(user) == 0 || pe == UINT32_MAX)
         continue;
 
@@ -413,46 +459,39 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
   unsigned constrId = 0;
   for (auto [val, pe] : liveInExter) {
     for (auto user : val.getUsers()) {
-      if (opPeVar.count(user) == 0 || pe == UINT32_MAX)
+      if (opPeVar.count(user) == 0)
         continue;
-
+      GRBVar peVar = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
+      if (pe == UINT32_MAX)
+        continue;
+      model.addConstr(peVar == pe);
+      std::string valName;
+      llvm::raw_string_ostream rso(valName);
+      rso << val;
       // block the PE until the liveIn value is consumed
-      if (failed(blockPeAssignment(model, nullptr, user, opTimeVar, opPeVar,
-                                   varName, false, pe))) {
+      if (failed(blockPeAssignment(model, peVar, rso.str(), user, opTimeVar,
+                                   opPeVar, varName, false))) {
         strategy = FailureStrategy::Split;
         spill = val;
         failUser = nullptr;
         llvm::errs() << "Failed to create global live in for " << val << " at "
                      << pe << "\n";
-        llvm::errs() << "Failure handle strategy "
-                     << (strategy == FailureStrategy::Mov) << "\n";
         // store val, replace val with swi value
         return failure();
       }
 
-      // the user operation should be assigned to the neighbor or itself
       GRBVar self = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-      model.addConstr(self == pe);
-      GRBVar left = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-      model.addConstr(left == (pe - 1 + nCol) % nCol + (int)(pe / nCol) * nCol);
-      GRBVar right = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-      model.addConstr(right == (pe + 1) % nCol + (int)(pe / nCol) * nCol);
-      GRBVar top = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-      model.addConstr(top == (pe - nCol + nRow * nCol) % (nRow * nCol));
-      GRBVar bottom = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
-      model.addConstr(bottom == (pe + nCol) % (nRow * nCol));
+      model.addConstr(self == peVar);
 
-      placeToCntPe(model,
-                   SmallVector<GRBVar, 5>{self, left, right, top, bottom},
-                   opPeVar.at(user), std::to_string(pe), varName.at(user),
-                   "GIn_" + std::to_string(constrId));
+      placeToCntPe(model, self, opPeVar.at(user), std::to_string(pe),
+                   varName.at(user), "GIn_" + std::to_string(constrId));
       constrId++;
       model.optimize();
 
       if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
           model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
         llvm::errs() << "Failed to place " << *user << "\n";
-
+        strategy = FailureStrategy::Split;
         spill = val;
         failUser = user;
         return failure();
@@ -475,13 +514,11 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
       if (defOp && opPeVar.count(defOp) > 0)
         producers.push_back(opVal.getDefiningOp());
     }
-    // if (consumer == checkptr)
-    //   check = true;
 
     for (auto prodOp : producers) {
       if (failed(blockPeAssignment(
               model, prodOp, consumer, opTimeVar, opPeVar, varName,
-              isa<cgra::ConditionalBranchOp>(consumer), -1, check))) {
+              isa<cgra::ConditionalBranchOp>(consumer), check))) {
         llvm::errs() << "Failed to create local liveness for " << *prodOp
                      << "\n";
         strategy = FailureStrategy::Split;
@@ -519,6 +556,27 @@ LogicalResult BasicBlockILPModel::initVariablesForBlock(
   return success();
 }
 
+static LogicalResult limitInternalRegUse(GRBModel &model, GRBVar peVar,
+                                         unsigned pe,
+                                         GRBLinExpr &accumulatedSum,
+                                         GRBVar available) {
+  GRBVar flag = model.addVar(0, 1, 0, GRB_BINARY);
+  GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
+  GRBVar abs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
+  model.addConstr(diff == peVar - pe);
+  model.addGenConstrAbs(abs, diff);
+  model.addConstr(flag >= (1 - abs));
+
+  accumulatedSum += flag;
+  model.addConstr(accumulatedSum <= available);
+  model.optimize();
+  if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
+      model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+    return failure();
+  }
+  return success();
+}
+
 LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
     const std::map<Operation *, GRBVar> opPeVar,
@@ -530,46 +588,30 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
       continue;
     availUse[index] -= 1;
   }
-  // CANCEL PRINT
-  llvm::errs() << "AvailUse: [";
-  for (auto i : availUse) {
+
+  // print available use
+  for (auto i : availUse)
     llvm::errs() << i << " ";
-  }
-  llvm::errs() << "]\n";
+  llvm::errs() << "\n";
 
   for (unsigned p = 0; p < nRow * nCol; p++) {
-    // GRBVar useSum = model.addVar(0, availUse[p], 0, GRB_INTEGER);
     GRBLinExpr accumulatedSum = 0;
     for (auto [val, _] : liveOutInter) {
       Operation *defOp = val.getDefiningOp();
-      if (!defOp || opTimeVar.count(defOp) == 0)
-        continue;
-
-      auto peVar = opPeVar.at(defOp);
-
-      GRBVar flag = model.addVar(0, 1, 0, GRB_BINARY);
-      GRBVar diff = model.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_INTEGER);
-      GRBVar abs = model.addVar(0, GRB_INFINITY, 0, GRB_INTEGER);
-      model.addConstr(diff == peVar - p);
-      model.addGenConstrAbs(abs, diff);
-      model.addConstr(flag >= (1 - abs), "liveOutInter_" + varName.at(defOp) +
-                                             "_" + std::to_string(p));
-
-      accumulatedSum += flag;
-      model.addConstr(accumulatedSum <= availUse[p]);
-      model.optimize();
-      if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
-          model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
-        llvm::errs() << "Failed to assign live Out at " << p << " for " << val
-                     << "\n";
-        strategy = FailureStrategy::Split;
-        spill = val;
-        failUser = nullptr;
-        return failure();
+      if (defOp && opTimeVar.count(defOp) > 0) {
+        GRBVar pAvail = model.addVar(0, 2, 0, GRB_INTEGER);
+        model.addConstr(pAvail == availUse[p]);
+        if (failed(limitInternalRegUse(model, opPeVar.at(defOp), p,
+                                       accumulatedSum, pAvail))) {
+          llvm::errs() << "Failed to assign live Out at " << p << " for " << val
+                       << "\n";
+          strategy = FailureStrategy::Split;
+          spill = val;
+          failUser = nullptr;
+          return failure();
+        }
       }
     }
-    // model.addConstr(useSum == accumulatedSum, "LiveUse_" +
-    // std::to_string(p));
   }
   return success();
 }
@@ -589,13 +631,6 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
       if (prequisitePE != UINT32_MAX)
         // the user operation should be assigned to the same PE
         model.addConstr(opPeVar.at(defOp) == prequisitePE);
-      // model.optimize();
-      // if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
-      //     model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
-      //   spill = val;
-      //   failUser = user;
-      //   return failure();
-      // }
 
       if (failed(blockPeAssignment(model, defOp, termOp, opTimeVar, opPeVar,
                                    varName, true))) {
@@ -620,17 +655,15 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
     unsigned pe = it->second;
     if (pe == UINT32_MAX)
       continue;
-    if (failed(blockPeAssignment(model, nullptr, termOp, opTimeVar, opPeVar,
-                                 varName, true, pe))) {
+    std::string valName;
+    llvm::raw_string_ostream rso(valName);
+    rso << val;
+    GRBVar peVar = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
+    model.addConstr(peVar == pe);
+    if (failed(blockPeAssignment(model, peVar, rso.str(), termOp, opTimeVar,
+                                 opPeVar, varName, true))) {
       strategy = FailureStrategy::Split;
       spill = val;
-      llvm::errs() << "Failed to create global live out for " << val << " ";
-      if (isa<BlockArgument>(val))
-        for (auto [ind, bb] : llvm::enumerate(block->getParent()->getBlocks()))
-          if (&bb == val.getParentBlock()) {
-            llvm::errs() << ind << "\n";
-            break;
-          }
       return failure();
     }
   }
@@ -753,7 +786,6 @@ void BasicBlockILPModel::writeILPResult(
 void BasicBlockILPModel::writeLiveOutResult(
     const std::map<Operation *, GRBVar> opPeVar) {
   for (auto &[val, index] : liveOutExter) {
-    llvm::errs() << "LiveOutExter: " << val << "\n";
     Operation *defOp = val.getDefiningOp();
     if (defOp && opPeVar.count(defOp) > 0) {
       int pe = (int)opPeVar.at(defOp).get(GRB_DoubleAttr_X);

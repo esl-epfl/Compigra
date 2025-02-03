@@ -91,10 +91,13 @@ private:
   /// Save the ILP model result for corresponding operations.
   void saveSubILPModelResult(const std::map<Operation *, ScheduleUnitBB> res);
 
+  void storeLocalResult(const liveVec localVec);
+
   /// Read the live value placement result to liveValInterPlaces and
   /// liveValExterPlaces.
   void writeLiveOutResult(const liveVec liveOutExter,
-                          const liveVec liveOutInter);
+                          const liveVec liveOutInter, const liveVec liveInExter,
+                          const liveVec liveInInter);
 
   /// Each basic block has its own ILP model to schedule the operations. which
   /// is assumed to start from T = 0. To fullfill the temporal spatial schedule,
@@ -119,7 +122,8 @@ private:
   /// Insert load and store operations to split the producer and consumer.
   LogicalResult splitDFGWithLSOps(Value saveVal, Operation *failUser = nullptr,
                                   unsigned memLoc = UINT_MAX,
-                                  bool processCntPhi = false);
+                                  bool processCntPhi = false, bool load = true,
+                                  bool store = true);
 
   /// Insert load and store operations to split the producer and consumer which
   /// are in the same basic blocks.

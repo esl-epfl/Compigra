@@ -191,61 +191,9 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
         use[getOperationIndex(op, defMap)].insert(useInd);
       else
         use[getValueIndex(op->getResult(0), defMap)].insert(useInd);
-
-      // TODO[@YYY]: handle the block argument(phi node) case
-      // For operand produced in other PE, consider it as a constant and don't
-      // add it to the graph.
-
-      // llvm::errs() << operand << " not found in opMap\n";
-      // opMap[ind] = operand;
-      // graph.addVertex(ind);
-      // if the operand is a block argument and its source operation is
-      // executed inside the PE, add it to the vertex set
-
-      // Only consider if the operand is a block argument
-      // if (!isa<BlockArgument>(operand))
-      //   continue;
-
-      // auto producer = getCntDefOpIndirectly(operand)[0];
-      // auto it = std::find_if(
-      //     opList.begin(), opList.end(),
-      //     [producer](const auto &entry) { return entry.second == producer;
-      //     });
-      // if (it == opList.end())
-      //   continue;
-
-      // graph.addVertex(ind);
-      // ind++;
-
-      // for (auto srcOperand :
-      //      getSrcOprandsOfPhi(dyn_cast<BlockArgument>(operand))) {
-      //   int useInd = getValueIndex(srcOperand, opMap);
-      //   if (useInd == -1)
-      //     break;
-      //   def[ind].insert(operand);
-      //   ind++;
-      // }
-
-      // // if find producer in opList
-      // use[ind].insert(operand);
-      // ind++;
     }
     // use[op].insert(getValueIndex(operand, opMap));
   }
-
-  // print def and use
-  // for (auto &[ind, val] : defMap) {
-  //   llvm::errs() << "def[" << ind << "]: ";
-  //   if (val.first)
-  //     llvm::errs() << *(val.first) << "\n";
-  //   else
-  //     llvm::errs() << val.second << "\n";
-  //   // print its use
-  //   llvm::errs() << "   use: ";
-  //   for (auto useInd : use[ind])
-  //     llvm::errs() << useInd << " ";
-  //   llvm::errs() << "\n";
-  // }
 
   std::vector<Operation *> sortedOps;
   for (auto [t, op] : opList)
@@ -255,9 +203,6 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
   std::map<Operation *, std::unordered_set<int>> liveIn;
   std::map<Operation *, std::unordered_set<int>> liveOut;
 
-  // std::map<int, std::unordered_set<int>> liveIn;
-  // std::map<int, std::unordered_set<int>> liveOut;
-  // TODO[@YYY]: consider the effect of the control flow
   auto succMap = getSuccessorMap(opList, ctrlFlow);
   while (true) {
     bool changed = false;

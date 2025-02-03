@@ -178,90 +178,27 @@ void TemporalCGRAScheduler::printBlockLiveValue(std::string fileName) {
   outFile.close();
 }
 
-static void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals) {
-  if (relatedVals.count(val))
-    return;
-
-  if (val.isa<BlockArgument>()) {
-    relatedVals.insert(val);
-    unsigned ind = val.cast<BlockArgument>().getArgNumber();
-    Block *block = val.getParentBlock();
-    for (Block *pred : block->getPredecessors()) {
-      Operation *branchOp = pred->getTerminator();
-      Value operand = nullptr;
-      if (auto br = dyn_cast<cf::BranchOp>(branchOp)) {
-        operand = br.getOperand(ind);
-      } else if (auto cbr = dyn_cast<cgra::ConditionalBranchOp>(branchOp)) {
-        if (block == cbr.getTrueDest())
-          operand = cbr.getTrueOperand(ind);
-        else
-          operand = cbr.getFalseOperand(ind);
-      }
-      relatedVals.insert(operand);
-      // recursively get the related values
-      getAllPhiRelatedValues(operand, relatedVals);
-    }
-    return;
-  }
-
-  Operation *defOp = val.getDefiningOp();
-  if (!defOp) {
-    llvm::errs() << "Can not track " << val << " for phi related chain\n";
-    return;
-  }
-  relatedVals.insert(val);
-  for (auto &use : val.getUses()) {
-    unsigned index = use.getOperandNumber();
-    if (auto br = dyn_cast_or_null<cf::BranchOp>(use.getOwner())) {
-      getAllPhiRelatedValues(br->getSuccessor(0)->getArgument(index),
-                             relatedVals);
-    }
-    if (auto cbr =
-            dyn_cast_or_null<cgra::ConditionalBranchOp>(use.getOwner())) {
-      // Only for flag comparison not for phi value propagation
-      if (index < 2)
-        continue;
-      bool isTrueOpr = index >= 2 && index < 2 + cbr.getNumTrueDestOperands();
-      if (isTrueOpr) {
-        getAllPhiRelatedValues(cbr.getTrueDest()->getArgument(index - 2),
-                               relatedVals);
-      } else {
-        getAllPhiRelatedValues(cbr.getFalseDest()->getArgument(
-                                   index - cbr.getNumTrueDestOperands() - 2),
-                               relatedVals);
-      }
-    }
-  }
-}
-
 static void pushResultToLiveVec(liveVec &liveVec, Value val, unsigned index) {
   // if find the value in the liveVec, update the index
   auto it = std::find_if(
       liveVec.begin(), liveVec.end(),
       [&](std::pair<Value, unsigned> p) { return p.first == val; });
   if (it != liveVec.end()) {
-    it->second = index;
+    if (it->second != UINT32_MAX && it->second != index)
+      llvm::errs() << "Warning: " << val << " has multiple live places {"
+                   << it->second << " " << index << "}\n";
+    if (it->second == UINT32_MAX) {
+      it->second = index;
+      llvm::errs() << "Store " << val << " at " << index << "\n";
+    }
   } else {
+    llvm::errs() << "Store " << val << " at " << index << "\n";
     liveVec.push_back({val, index});
   }
 }
 
-void TemporalCGRAScheduler::writeLiveOutResult(const liveVec liveOutExter,
-                                               const liveVec liveOutInter) {
-  for (auto [val, ind] : liveOutExter) {
-    if (isPhiRelatedValue(val)) {
-      SetVector<Value> relatedVals;
-      getAllPhiRelatedValues(val, relatedVals);
-      for (auto relatedVal : relatedVals) {
-        llvm::errs() << "LiveOutExter: " << relatedVal << " " << ind << "\n";
-        pushResultToLiveVec(liveValAndPEs, relatedVal, ind);
-      }
-    } else {
-      pushResultToLiveVec(liveValAndPEs, val, ind);
-    }
-  }
-
-  for (auto [val, ind] : liveOutInter) {
+void TemporalCGRAScheduler::storeLocalResult(const liveVec localVec) {
+  for (auto [val, ind] : localVec) {
     if (isPhiRelatedValue(val)) {
       SetVector<Value> relatedVals;
       getAllPhiRelatedValues(val, relatedVals);
@@ -273,21 +210,21 @@ void TemporalCGRAScheduler::writeLiveOutResult(const liveVec liveOutExter,
   }
 }
 
+void TemporalCGRAScheduler::writeLiveOutResult(const liveVec liveOutExter,
+                                               const liveVec liveOutInter,
+                                               const liveVec liveInExter,
+                                               const liveVec liveInInter) {
+  storeLocalResult(liveOutExter);
+  storeLocalResult(liveOutInter);
+  storeLocalResult(liveInExter);
+  storeLocalResult(liveInInter);
+}
+
 bool TemporalCGRAScheduler::isExternalLive(Value val) {
-  // DFG rewrite should not affect the attributes, strictly follow the previous
-  // decision
-  // if (std::find_if(liveValExterPlaces.begin(), liveValExterPlaces.end(),
-  //                  [&](std::pair<Value, unsigned> p) {
-  //                    return p.first == val;
-  //                  }) != liveValExterPlaces.end())
-  //   return true;
-
-  // if (std::find_if(liveValInterPlaces.begin(), liveValInterPlaces.end(),
-  //                  [&](std::pair<Value, unsigned> p) {
-  //                    return p.first == val;
-  //                  }) != liveValInterPlaces.end())
-  //   return false;
-
+  if (val.use_empty())
+  return false;
+  // if val is phi related, ensure it produced the same attributes for all
+  // related values.
   if (isPhiRelatedValue(val)) {
     SetVector<Value> relatedVals;
     getAllPhiRelatedValues(val, relatedVals);
@@ -343,6 +280,7 @@ liveVec TemporalCGRAScheduler::getExternalLiveIn(Block *block) {
     bool isExternal = isExternalLive(val);
     if (!isExternal)
       continue;
+
     // search whether the val is in the liveOutExterPlaces
     auto it = std::find_if(
         liveValAndPEs.begin(), liveValAndPEs.end(),
@@ -351,6 +289,8 @@ liveVec TemporalCGRAScheduler::getExternalLiveIn(Block *block) {
     if (it != liveValAndPEs.end()) {
       auto index = it->second;
       liveInExter.push_back({val, index});
+    } else {
+      liveInExter.push_back({val, UINT32_MAX});
     }
   }
   return liveInExter;
@@ -591,6 +531,7 @@ LogicalResult TemporalCGRAScheduler::placeLwiOpToBlock(Block *block,
 
   assignPE = it->second;
   solution[lwiOp] = {0, (int)it->second, -1};
+  llvm::errs() << 0 << " " << it->second << "\n";
 
   return success();
 }
@@ -678,7 +619,10 @@ cgra::LwiOp TemporalCGRAScheduler::insertLoadOp(Operation *refOp, unsigned addr,
   Type valType = origVal.getType();
   auto loadOp = builder.create<cgra::LwiOp>(refOp->getLoc(), valType,
                                             constOp->getResult(0));
+  llvm::errs() << "blockIndex: " << blockIndex
+               << ", scheduleIdx: " << scheduleIdx << "\n";
   if (blockIndex < scheduleIdx) {
+    llvm::errs() << "place to scheduled" << blockIndex << "\n";
     if (auto arg = dyn_cast_or_null<BlockArgument>(origVal)) {
       if (failed(placeLwiOpToBlock(userBlock, arg, loadOp)))
         return nullptr;
@@ -686,21 +630,24 @@ cgra::LwiOp TemporalCGRAScheduler::insertLoadOp(Operation *refOp, unsigned addr,
       placeLwiOpToBlock(userBlock, refOp, opIndex, loadOp);
     }
   }
+  llvm::errs() << "insert load:" << loadOp << "\n";
+
   return loadOp;
 }
 
 LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
                                                        Operation *failUser,
                                                        unsigned memLoc,
-                                                       bool processCntPhi) {
+                                                       bool processCntPhi,
+                                                       bool load, bool store) {
   llvm::errs() << "split DFG \n";
   auto refOp = origVal.getDefiningOp();
   if (refOp && failUser) {
     // process intra-bb split
-    if (refOp->getBlock() == failUser->getBlock())
+    if (refOp->getBlock() == failUser->getBlock()) {
       insertInternalLSOps(refOp, failUser);
-
-    return success();
+      return success();
+    }
   }
 
   if (!refOp)
@@ -726,81 +673,61 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
   }
 
   if (processCntPhi) {
-    if (auto arg = dyn_cast_or_null<BlockArgument>(origVal)) {
-      auto loadOp = insertLoadOp(refOp, assignAddr, arg, true);
-      // set the prerequisite
-      if (!loadOp)
+    SmallVector<Block *, 4> succBlocks;
+    if (auto arg = dyn_cast_or_null<BlockArgument>(origVal))
+      succBlocks.push_back(arg.getParentBlock());
+    else
+      succBlocks = getCntBlocksThroughPhi(origVal);
+
+    for (auto suc : succBlocks) {
+      // get the phi value
+      BlockArgument phiVal;
+      if (auto arg = dyn_cast_or_null<BlockArgument>(origVal))
+        phiVal = arg;
+      else
+        phiVal = getCntBlockArgument(origVal, suc);
+
+      // replace the phi value with lwi op
+      if (failed(splitDFGWithLSOps(phiVal, nullptr, assignAddr, false,
+                                   load = true, store = false)))
         return failure();
-      pushResultToLiveVec(liveValAndPEs, loadOp->getResult(0),
-                          solution[loadOp].pe);
-      arg.replaceAllUsesWith(loadOp->getResult(0));
-      arg.getParentBlock()->eraseArgument(arg.getArgNumber());
-      // TODO[@YW]: re-implment the logic here.
-      llvm::errs() << "load inserted\n";
-      SmallVector<Value, 2> srcVals = getSrcOprandsOfPhi(arg, true);
-      for (auto src : srcVals) {
-        if (!src.getDefiningOp() ||
-            isa<cf::BranchOp, cgra::ConditionalBranchOp, func::ReturnOp>(
-                src.getDefiningOp()))
-          builder.setInsertionPoint(src.getParentBlock()->getTerminator());
-        else
-          builder.setInsertionPointAfter(src.getDefiningOp());
-        unsigned blockIndex =
-            std::distance(scheduleSeq.begin(),
-                          std::find(scheduleSeq.begin(), scheduleSeq.end(),
-                                    src.getParentBlock()));
 
-        auto addr = builder.create<arith::ConstantIntOp>(
-            refOp->getLoc(), assignAddr, builder.getIntegerType(32));
-        auto swi = builder.create<cgra::SwiOp>(refOp->getLoc(), src,
-                                               addr->getResult(0));
-        swi->setAttr("memLoc", builder.getI32IntegerAttr(assignAddr));
-        if (blockIndex < scheduleIdx) {
-          placeSwiOpToBlock(src.getParentBlock(), swi);
-        }
+      // insert lwi to replace the phi value
+      // auto loadOp =
+      //     insertLoadOp(&suc->getOperations().front(), assignAddr, phiVal,
+      //     true);
+      // // cannot find position to insert lwi op
+      // if (!loadOp)
+      //   return failure();
 
-        memStack.push_back({assignAddr, origVal});
-      }
-      return success();
-    } else {
-      SmallVector<Block *, 4> succBlocks = getCntBlocksThroughPhi(origVal);
+      // // set the prerequisite
+      // pushResultToLiveVec(liveValAndPEs, loadOp->getResult(0),
+      //                     solution[loadOp].pe);
+      // test whether phiVal has been replaced
+      for (auto user : phiVal.getUsers())
+        llvm::errs() << "user: " << *user << "\n";
 
-      for (auto suc : succBlocks) {
-        // get the phi value
-        auto phiVal = getCntBlockArgument(origVal, suc);
-        // insert lwi to replace the phi value
-        auto loadOp = insertLoadOp(&suc->getOperations().front(), assignAddr,
-                                   phiVal, true);
-        // cannot find position to insert lwi op
-        if (!loadOp)
+      SmallVector<Value, 2> srcVals = getSrcOprandsOfPhi(phiVal, true);
+      suc->eraseArgument(phiVal.getArgNumber());
+
+      // phiVal.replaceAllUsesWith(loadOp->getResult(0));
+
+      // insert swi op for all source operands
+      for (auto src : srcVals)
+        if (failed(splitDFGWithLSOps(src, nullptr, assignAddr, load = false,
+                                     store = true)))
           return failure();
-
-        // set the prerequisite
-        pushResultToLiveVec(liveValAndPEs, loadOp->getResult(0),
-                            solution[loadOp].pe);
-
-        // insert swi op for all source operands
-        SmallVector<Value, 2> srcVals = getSrcOprandsOfPhi(phiVal, true);
-
-        phiVal.replaceAllUsesWith(loadOp->getResult(0));
-        suc->eraseArgument(phiVal.getArgNumber());
-
-        for (auto src : srcVals)
-          if (failed(splitDFGWithLSOps(src, nullptr, assignAddr, false)))
-            return failure();
-      }
-      return success();
     }
-  } else {
+    return success();
+  }
+
+  if (load) {
     // insert lwi op before the user block
     std::map<Block *, cgra::LwiOp> lwiOps;
     // If user is not specified, insert lwi op to all users
     for (auto &use : llvm::make_early_inc_range(origVal.getUses())) {
       Operation *user = use.getOwner();
       Block *userBlock = user->getBlock();
-      // not process intra-bb split here
-      if (userBlock == refOp->getBlock())
-        continue;
       if (lwiOps.count(userBlock) != 0) {
         // if used by multiple operations, ensure dominance by moving it to the
         // front of the block
@@ -809,16 +736,17 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
         user->setOperand(use.getOperandNumber(), existOp->getResult(0));
         memAddr->moveBefore(region.getBlocks().front().getTerminator());
         existOp->moveBefore(&userBlock->getOperations().front());
-        continue;
+      } else {
+        auto loadOp =
+            insertLoadOp(user, assignAddr, origVal, use.getOperandNumber());
+        user->setOperand(use.getOperandNumber(), loadOp->getResult(0));
+        lwiOps[userBlock] = loadOp;
       }
-      auto loadOp =
-          insertLoadOp(user, assignAddr, origVal, use.getOperandNumber());
-      user->setOperand(use.getOperandNumber(), loadOp->getResult(0));
-      lwiOps[userBlock] = loadOp;
     }
   }
 
-  if (memWriteOp == memStack.end()) {
+  // if the value has no been written, insert swi op
+  if (store && memWriteOp == memStack.end()) {
     if (isa<cf::BranchOp, cgra::ConditionalBranchOp, func::ReturnOp>(refOp))
       builder.setInsertionPoint(refOp);
     else
@@ -881,11 +809,105 @@ static void handleMovAttempFailure(Operation *preFailOp, Value preSpillVal,
   movNum--;
 }
 
+static bool dfsBlock(Block *point, Block *block, std::vector<Block *> &cycle,
+                     std::unordered_set<Block *> &visited) {
+  // Mark the current block as visited.
+  visited.insert(block);
+  cycle.push_back(block);
+
+  for (auto succ : block->getSuccessors()) {
+    if (succ == point) {
+      // cycle.push_back(point);
+      return true;
+    }
+
+    // If `succ` has not been visited, perform DFS on it.
+    if (visited.find(succ) == visited.end()) {
+      if (dfsBlock(point, succ, cycle, visited)) {
+        return true; // Cycle detected.
+      }
+    }
+  }
+
+  // Backtrack: remove the current block from the cycle.
+  cycle.pop_back();
+  return false;
+}
+
+static bool existInCycle(std::vector<Block *> &newCycle,
+                         std::vector<std::vector<Block *>> &cycles) {
+  for (auto &cycle : cycles) {
+    if (cycle.size() != newCycle.size())
+      continue;
+
+    // Check if `newCycle` is a rotation of `cycle`.
+    auto start = std::find(cycle.begin(), cycle.end(), newCycle[0]);
+    if (start != cycle.end()) {
+      bool isMatch = true;
+      for (size_t i = 0; i < cycle.size(); ++i) {
+        // Compare elements taking rotation into account.
+        if (cycle[(start - cycle.begin() + i) % cycle.size()] != newCycle[i]) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (isMatch)
+        return true;
+    }
+  }
+  return false;
+}
+
 void TemporalCGRAScheduler::makeScheduleSeq() {
   scheduleSeq.clear();
   scheduleIdx = 0;
   for (auto &bb : region.getBlocks())
     scheduleSeq.push_back(&bb);
+    
+  // // init the schedule sequence
+  // scheduleSeq.clear();
+  // scheduleIdx = 0;
+
+  // std::map<Block *, int> blockOrder;
+  // std::vector<Block *> workList;
+  // for (auto &block : region.getBlocks())
+  //   workList.push_back(&block);
+
+  // // calculate the block order
+  // std::vector<std::vector<Block *>> visitedCycle;
+  // for (auto &block : region.getBlocks()) {
+  //   if (!blockOrder.count(&block))
+  //     blockOrder[&block] = 0;
+  //   // dfs the block, if it returns to itself, it is a cycle
+  //   std::vector<Block *> cycle;
+  //   std::unordered_set<Block *> visited;
+  //   if (dfsBlock(&block, &block, cycle, visited) &&
+  //       !existInCycle(cycle, visitedCycle)) {
+  //     visitedCycle.push_back(cycle);
+  //     for (auto &b : cycle)
+  //       blockOrder[b] += 1;
+  //   }
+  // }
+
+  // for (auto &block : region.getBlocks()) {
+  //   // calculate the number of constant ops
+  //   unsigned cstOpNum = std::distance(block.getOps<arith::ConstantOp>().begin(),
+  //                                     block.getOps<arith::ConstantOp>().end());
+  //   cstOpNum += std::distance(block.getOps<arith::ConstantFloatOp>().begin(),
+  //                             block.getOps<arith::ConstantFloatOp>().end());
+  //   cstOpNum += std::distance(block.getOps<arith::ConstantIntOp>().begin(),
+  //                             block.getOps<arith::ConstantIntOp>().end());
+  //   auto weight = block.getOperations().size() - cstOpNum;
+  //   blockOrder[&block] += weight * 0.1;
+  // }
+
+  // // sort the block according to the order
+  // std::sort(workList.begin(), workList.end(), [&](Block *a, Block *b) {
+  //   if (blockOrder[a] == blockOrder[b])
+  //     return a->getOperations().size() > b->getOperations().size();
+  //   return blockOrder[a] > blockOrder[b];
+  // });
+  // scheduleSeq = workList;
 }
 
 void TemporalCGRAScheduler::rollBackMovOp(Value failVal) {
@@ -917,7 +939,12 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
   printBlockLiveValue("liveValue.txt");
 
   for (auto [bb, block] : llvm::enumerate(scheduleSeq)) {
-    llvm::errs() << "\nBlock " << bb << " is scheduling\n";
+    for (auto [ind, seqBB] : llvm::enumerate(region))
+      if (block == &seqBB) {
+        llvm::errs() << "\nBlock " << ind << " is scheduling\n";
+        break;
+      }
+    // llvm::errs() << "\nBlock " << bb << " is scheduling\n";
 
     BasicBlockILPModel bbILPModel(maxReg, nRow, nCol, block, bb, builder);
     bbILPModel.setLiveOutPrerequisite(getExternalLiveOut(block),
@@ -967,7 +994,6 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
           return failure();
         // Rerun the liveness analysis
         computeLiveValue();
-        printBlockLiveValue("liveValue.txt");
 
         bbILPModel.setLiveOutPrerequisite(getExternalLiveOut(block),
                                           getInternalLiveOut(block));
@@ -985,14 +1011,18 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
 
     if (!findSolution) {
       llvm::errs() << "Failed to schedule block " << bb << "\n";
-      // TODO: handle the failure
-      return success();
+      return failure();
     }
-    llvm::errs() << scheduleIdx << "th block is scheduled\n";
+    llvm::errs() << scheduleIdx << " block is scheduled\n";
     writeLiveOutResult(bbILPModel.getExternalLiveOutResult(),
-                       bbILPModel.getInternalLiveOutResult());
+                       bbILPModel.getInternalLiveOutResult(),
+                       bbILPModel.getExternalLiveInResult(),
+                       bbILPModel.getInternalLiveInResult());
+
     saveSubILPModelResult(bbILPModel.getSolution());
     scheduleIdx++;
+    // if (scheduleIdx == 1)
+    //   return failure();
   }
 
   calculateTemporalSpatialSchedule("temporalSpatialSchedule.csv");

@@ -585,7 +585,6 @@ LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
       if (isa<LLVM::ConstantOp>(producerB) ||
           isa<arith::ConstantOp>(producerB) ||
           isa<arith::ConstantFloatOp>(producerB))
-        // assign opA to be Imm
         inst.opB = getConstantString(producerB);
       else if (solution.find(producerB) != solution.end())
         inst.opB =
@@ -693,13 +692,9 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
       addition = imm ? " " + std::to_string(imm) : " ZERO";
     } else {
       int predicatePE = instSolution[cntOp].pe;
-      llvm::errs() << "predicate(" << *cntOp << "): " << instSolution[op].pe
-                   << " <- " << predicatePE << "\n";
-      llvm::errs() << "opA: " << instSolution[op].opA
-                   << " opB: " << instSolution[op].opB << "\n";
       addition =
           ", " + getOperandSrcReg(instSolution[op].pe, instSolution[cntOp].pe,
-                                  0, nRow, nCol, maxReg);
+                                  instSolution[cntOp].Rout, nRow, nCol, maxReg);
     }
   }
 

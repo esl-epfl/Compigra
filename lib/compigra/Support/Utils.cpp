@@ -32,6 +32,62 @@ bool isPhiRelatedValue(Value val) {
   return false;
 }
 
+void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals) {
+  if (relatedVals.count(val))
+    return;
+
+  if (val.isa<BlockArgument>()) {
+    relatedVals.insert(val);
+    unsigned ind = val.cast<BlockArgument>().getArgNumber();
+    Block *block = val.getParentBlock();
+    for (Block *pred : block->getPredecessors()) {
+      Operation *branchOp = pred->getTerminator();
+      Value operand = nullptr;
+      if (auto br = dyn_cast<cf::BranchOp>(branchOp)) {
+        operand = br.getOperand(ind);
+      } else if (auto cbr = dyn_cast<cgra::ConditionalBranchOp>(branchOp)) {
+        if (block == cbr.getTrueDest())
+          operand = cbr.getTrueOperand(ind);
+        else
+          operand = cbr.getFalseOperand(ind);
+      }
+      relatedVals.insert(operand);
+      // recursively get the related values
+      getAllPhiRelatedValues(operand, relatedVals);
+    }
+    return;
+  }
+
+  Operation *defOp = val.getDefiningOp();
+  if (!defOp) {
+    llvm::errs() << "Can not track " << val << " for phi related chain\n";
+    return;
+  }
+  relatedVals.insert(val);
+  for (auto &use : val.getUses()) {
+    unsigned index = use.getOperandNumber();
+    if (auto br = dyn_cast_or_null<cf::BranchOp>(use.getOwner())) {
+      getAllPhiRelatedValues(br->getSuccessor(0)->getArgument(index),
+                             relatedVals);
+    }
+    if (auto cbr =
+            dyn_cast_or_null<cgra::ConditionalBranchOp>(use.getOwner())) {
+      // Only for flag comparison not for phi value propagation
+      if (index < 2)
+        continue;
+      bool isTrueOpr = index >= 2 && index < 2 + cbr.getNumTrueDestOperands();
+      if (isTrueOpr) {
+        getAllPhiRelatedValues(cbr.getTrueDest()->getArgument(index - 2),
+                               relatedVals);
+      } else {
+        getAllPhiRelatedValues(cbr.getFalseDest()->getArgument(
+                                   index - cbr.getNumTrueDestOperands() - 2),
+                               relatedVals);
+      }
+    }
+  }
+}
+
 std::stack<Block *> getBlockPath(Block *srcBlk, Block *dstBlk) {
   std::stack<Block *> path;
   std::unordered_set<Block *> visited;
