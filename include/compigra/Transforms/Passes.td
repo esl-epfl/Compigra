@@ -26,9 +26,9 @@ def CfFixIndexWidth : Pass<"fix-index-width"> {
                         "    Specify the width of the index to fix to. ">];
 }
 
-def CfMapToFullPredict : Pass<"map-to-full-predict"> {
-  let summary = "Reduce the number of bbs by applying full predict";
-  let constructor = "compigra::createCfMapToFullPredict()";
+def CfMergeIfToSelect : Pass<"merge-if-to-select"> {
+  let summary = "Execute the if-then-else block as a select";
+  let constructor = "compigra::createCfMergeIfToSelect()";
   let dependentDialects = ["cgra::CgraDialect"];
 }
 

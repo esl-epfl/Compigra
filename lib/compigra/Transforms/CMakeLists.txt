@@ -1,6 +1,6 @@
 add_compigra_library(MLIRCompigraTransforms
 CfFixIndexWidth.cpp
-CfMapToFullPredict.cpp
+CfMergeIfToSelect.cpp
 CfReduceBranches.cpp
 CgraFitToOpenEdge.cpp
 
