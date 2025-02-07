@@ -15,6 +15,7 @@
 
 #include "compigra/Transforms/CfFixIndexWidth.h"
 #include "compigra/Transforms/CfMergeIfToSelect.h"
+#include "compigra/Transforms/CfFuseLoopHeadBody.h"
 #include "compigra/Transforms/CfReduceBranches.h"
 #include "compigra/Transforms/CgraFitToOpenEdge.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -29,6 +30,7 @@ namespace compigra {
 
 std::unique_ptr<mlir::Pass> createCfFixIndexWidth(unsigned bitwidth);
 std::unique_ptr<mlir::Pass> createCfMergeIfToSelect();
+std::unique_ptr<mlir::Pass> createCfFuseLoopHeadBody();
 std::unique_ptr<mlir::Pass> createCgraFitToOpenEdge(StringRef outputDAG);
 
 } // end namespace compigra

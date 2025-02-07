@@ -1,4 +1,4 @@
-//===-  CfMergeIfToSelect.cpp - Fix index to CGRA PE bitwidth --*- C++ --*-===//
+//=== CfMergeIfToSelect.cpp - Merge two paths of 'if' if allowed * --C++*-===//
 //
 // Compigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,15 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Implements the --map-to-full-predict pass, which reduce the number of bbs
-// by applying full predict on the DAG.
+// Implements the --merge-if-to-select pass, which executes both the if and else
+// clause of a conditional branch and select the result based on the condition.
 //
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Transforms/CfMergeIfToSelect.h"
-#include "compigra/CgraDialect.h"
-#include "compigra/CgraInterfaces.h"
-#include "compigra/CgraOps.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -222,8 +219,6 @@ bool existMergeVertical(func::FuncOp funcOp, OpBuilder &builder) {
     // first get successor blocks
     for (auto sucBlk : curBlk.getSuccessors()) {
       if (isSingleConnected(&curBlk, sucBlk, builder)) {
-        llvm::errs() << "Vertical merge " << curBlk.getOperations().front()
-                     << " and " << sucBlk->getOperations().front() << "\n";
         if (succeeded(mergeSinglePathBBs(&curBlk, sucBlk, builder)))
           return true;
       }

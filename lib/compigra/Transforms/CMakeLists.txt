@@ -1,6 +1,7 @@
 add_compigra_library(MLIRCompigraTransforms
 CfFixIndexWidth.cpp
 CfMergeIfToSelect.cpp
+CfFuseLoopHeadBody.cpp
 CfReduceBranches.cpp
 CgraFitToOpenEdge.cpp
 

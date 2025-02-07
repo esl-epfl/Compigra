@@ -1,4 +1,4 @@
-//===- CfMergeIfToSelect.h - Fix index to CGRA PE bitwidth ------*- C++ -*-===//
+//=== CfMergeIfToSelect.h - Merge two paths of 'if' if allowed -* ----C++*-===//
 //
 // Copmigra is under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,15 +12,10 @@
 #ifndef COMPIGRA_CFMERGEIFTOSELECT_H
 #define COMPIGRA_CFMERGEIFTOSELECT_H
 
-#include "compigra/CgraDialect.h"
-#include "compigra/CgraInterfaces.h"
-#include "compigra/CgraOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
-
-enum class BlockStage { Init = 0, Loop = 1, Fini = 2 };
 
 namespace compigra {
 /// detect one of the following topology, if src1 or src2 is the ancestor of the

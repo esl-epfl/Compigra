@@ -29,7 +29,11 @@ def CfFixIndexWidth : Pass<"fix-index-width"> {
 def CfMergeIfToSelect : Pass<"merge-if-to-select"> {
   let summary = "Execute the if-then-else block as a select";
   let constructor = "compigra::createCfMergeIfToSelect()";
-  let dependentDialects = ["cgra::CgraDialect"];
+}
+
+def CfFuseLoopHeadBody : Pass<"fuse-loop"> {
+  let summary = "Execute the if-then-else block as a select";
+  let constructor = "compigra::createCfMergeIfToSelect()";
 }
 
 def CfReduceBranches : Pass<"reduce-branches"> {
