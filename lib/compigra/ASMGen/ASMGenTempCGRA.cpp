@@ -30,7 +30,8 @@ namespace {
 struct ASMGenTemporalCGRAPass
     : public compigra::impl::ASMGenTemporalCGRABase<ASMGenTemporalCGRAPass> {
 
-  explicit ASMGenTemporalCGRAPass(int nRow, int nCol, StringRef asmOutDir) {}
+  explicit ASMGenTemporalCGRAPass(int nRow, int nCol, int mem,
+                                  StringRef asmOutDir) {}
 
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
@@ -42,6 +43,7 @@ struct ASMGenTemporalCGRAPass
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
     TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
+    scheduler.setReserveMem(mem);
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";
       return signalPassFailure();
@@ -62,8 +64,8 @@ struct ASMGenTemporalCGRAPass
 } // namespace
 
 namespace compigra {
-std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow, int nCol,
-                                                     StringRef asmOutDir) {
-  return std::make_unique<ASMGenTemporalCGRAPass>(nRow, nCol, asmOutDir);
+std::unique_ptr<mlir::Pass>
+createASMGenTemporalCGRA(int nRow, int nCol, int mem, StringRef asmOutDir) {
+  return std::make_unique<ASMGenTemporalCGRAPass>(nRow, nCol, mem, asmOutDir);
 }
 } // namespace compigra

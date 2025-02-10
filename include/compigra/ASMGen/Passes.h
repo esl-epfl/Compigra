@@ -24,7 +24,7 @@ namespace compigra {
 
 std::unique_ptr<mlir::Pass>
 createOpenEdgeASMGen(StringRef funcName, StringRef mapResult, int nGrid);
-std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow, int nCol,
-                                                     StringRef asmOutDir);
+std::unique_ptr<mlir::Pass>
+createASMGenTemporalCGRA(int nRow, int nCol, int mem, StringRef asmOutDir);
 } // end namespace compigra
 #endif // COMPIGRA_ASM_GEN_PASSES_H
