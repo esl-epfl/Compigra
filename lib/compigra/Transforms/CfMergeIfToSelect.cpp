@@ -18,11 +18,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include <stack>
 #include <unordered_set>
-
-// for printing debug informations
-#include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 using namespace compigra;

@@ -32,8 +32,8 @@ def CfMergeIfToSelect : Pass<"merge-if-to-select"> {
 }
 
 def CfFuseLoopHeadBody : Pass<"fuse-loop"> {
-  let summary = "Execute the if-then-else block as a select";
-  let constructor = "compigra::createCfMergeIfToSelect()";
+  let summary = "Fuse the loop head and body";
+  let constructor = "compigra::createCfFuseLoopHeadBody()";
 }
 
 def CfReduceBranches : Pass<"reduce-branches"> {

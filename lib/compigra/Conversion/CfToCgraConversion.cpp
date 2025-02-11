@@ -513,6 +513,9 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
   std::vector<std::vector<int>> memRefDims;
 
   unsigned lastPtr = 128;
+  if (!startAddr.empty()) {
+    lastPtr = startAddr[0];
+  }
   std::map<int, memref::GlobalOp> globalArgs;
   // assign memory for global arguments
   for (auto [ind, arg] : llvm::enumerate(modOp.getOps<memref::GlobalOp>())) {
@@ -526,16 +529,6 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
       return failure();
     auto memrefType = arg.getType().cast<MemRefType>();
     memRefDims.push_back(std::vector<int>());
-
-    // Priorize the startAddr from the command line
-    if (ind < startAddr.size()) {
-      if (startAddr[ind] < lastPtr || memrefType.getRank() > 1)
-        return failure();
-
-      memAlloc.push_back(startAddr[ind]);
-      lastPtr = startAddr[ind];
-      continue;
-    }
 
     if (memrefType.getDimSize(0) > 0) {
       // Allocate memory based on the default size

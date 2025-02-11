@@ -72,42 +72,4 @@ namespace compigra {
 std::unique_ptr<mlir::Pass> createCgraFitToOpenEdge(StringRef outputDAG = "");
 } // end namespace compigra
 
-namespace {
-/// Driver for the fit-openedge pass.
-struct CgraFitToOpenEdgePass
-    : public compigra::impl::CgraFitToOpenEdgeBase<CgraFitToOpenEdgePass> {
-
-  explicit CgraFitToOpenEdgePass(StringRef outputDAG) {}
-  void runOnOperation() override;
-};
-
-/// Rewrite constant operation to make all the immediate field in hardware ISA
-/// valid.
-struct ConstantOpRewrite : public OpRewritePattern<arith::ConstantOp> {
-  ConstantOpRewrite(MLIRContext *ctx, SmallVector<Operation *> &insertedOps)
-      : OpRewritePattern(ctx), insertedOps(insertedOps) {}
-
-  LogicalResult matchAndRewrite(arith::ConstantOp constOp,
-                                PatternRewriter &rewriter) const override;
-
-protected:
-  SmallVector<Operation *> &insertedOps;
-};
-
-/// Fix the load operators to be I32, as the Load&Store interface is fixed in
-/// OpenEdge.
-struct LwiOpRewrite : public OpRewritePattern<cgra::LwiOp> {
-  LwiOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
-  LogicalResult matchAndRewrite(cgra::LwiOp lwiOp,
-                                PatternRewriter &rewriter) const override;
-};
-
-struct SAddOpRewrite : public OpRewritePattern<arith::AddIOp> {
-  SAddOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
-  LogicalResult matchAndRewrite(arith::AddIOp addOp,
-                                PatternRewriter &rewriter) const override;
-};
-
-} // namespace
-
 #endif // CGRA_FIT_TO_OPENEDGE_H

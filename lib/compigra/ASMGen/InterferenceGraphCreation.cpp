@@ -143,6 +143,7 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     // Branch and constant operation is not interfered with other
     // operations
     Operation *op = it->second;
+    llvm::errs() << "Operation: " << *op << "\n";
     if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
       continue;
     if (op->getNumResults() == 0) {

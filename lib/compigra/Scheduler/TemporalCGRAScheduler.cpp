@@ -222,7 +222,7 @@ void TemporalCGRAScheduler::writeLiveOutResult(const liveVec liveOutExter,
 
 bool TemporalCGRAScheduler::isExternalLive(Value val) {
   if (val.use_empty())
-  return false;
+    return false;
   // if val is phi related, ensure it produced the same attributes for all
   // related values.
   if (isPhiRelatedValue(val)) {
@@ -669,7 +669,7 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
     if (!memStack.empty())
       assignAddr = memStack.back().first + 4;
     else
-      assignAddr = 0;
+      assignAddr = reserveMem;
   }
 
   if (processCntPhi) {
@@ -863,7 +863,7 @@ void TemporalCGRAScheduler::makeScheduleSeq() {
   scheduleIdx = 0;
   for (auto &bb : region.getBlocks())
     scheduleSeq.push_back(&bb);
-    
+
   // // init the schedule sequence
   // scheduleSeq.clear();
   // scheduleIdx = 0;
@@ -891,7 +891,8 @@ void TemporalCGRAScheduler::makeScheduleSeq() {
 
   // for (auto &block : region.getBlocks()) {
   //   // calculate the number of constant ops
-  //   unsigned cstOpNum = std::distance(block.getOps<arith::ConstantOp>().begin(),
+  //   unsigned cstOpNum =
+  //   std::distance(block.getOps<arith::ConstantOp>().begin(),
   //                                     block.getOps<arith::ConstantOp>().end());
   //   cstOpNum += std::distance(block.getOps<arith::ConstantFloatOp>().begin(),
   //                             block.getOps<arith::ConstantFloatOp>().end());

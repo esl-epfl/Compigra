@@ -57,6 +57,8 @@ public:
 
   void setMaxLivePath(unsigned maxLivePath) { this->maxLivePath = maxLivePath; }
 
+  void setReserveMem(unsigned reserveMem) { this->reserveMem = reserveMem; }
+
 private:
   // ======================== Liveness Data Structures =======================
   // Corresponding livein and liveout values of each block
@@ -65,6 +67,9 @@ private:
 
   // All live value and its located PE.
   liveVec liveValAndPEs;
+
+  // Start address of the memory for the evicted value
+  unsigned reserveMem = 0;
 
   // ====================== Liveness Analysis Functions ======================
   /// Get the livein and liveout values for each block.

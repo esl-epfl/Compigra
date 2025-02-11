@@ -507,9 +507,15 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
     const std::map<Operation *, std::string> varName) {
   bool check = true;
   for (auto consumer : scheduleOps) {
+    if (isa<cf::BranchOp>(consumer))
+      continue;
     std::vector<Operation *> producers;
     // llvm::errs() << "Create liveness constraints for: " << *consumer << "\n";
-    for (auto [ind, opVal] : llvm::enumerate(consumer->getOperands())) {
+    for (auto &opr : consumer->getOpOperands()) {
+      if (isa<cgra::ConditionalBranchOp>(consumer) &&
+          opr.getOperandNumber() >= 2)
+        continue;
+      auto opVal = opr.get();
       auto defOp = opVal.getDefiningOp();
       if (defOp && opPeVar.count(defOp) > 0)
         producers.push_back(opVal.getDefiningOp());
@@ -519,8 +525,8 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
       if (failed(blockPeAssignment(
               model, prodOp, consumer, opTimeVar, opPeVar, varName,
               isa<cgra::ConditionalBranchOp>(consumer), check))) {
-        llvm::errs() << "Failed to create local liveness for " << *prodOp
-                     << "\n";
+        llvm::errs() << "Failed to create local liveness of " << *prodOp
+                     << " for " << *consumer << "\n";
         strategy = FailureStrategy::Split;
         spill = prodOp->getResult(0);
         failUser = consumer;
@@ -699,7 +705,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 1200;
+  int time_limit = 120;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
 
   // Objective function

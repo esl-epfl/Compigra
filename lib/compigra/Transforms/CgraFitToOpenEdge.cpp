@@ -28,6 +28,46 @@
 using namespace mlir;
 using namespace compigra;
 
+namespace {
+/// Driver for the fit-openedge pass.
+struct CgraFitToOpenEdgePass
+    : public compigra::impl::CgraFitToOpenEdgeBase<CgraFitToOpenEdgePass> {
+
+  explicit CgraFitToOpenEdgePass(StringRef outputDAG) {}
+  void runOnOperation() override;
+};
+
+/// Rewrite constant operation to make all the immediate field in hardware ISA
+/// valid.
+struct ConstantOpRewrite : public OpRewritePattern<arith::ConstantOp> {
+  ConstantOpRewrite(MLIRContext *ctx, SmallVector<Operation *> &insertedOps,
+                    Operation *frontOp)
+      : OpRewritePattern(ctx), insertedOps(insertedOps), frontOp(frontOp) {}
+
+  LogicalResult matchAndRewrite(arith::ConstantOp constOp,
+                                PatternRewriter &rewriter) const override;
+
+protected:
+  SmallVector<Operation *> &insertedOps;
+  Operation *frontOp;
+};
+
+/// Fix the load operators to be I32, as the Load&Store interface is fixed in
+/// OpenEdge.
+struct LwiOpRewrite : public OpRewritePattern<cgra::LwiOp> {
+  LwiOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
+  LogicalResult matchAndRewrite(cgra::LwiOp lwiOp,
+                                PatternRewriter &rewriter) const override;
+};
+
+struct SAddOpRewrite : public OpRewritePattern<arith::AddIOp> {
+  SAddOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
+  LogicalResult matchAndRewrite(arith::AddIOp addOp,
+                                PatternRewriter &rewriter) const override;
+};
+
+} // namespace
+
 bool isValidImmAddr(arith::ConstantOp constOp) {
   // Address can not exceeds 13 bits
   int maxAddr = 0b1111111111111;
@@ -63,11 +103,9 @@ template <typename FuncOp> LogicalResult raiseConstOperation(FuncOp funcOp) {
   Operation &beginOp = *funcOp.getOps().begin();
   // raise the constant operation to the top level
   auto constantOps = funcOp.template getOps<arith::ConstantIntOp>();
-  for (auto op : llvm::make_early_inc_range(constantOps)) {
-    if (op->getBlock()->isEntryBlock()) {
+  for (auto op : llvm::make_early_inc_range(constantOps))
+    if (op->getBlock()->isEntryBlock())
       op->moveBefore(&beginOp);
-    }
-  }
 
   return success();
 }
@@ -332,6 +370,34 @@ LogicalResult SAddOpRewrite::matchAndRewrite(arith::AddIOp addOp,
   return success();
 }
 
+/// Retrieves the first occurrence of either the user operation or the source
+/// operation within the same block as the frontTerm operation.
+///
+/// This function checks if both the user operation and the source operation are
+/// in the same block as the frontTerm operation. If they are, it iterates
+/// through the operations in the block and returns the first occurrence of
+/// either the user operation or the source operation. If neither is found, it
+/// defaults to returning the source operation.
+///
+/// If the user operation and the source operation are not in the same block as
+/// the frontTerm operation, the function returns the user operation if it is in
+/// the same block as the frontTerm operation, otherwise it returns the
+/// frontTerm operation.
+static Operation *getFrontOp(Operation *user, Operation *srcOp,
+                             Operation *frontTerm) {
+  auto frontBlk = frontTerm->getBlock();
+  if (srcOp->getBlock() == frontBlk && user->getBlock() == frontBlk) {
+    // Return the first occurrence of either user or srcOp in the block
+    for (auto &op : srcOp->getBlock()->getOperations()) {
+      if (&op == user || &op == srcOp)
+        return &op;
+    }
+    return srcOp;
+  }
+
+  return (user->getBlock() == frontTerm->getBlock()) ? user : frontTerm;
+}
+
 LogicalResult
 ConstantOpRewrite::matchAndRewrite(arith::ConstantOp constOp,
                                    PatternRewriter &rewriter) const {
@@ -372,9 +438,22 @@ ConstantOpRewrite::matchAndRewrite(arith::ConstantOp constOp,
     // which would be propagated to multiple operations in the successor
     // blocks.
     if (isa<cf::BranchOp, cgra::ConditionalBranchOp, cgra::SwiOp>(user)) {
-      auto addOp = generateImmAddOp(constOp, user, rewriter);
-      insertedOps.push_back(addOp);
-      user->setOperand(use.getOperandNumber(), addOp.getResult());
+      // auto addOp = generateImmAddOp(constOp, user, rewriter);
+      auto validOp = existsConstant(
+          constOp.getValue().cast<IntegerAttr>().getInt(), insertedOps);
+      if (validOp) {
+        // set it to valid range, to be removed later on
+        auto locOp = getFrontOp(user, validOp, frontOp);
+        if (locOp != validOp)
+          validOp->moveBefore(locOp);
+        constOp.replaceAllUsesWith(validOp);
+      } else {
+        auto addOp = generateImmAddOp(constOp, user, rewriter);
+        insertedOps.push_back(addOp);
+        user->setOperand(use.getOperandNumber(), addOp.getResult());
+      }
+      // insertedOps.push_back(addOp);
+      // user->setOperand(use.getOperandNumber(), addOp.getResult());
     }
   }
 
@@ -458,7 +537,10 @@ void CgraFitToOpenEdgePass::runOnOperation() {
   OpenEdgeISATarget target(ctx);
 
   SmallVector<Operation *> insertedOps;
-  patterns.add<ConstantOpRewrite>(ctx, insertedOps);
+  // get the front operation
+  auto funcOp = *modOp.getOps<func::FuncOp>().begin();
+  Operation *frontOp = funcOp.getBody().front().getTerminator();
+  patterns.add<ConstantOpRewrite>(ctx, insertedOps, frontOp);
   patterns.add<LwiOpRewrite>(ctx);
   patterns.add<SAddOpRewrite>(ctx);
 
