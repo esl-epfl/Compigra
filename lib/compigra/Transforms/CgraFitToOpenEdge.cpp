@@ -28,6 +28,17 @@
 using namespace mlir;
 using namespace compigra;
 
+static bool isValidDataType(Type type) {
+  if (auto intType = dyn_cast<IntegerType>(type))
+    if (intType.getWidth() == 32) {
+      return true;
+    }
+  if (auto decType = dyn_cast<Float32Type>(type))
+    return true;
+
+  return false;
+}
+
 namespace {
 /// Driver for the fit-openedge pass.
 struct CgraFitToOpenEdgePass
@@ -47,9 +58,34 @@ struct ConstantOpRewrite : public OpRewritePattern<arith::ConstantOp> {
   LogicalResult matchAndRewrite(arith::ConstantOp constOp,
                                 PatternRewriter &rewriter) const override;
 
-protected:
+private:
   SmallVector<Operation *> &insertedOps;
   Operation *frontOp;
+};
+
+/// Rewrite cgra::cond_br operation to make it branch to phi node with differnt
+/// operands source.
+struct CondBrOpRewrite : public OpRewritePattern<cgra::ConditionalBranchOp> {
+  CondBrOpRewrite(MLIRContext *ctx, Operation *zeroOp)
+      : OpRewritePattern(ctx), zeroOp(zeroOp) {}
+
+  LogicalResult matchAndRewrite(cgra::ConditionalBranchOp condBrOp,
+                                PatternRewriter &rewriter) const override;
+
+private:
+  Operation *zeroOp;
+};
+
+/// Rewrite cf::br operation to make it branch to phi node with differnt
+/// operands source.
+struct BranchOpRewrite : public OpRewritePattern<cf::BranchOp> {
+  BranchOpRewrite(MLIRContext *ctx) : OpRewritePattern(ctx) {}
+
+  LogicalResult matchAndRewrite(cf::BranchOp brOp,
+                                PatternRewriter &rewriter) const override;
+
+private:
+  Operation *zeroOp;
 };
 
 /// Fix the load operators to be I32, as the Load&Store interface is fixed in
@@ -66,6 +102,92 @@ struct SAddOpRewrite : public OpRewritePattern<arith::AddIOp> {
                                 PatternRewriter &rewriter) const override;
 };
 
+OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
+    : ConversionTarget(*ctx) {
+  addLegalDialect<cgra::CgraDialect>();
+  addDynamicallyLegalDialect<arith::ArithDialect>(
+      [&](Operation *op) { return !isa<arith::ConstantOp>(op); });
+
+  // add the operation to the target
+  addDynamicallyLegalOp<arith::ConstantOp>([&](arith::ConstantOp constOp) {
+    if (!dyn_cast_or_null<IntegerAttr>(constOp->getAttr("value")))
+      return true;
+
+    int value = constOp.getValue().cast<IntegerAttr>().getInt();
+    bool isAddr = isAddrConstOp(constOp);
+    bool validAddr = isValidImmAddr(constOp);
+    if (isAddr && !validAddr)
+      return false;
+
+    // if the value exceed the Imm range
+    if (!isAddr || (isAddr && !constOp->hasOneUse()))
+      if (value < -4097 || value > 4096)
+        return false;
+
+    for (auto &use : constOp->getUses()) {
+      auto user = use.getOwner();
+      if (isa<cf::BranchOp>(user))
+        // The branch operation cannot use immediate values (Imm) for
+        // computation, nor can it propagate constants.
+        return false;
+      if (isa<cgra::ConditionalBranchOp>(user)) {
+        if (value != 0 || use.getOperandNumber() != 1)
+          return false;
+      }
+
+      // if the constant is used by swi for imm store, it is not legal
+      if (isa<cgra::SwiOp>(user) &&
+          user->getOperand(0).getDefiningOp() == constOp)
+        return false;
+    }
+
+    return true;
+  });
+
+  addDynamicallyLegalOp<cgra::LwiOp>([&](cgra::LwiOp lwiOp) {
+    return isValidDataType(lwiOp.getResult().getType());
+  });
+
+  addDynamicallyLegalOp<arith::AddIOp>([&](arith::AddIOp addOp) {
+    auto opA = addOp.getOperand(0).getDefiningOp();
+    auto opB = addOp.getOperand(1).getDefiningOp();
+    // if one of the operands is argument, it is legal
+    if (!opA || !opB)
+      return true;
+
+    if (isa<arith::ConstantOp>(opA) && isa<arith::ConstantOp>(opB)) {
+      auto valueA = opA->getAttr("value").cast<IntegerAttr>().getInt();
+      auto valueB = opB->getAttr("value").cast<IntegerAttr>().getInt();
+      if (valueA == 0 || valueB == 0)
+        return true;
+      if (opA->getAttr("value") != opB->getAttr("value"))
+        return false;
+    }
+    return true;
+  });
+
+  addDynamicallyLegalOp<cgra::ConditionalBranchOp>([&](Operation *op) {
+    DenseSet<Value> sources;
+    for (auto &opr : op->getOpOperands()) {
+      if (opr.getOperandNumber() < 2)
+        continue;
+      if (!sources.insert(opr.get()).second) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  addDynamicallyLegalOp<cf::BranchOp>([&](Operation *op) {
+    DenseSet<Value> sources;
+    for (auto &opr : op->getOpOperands()) {
+      if (!sources.insert(opr.get()).second) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
 } // namespace
 
 bool isValidImmAddr(arith::ConstantOp constOp) {
@@ -147,8 +269,8 @@ Operation *generateValidConstant(arith::ConstantOp constOp,
       (int32_t)constOp->getAttr("value").dyn_cast<IntegerAttr>().getInt();
 
   Location loc = constOp->getLoc();
-  // check whether all the user of the consOp is in exit block, if true, set the
-  // insertion location to the exit block
+  // check whether all the user of the consOp is in exit block, if true, set
+  // the insertion location to the exit block
   bool allExit = true;
   for (auto user : constOp->getUsers())
     if (!isa<func::ReturnOp>(user->getBlock()->getTerminator())) {
@@ -270,7 +392,8 @@ arith::AddIOp generateImmAddOp(arith::ConstantOp constOp, Operation *user,
   rewriter.setInsertionPoint(constOp);
   auto zeroConst = rewriter.create<arith::ConstantOp>(
       loc, constOp.getType(), rewriter.getI32IntegerAttr(0));
-  // replicate the constant operation in case it is used by multiple operations
+  // replicate the constant operation in case it is used by multiple
+  // operations
   auto immConst = rewriter.create<arith::ConstantOp>(
       loc, constOp.getType(), rewriter.getI32IntegerAttr(intAttr.getInt()));
   rewriter.setInsertionPoint(user);
@@ -279,83 +402,6 @@ arith::AddIOp generateImmAddOp(arith::ConstantOp constOp, Operation *user,
   // set the imm attribute of the operation
   addOp->setAttr("constant", intAttr);
   return addOp;
-}
-
-static bool isValidDataType(Type type) {
-  if (auto intType = dyn_cast<IntegerType>(type))
-    if (intType.getWidth() == 32) {
-      return true;
-    }
-  if (auto decType = dyn_cast<Float32Type>(type))
-    return true;
-
-  return false;
-}
-
-namespace {
-OpenEdgeISATarget::OpenEdgeISATarget(MLIRContext *ctx)
-    : ConversionTarget(*ctx) {
-  addLegalDialect<cgra::CgraDialect>();
-  addDynamicallyLegalDialect<arith::ArithDialect>(
-      [&](Operation *op) { return !isa<arith::ConstantOp>(op); });
-
-  // add the operation to the target
-  addDynamicallyLegalOp<arith::ConstantOp>([&](arith::ConstantOp constOp) {
-    if (!dyn_cast_or_null<IntegerAttr>(constOp->getAttr("value")))
-      return true;
-
-    int value = constOp.getValue().cast<IntegerAttr>().getInt();
-    bool isAddr = isAddrConstOp(constOp);
-    bool validAddr = isValidImmAddr(constOp);
-    if (isAddr && !validAddr)
-      return false;
-
-    // if the value exceed the Imm range
-    if (!isAddr || (isAddr && !constOp->hasOneUse()))
-      if (value < -4097 || value > 4096)
-        return false;
-
-    for (auto &use : constOp->getUses()) {
-      auto user = use.getOwner();
-      if (isa<cf::BranchOp>(user))
-        // The branch operation cannot use immediate values (Imm) for
-        // computation, nor can it propagate constants.
-        return false;
-      if (isa<cgra::ConditionalBranchOp>(user)) {
-        if (value != 0 || use.getOperandNumber() != 1)
-          return false;
-      }
-
-      // if the constant is used by swi for imm store, it is not legal
-      if (isa<cgra::SwiOp>(user) &&
-          user->getOperand(0).getDefiningOp() == constOp)
-        return false;
-    }
-
-    return true;
-  });
-
-  addDynamicallyLegalOp<cgra::LwiOp>([&](cgra::LwiOp lwiOp) {
-    return isValidDataType(lwiOp.getResult().getType());
-  });
-
-  addDynamicallyLegalOp<arith::AddIOp>([&](arith::AddIOp addOp) {
-    auto opA = addOp.getOperand(0).getDefiningOp();
-    auto opB = addOp.getOperand(1).getDefiningOp();
-    // if one of the operands is argument, it is legal
-    if (!opA || !opB)
-      return true;
-
-    if (isa<arith::ConstantOp>(opA) && isa<arith::ConstantOp>(opB)) {
-      auto valueA = opA->getAttr("value").cast<IntegerAttr>().getInt();
-      auto valueB = opB->getAttr("value").cast<IntegerAttr>().getInt();
-      if (valueA == 0 || valueB == 0)
-        return true;
-      if (opA->getAttr("value") != opB->getAttr("value"))
-        return false;
-    }
-    return true;
-  });
 }
 
 LogicalResult SAddOpRewrite::matchAndRewrite(arith::AddIOp addOp,
@@ -368,34 +414,6 @@ LogicalResult SAddOpRewrite::matchAndRewrite(arith::AddIOp addOp,
   rewriter.updateRootInPlace(addOp,
                              [&] { addOp->setOperand(0, newOpA.getResult()); });
   return success();
-}
-
-/// Retrieves the first occurrence of either the user operation or the source
-/// operation within the same block as the frontTerm operation.
-///
-/// This function checks if both the user operation and the source operation are
-/// in the same block as the frontTerm operation. If they are, it iterates
-/// through the operations in the block and returns the first occurrence of
-/// either the user operation or the source operation. If neither is found, it
-/// defaults to returning the source operation.
-///
-/// If the user operation and the source operation are not in the same block as
-/// the frontTerm operation, the function returns the user operation if it is in
-/// the same block as the frontTerm operation, otherwise it returns the
-/// frontTerm operation.
-static Operation *getFrontOp(Operation *user, Operation *srcOp,
-                             Operation *frontTerm) {
-  auto frontBlk = frontTerm->getBlock();
-  if (srcOp->getBlock() == frontBlk && user->getBlock() == frontBlk) {
-    // Return the first occurrence of either user or srcOp in the block
-    for (auto &op : srcOp->getBlock()->getOperations()) {
-      if (&op == user || &op == srcOp)
-        return &op;
-    }
-    return srcOp;
-  }
-
-  return (user->getBlock() == frontTerm->getBlock()) ? user : frontTerm;
 }
 
 LogicalResult
@@ -438,22 +456,9 @@ ConstantOpRewrite::matchAndRewrite(arith::ConstantOp constOp,
     // which would be propagated to multiple operations in the successor
     // blocks.
     if (isa<cf::BranchOp, cgra::ConditionalBranchOp, cgra::SwiOp>(user)) {
-      // auto addOp = generateImmAddOp(constOp, user, rewriter);
-      auto validOp = existsConstant(
-          constOp.getValue().cast<IntegerAttr>().getInt(), insertedOps);
-      if (validOp) {
-        // set it to valid range, to be removed later on
-        auto locOp = getFrontOp(user, validOp, frontOp);
-        if (locOp != validOp)
-          validOp->moveBefore(locOp);
-        constOp.replaceAllUsesWith(validOp);
-      } else {
-        auto addOp = generateImmAddOp(constOp, user, rewriter);
-        insertedOps.push_back(addOp);
-        user->setOperand(use.getOperandNumber(), addOp.getResult());
-      }
-      // insertedOps.push_back(addOp);
-      // user->setOperand(use.getOperandNumber(), addOp.getResult());
+      auto addOp = generateImmAddOp(constOp, user, rewriter);
+      insertedOps.push_back(addOp);
+      user->setOperand(use.getOperandNumber(), addOp.getResult());
     }
   }
 
@@ -463,46 +468,42 @@ ConstantOpRewrite::matchAndRewrite(arith::ConstantOp constOp,
   return success();
 }
 
-SmallVector<Operation *, 4> getSrcOpIndirectly(Value val, Block *targetBlock) {
-  SmallVector<Operation *, 4> cntOps;
-  if (!val.isa<BlockArgument>()) {
-    cntOps.push_back(val.getDefiningOp());
-    return cntOps;
-  }
-
-  // if the value is not block argument, return empty vector
-
-  Block *block = val.getParentBlock();
-  Value propVal;
-
-  int argInd = val.cast<BlockArgument>().getArgNumber();
-  for (auto pred : block->getPredecessors()) {
-    Operation *termOp = pred->getTerminator();
-    // Return operation does not propagate block argument
-    if (isa<func::ReturnOp>(termOp))
+LogicalResult
+CondBrOpRewrite::matchAndRewrite(cgra::ConditionalBranchOp condBrOp,
+                                 PatternRewriter &rewriter) const {
+  DenseSet<Value> sources;
+  for (auto &opr : condBrOp->getOpOperands()) {
+    if (opr.getOperandNumber() < 2)
       continue;
-
-    if (isa<cf::BranchOp>(termOp)) {
-      // the corresponding block argument is the argInd'th operator
-      propVal = termOp->getOperand(argInd);
-      auto defOps = getSrcOpIndirectly(propVal, targetBlock);
-      cntOps.append(defOps.begin(), defOps.end());
-    } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
-      // The terminator would be beq, bne, blt, bge, etc, the propagated value
-      // is counted from 2nd operand.
-      if (targetBlock == condBr.getTrueDest())
-        propVal = condBr.getTrueOperand(argInd);
-      else if (targetBlock == condBr.getFalseDest()) {
-        propVal = condBr.getFalseOperand(argInd);
-      } else
-        continue;
-
-      auto defOps = getSrcOpIndirectly(propVal, targetBlock);
-      cntOps.append(defOps.begin(), defOps.end());
+    auto val = opr.get();
+    if (!sources.insert(opr.get()).second) {
+      // generate a mov op to make the operands unique
+      auto movOp = rewriter.create<arith::AddIOp>(val.getLoc(), val,
+                                                  zeroOp->getResult(0));
+      rewriter.updateRootInPlace(condBrOp, [&] {
+        condBrOp->setOperand(opr.getOperandNumber(), movOp.getResult());
+      });
     }
   }
+  return success();
+}
 
-  return cntOps;
+LogicalResult
+BranchOpRewrite::matchAndRewrite(cf::BranchOp brOp,
+                                 PatternRewriter &rewriter) const {
+  DenseSet<Value> sources;
+  for (auto &opr : brOp->getOpOperands()) {
+    auto val = opr.get();
+    if (!sources.insert(opr.get()).second) {
+      // generate a mov op to make the operands unique
+      auto movOp = rewriter.create<arith::AddIOp>(val.getLoc(), val,
+                                                  zeroOp->getResult(0));
+      rewriter.updateRootInPlace(brOp, [&] {
+        brOp->setOperand(opr.getOperandNumber(), movOp.getResult());
+      });
+    }
+  }
+  return success();
 }
 
 LogicalResult LwiOpRewrite::matchAndRewrite(cgra::LwiOp lwiOp,
@@ -535,12 +536,26 @@ void CgraFitToOpenEdgePass::runOnOperation() {
   MLIRContext *ctx = &getContext();
   RewritePatternSet patterns{ctx};
   OpenEdgeISATarget target(ctx);
+  OpBuilder builder(ctx);
 
   SmallVector<Operation *> insertedOps;
   // get the front operation
   auto funcOp = *modOp.getOps<func::FuncOp>().begin();
   Operation *frontOp = funcOp.getBody().front().getTerminator();
+  Operation *zeroOp = nullptr;
+  for (auto &op : frontOp->getBlock()->getOperations()) {
+    if (isa<arith::ConstantOp>(op) &&
+        op.getAttr("value").cast<IntegerAttr>().getValue() == 0) {
+      zeroOp = &op;
+      break;
+    }
+  }
+  if (!zeroOp)
+    zeroOp = builder.create<arith::ConstantOp>(
+        frontOp->getLoc(), builder.getI32Type(), builder.getI32IntegerAttr(0));
   patterns.add<ConstantOpRewrite>(ctx, insertedOps, frontOp);
+  patterns.add<CondBrOpRewrite>(ctx, zeroOp);
+  patterns.add<BranchOpRewrite>(ctx);
   patterns.add<LwiOpRewrite>(ctx);
   patterns.add<SAddOpRewrite>(ctx);
 
@@ -581,8 +596,6 @@ void CgraFitToOpenEdgePass::runOnOperation() {
     }
   }
 }
-
-} // namespace
 
 namespace compigra {
 std::unique_ptr<mlir::Pass> createCgraFitToOpenEdge(StringRef outputDAG) {

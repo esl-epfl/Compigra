@@ -371,7 +371,6 @@ LogicalResult BasicBlockILPModel::createRoutingConstraints(
 
     for (auto prodOp : producers) {
       auto y = opPeVar.at(prodOp);
-
       if (failed(placeToCntPe(model, x, y, varName.at(op), varName.at(prodOp),
                               "H_" + std::to_string(constrId), true))) {
 
@@ -459,6 +458,8 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
   unsigned constrId = 0;
   for (auto [val, pe] : liveInExter) {
     for (auto user : val.getUsers()) {
+      llvm::errs() << "Creating global live in for: " << val << " at " << pe
+                   << " for " << *user << "\n";
       if (opPeVar.count(user) == 0)
         continue;
       GRBVar peVar = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
@@ -491,7 +492,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
       if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
           model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
         llvm::errs() << "Failed to place " << *user << "\n";
-        strategy = FailureStrategy::Split;
+        // strategy = FailureStrategy::Split;
         spill = val;
         failUser = user;
         return failure();
@@ -507,27 +508,28 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
     const std::map<Operation *, std::string> varName) {
   bool check = true;
   for (auto consumer : scheduleOps) {
-    if (isa<cf::BranchOp>(consumer))
-      continue;
-    std::vector<Operation *> producers;
-    // llvm::errs() << "Create liveness constraints for: " << *consumer << "\n";
+    // if (isa<cf::BranchOp>(consumer))
+    //   continue;
+    std::set<Operation *> producers;
     for (auto &opr : consumer->getOpOperands()) {
-      if (isa<cgra::ConditionalBranchOp>(consumer) &&
-          opr.getOperandNumber() >= 2)
-        continue;
+      // if (isa<cgra::ConditionalBranchOp>(consumer) &&
+      //     opr.getOperandNumber() >= 2)
+      //   continue;
       auto opVal = opr.get();
       auto defOp = opVal.getDefiningOp();
       if (defOp && opPeVar.count(defOp) > 0)
-        producers.push_back(opVal.getDefiningOp());
+        producers.insert(opVal.getDefiningOp());
     }
 
     for (auto prodOp : producers) {
+      llvm::errs() << "Creating local liveness constraints for: " << *consumer
+                   << " with " << *prodOp << "\n";
       if (failed(blockPeAssignment(
               model, prodOp, consumer, opTimeVar, opPeVar, varName,
               isa<cgra::ConditionalBranchOp>(consumer), check))) {
         llvm::errs() << "Failed to create local liveness of " << *prodOp
                      << " for " << *consumer << "\n";
-        strategy = FailureStrategy::Split;
+        // strategy = FailureStrategy::Split;
         spill = prodOp->getResult(0);
         failUser = consumer;
         checkptr = consumer;
@@ -595,6 +597,21 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     availUse[index] -= 1;
   }
 
+  for (auto [val, pe] : liveOutInter) {
+    Operation *defOp = val.getDefiningOp();
+    if (!defOp || opTimeVar.count(defOp) <= 0 || pe == UINT32_MAX)
+      continue;
+
+    model.addConstr(opPeVar.at(defOp) == pe);
+    model.optimize();
+    if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
+        model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+      spill = val;
+      failUser = nullptr;
+      return failure();
+    }
+  }
+
   // print available use
   for (auto i : availUse)
     llvm::errs() << i << " ";
@@ -602,20 +619,21 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
 
   for (unsigned p = 0; p < nRow * nCol; p++) {
     GRBLinExpr accumulatedSum = 0;
-    for (auto [val, _] : liveOutInter) {
+    for (auto [val, pe] : liveOutInter) {
       Operation *defOp = val.getDefiningOp();
-      if (defOp && opTimeVar.count(defOp) > 0) {
-        GRBVar pAvail = model.addVar(0, 2, 0, GRB_INTEGER);
-        model.addConstr(pAvail == availUse[p]);
-        if (failed(limitInternalRegUse(model, opPeVar.at(defOp), p,
-                                       accumulatedSum, pAvail))) {
-          llvm::errs() << "Failed to assign live Out at " << p << " for " << val
-                       << "\n";
-          strategy = FailureStrategy::Split;
-          spill = val;
-          failUser = nullptr;
-          return failure();
-        }
+      if (!defOp || opTimeVar.count(defOp) <= 0)
+        continue;
+
+      GRBVar pAvail = model.addVar(0, 2, 0, GRB_INTEGER);
+      model.addConstr(pAvail == availUse[p]);
+      if (failed(limitInternalRegUse(model, opPeVar.at(defOp), p,
+                                     accumulatedSum, pAvail))) {
+        llvm::errs() << "Failed to assign live Out at " << p << " for " << val
+                     << "\n";
+        strategy = FailureStrategy::Split;
+        spill = val;
+        failUser = nullptr;
+        return failure();
       }
     }
   }
@@ -705,8 +723,9 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 120;
+  int time_limit = 1200;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
+  model.set(GRB_DoubleParam_MIPGap, 0.15);
 
   // Objective function
   GRBLinExpr obj = 0;
@@ -732,7 +751,6 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
                                                  varName)))
     return failure();
   llvm::errs() << "Create global live out inter constraints\n";
-
   if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
     return failure();
   llvm::errs() << "Created routing constraints\n";
@@ -750,10 +768,11 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
     return failure();
   llvm::errs() << "Created global live out exter constraints\n";
 
-  // time_limit = 1200;
+  time_limit = 1200;
   // model.set(GRB_DoubleParam_TimeLimit, time_limit);
   // Optimize the model
   model.write("model_" + std::to_string(bbId) + ".lp");
+  model.set(GRB_DoubleParam_MIPGap, 0.05);
   model.optimize();
 
   if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||

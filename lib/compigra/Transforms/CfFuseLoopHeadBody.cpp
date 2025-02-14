@@ -47,15 +47,77 @@ std::optional<Block *> getFusibleBodyBlock(func::FuncOp funcOp) {
     if (headBlk != *blk.succ_begin())
       continue;
 
-    // Ensure headBlk has exactly two predecessors
-    if (std::distance(headBlk->pred_begin(), headBlk->pred_end()) != 2)
-      continue;
-
     // Check for control-only operations
     if (hasNoSideEffect(headBlk))
       return &blk;
   }
   return std::nullopt;
+}
+
+// if the result of the condition is determined, revise the terminator to
+// jump to the corresponding block
+bool removeCertainCondBr(func::FuncOp funcOp, OpBuilder &builder) {
+  for (auto &blk : funcOp.getBlocks()) {
+    auto termOp = blk.getTerminator();
+    auto condBrOp = dyn_cast_or_null<cf::CondBranchOp>(termOp);
+    if (!condBrOp)
+      continue;
+
+    auto cmpOp = dyn_cast_or_null<arith::CmpIOp>(
+        condBrOp.getCondition().getDefiningOp());
+    if (!cmpOp)
+      continue;
+
+    auto predicate = cmpOp.getPredicate();
+    auto opr1 = cmpOp.getOperand(0);
+    auto opr2 = cmpOp.getOperand(1);
+    // Check if both operands are constant
+    auto constOpr1 = dyn_cast_or_null<arith::ConstantOp>(opr1.getDefiningOp());
+    auto constOpr2 = dyn_cast_or_null<arith::ConstantOp>(opr2.getDefiningOp());
+    if (!constOpr1 || !constOpr2)
+      continue;
+
+    // Get the constant values
+    auto val1 = constOpr1.getValue().cast<IntegerAttr>().getInt();
+    auto val2 = constOpr2.getValue().cast<IntegerAttr>().getInt();
+
+    // Determine the result of the comparison
+    bool result;
+    switch (predicate) {
+    case arith::CmpIPredicate::eq:
+      result = (val1 == val2);
+      break;
+    case arith::CmpIPredicate::ne:
+      result = (val1 != val2);
+      break;
+    case arith::CmpIPredicate::slt:
+      result = (val1 < val2);
+      break;
+    case arith::CmpIPredicate::sle:
+      result = (val1 <= val2);
+      break;
+    case arith::CmpIPredicate::sgt:
+      result = (val1 > val2);
+      break;
+    case arith::CmpIPredicate::sge:
+      result = (val1 >= val2);
+      break;
+    default:
+      continue;
+    }
+
+    // Replace the conditional branch with an unconditional branch
+    auto Operands =
+        result ? condBrOp.getTrueOperands() : condBrOp.getFalseOperands();
+    builder.setInsertionPoint(termOp);
+    builder.create<cf::BranchOp>(
+        termOp->getLoc(),
+        result ? condBrOp.getTrueDest() : condBrOp.getFalseDest(), Operands);
+    termOp->erase();
+    return true;
+  }
+  // does not exist certain conditional branch
+  return false;
 }
 
 Operation *mergeHeadAndBody(Block *headBlk, Block *bodyBlk,
@@ -131,7 +193,20 @@ cf::CondBranchOp setUpNewHeadTerminator(Block *headBlk, Block *bodyBlk,
     }
 
   auto origHeadTerm = dyn_cast<cf::CondBranchOp>(headBlk->getTerminator());
-  auto initOprs = initBlk->getTerminator()->getOperands();
+  SmallVector<Value, 4> initOprs;
+  if (auto branchOp = dyn_cast<cf::BranchOp>(initBlk->getTerminator())) {
+    initOprs.append(branchOp.getOperands().begin(),
+                    branchOp.getOperands().end());
+  } else if (auto condBranchOp =
+                 dyn_cast<cf::CondBranchOp>(initBlk->getTerminator())) {
+    if (condBranchOp.getTrueDest() == headBlk) {
+      initOprs.append(condBranchOp.getTrueOperands().begin(),
+                      condBranchOp.getTrueOperands().end());
+    } else {
+      initOprs.append(condBranchOp.getFalseOperands().begin(),
+                      condBranchOp.getFalseOperands().end());
+    }
+  }
   builder.setInsertionPoint(headBlk->getTerminator());
   SmallVector<Value, 4> trueOprs(initOprs.begin(), initOprs.end());
   SmallVector<Value, 4> falseOprs(origHeadTerm.getFalseOperands().begin(),
@@ -237,12 +312,14 @@ struct CfFuseLoopHeadBodyPass
     // if get the fusible block, fuse it
     while (maxTry--) {
       auto fusibleBody = getFusibleBodyBlock(funcOp);
-      if (!fusibleBody.has_value())
+      if (!fusibleBody.has_value() && !removeCertainCondBr(funcOp, builder))
         break;
-      auto bodyBlk = fusibleBody.value();
-      if (failed(fuseHeadToBody(*bodyBlk->pred_begin(), bodyBlk, builder)))
-        return signalPassFailure();
-      llvm::errs() << "Fusing " << bodyBlk->getOperations().front() << "\n";
+      if (fusibleBody.has_value()) {
+        auto bodyBlk = fusibleBody.value();
+        if (failed(fuseHeadToBody(*bodyBlk->pred_begin(), bodyBlk, builder)))
+          return signalPassFailure();
+        llvm::errs() << "Fusing " << bodyBlk->getOperations().front() << "\n";
+      }
     }
     llvm::errs() << funcOp << "\n";
   };

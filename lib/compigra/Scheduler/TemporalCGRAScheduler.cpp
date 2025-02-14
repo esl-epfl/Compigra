@@ -327,7 +327,6 @@ liveVec TemporalCGRAScheduler::getExternalLiveOut(Block *block) {
     bool isExternal = isExternalLive(val);
     if (!isExternal)
       continue;
-
     auto it = std::find_if(
         liveValAndPEs.begin(), liveValAndPEs.end(),
         [&](std::pair<Value, unsigned> p) { return p.first == val; });
@@ -350,6 +349,7 @@ liveVec TemporalCGRAScheduler::getInternalLiveOut(Block *block) {
     bool isInternal = !isExternalLive(val);
     if (!isInternal)
       continue;
+
     // search whether the val is in the liveOutInterPlaces
     auto it = std::find_if(
         liveValAndPEs.begin(), liveValAndPEs.end(),
@@ -692,17 +692,6 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
                                    load = true, store = false)))
         return failure();
 
-      // insert lwi to replace the phi value
-      // auto loadOp =
-      //     insertLoadOp(&suc->getOperations().front(), assignAddr, phiVal,
-      //     true);
-      // // cannot find position to insert lwi op
-      // if (!loadOp)
-      //   return failure();
-
-      // // set the prerequisite
-      // pushResultToLiveVec(liveValAndPEs, loadOp->getResult(0),
-      //                     solution[loadOp].pe);
       // test whether phiVal has been replaced
       for (auto user : phiVal.getUsers())
         llvm::errs() << "user: " << *user << "\n";
@@ -735,7 +724,22 @@ LogicalResult TemporalCGRAScheduler::splitDFGWithLSOps(Value origVal,
         auto memAddr = existOp->getOperand(0).getDefiningOp();
         user->setOperand(use.getOperandNumber(), existOp->getResult(0));
         memAddr->moveBefore(region.getBlocks().front().getTerminator());
-        existOp->moveBefore(&userBlock->getOperations().front());
+        // ==================[TODO@YW] debug ==================
+        // get the first user in the block
+        Operation *locOp;
+        auto userSet = existOp->getResult(0).getUsers();
+        for (auto &op : existOp->getBlock()->getOperations())
+          // if op is the user of existOp
+          if (std::find(userSet.begin(), userSet.end(), &op) != userSet.end()) {
+            locOp = &op;
+            break;
+          }
+        existOp->moveBefore(locOp);
+        // ==================[TODO@YW] debug ==================
+        // existOp->moveBefore(&userBlock->getOperations().front());
+        // llvm::errs() << "Moving lwi op to "
+        //              << *&userBlock->getOperations().front()
+        //              << "\n   instead of " << *locOp << "\n";
       } else {
         auto loadOp =
             insertLoadOp(user, assignAddr, origVal, use.getOperandNumber());
@@ -971,6 +975,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
 
       // handle the failure according to the failure strategy
       if (bbILPModel.getFailureStrategy() == FailureStrategy::Mov) {
+        llvm::errs() << "Strategy: Mov\n";
         // Determine whether still adopt the mov strategy
         handleMovAttempFailure(failUser, spill, bbILPModel, movNum, 3);
         spill = bbILPModel.getSpillVal();
@@ -987,6 +992,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
         }
       }
       if (bbILPModel.getFailureStrategy() == FailureStrategy::Split) {
+        llvm::errs() << "Strategy: split\n";
         // split the liveOut value
         spill = bbILPModel.getSpillVal();
         failUser = bbILPModel.getFailUser();
@@ -1060,7 +1066,7 @@ void TemporalCGRAScheduler::calculateTemporalSpatialSchedule(
       rso << op;
       auto su = solution[&op];
       csvFile << rso.str() << "&" << su.time << "&" << su.pe << "&" << bbInd
-              << "\n";
+              << "\r\n";
     }
   }
 }
