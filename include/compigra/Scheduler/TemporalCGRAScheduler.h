@@ -122,7 +122,7 @@ private:
   void insertMovOp(Value origVal, Operation *user);
 
   /// Remove all new inserted mov operations.
-  void rollBackMovOp(Value failVal);
+  void rollBackMovOp(Value failVal, int maxIter);
 
   /// Insert load and store operations to split the producer and consumer.
   LogicalResult splitDFGWithLSOps(Value saveVal, Operation *failUser = nullptr,

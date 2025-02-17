@@ -24,7 +24,8 @@ using namespace compigra;
 /// Insert a value to a set if it is not a constant. The constant value is not
 /// considered as a live value.
 static void insertToSet(Value val, SetVector<Value> &vec) {
-  if (dyn_cast_or_null<arith::ConstantIntOp>(val.getDefiningOp()) ||
+  if (dyn_cast_or_null<arith::ConstantOp>(val.getDefiningOp()) ||
+      dyn_cast_or_null<arith::ConstantIntOp>(val.getDefiningOp()) ||
       dyn_cast_or_null<arith::ConstantFloatOp>(val.getDefiningOp()))
     return;
   vec.insert(val);
@@ -79,7 +80,7 @@ void TemporalCGRAScheduler::computeLiveValue() {
         insertToSet(res, def);
 
       for (auto opr : op.getOperands())
-        //   branch argument is not a use
+        // branch argument is not a use
         insertToSet(opr, use);
     }
     defMap[&block] = def;
@@ -127,6 +128,7 @@ void TemporalCGRAScheduler::computeLiveValue() {
       }
     }
   }
+  printBlockLiveValue("liveValue.txt");
 }
 
 void TemporalCGRAScheduler::printBlockLiveValue(std::string fileName) {
@@ -327,6 +329,7 @@ liveVec TemporalCGRAScheduler::getExternalLiveOut(Block *block) {
     bool isExternal = isExternalLive(val);
     if (!isExternal)
       continue;
+    llvm::errs() << "get external liveout: " << val << "\n";
     auto it = std::find_if(
         liveValAndPEs.begin(), liveValAndPEs.end(),
         [&](std::pair<Value, unsigned> p) { return p.first == val; });
@@ -446,7 +449,6 @@ void TemporalCGRAScheduler::insertInternalLSOps(Operation *srcOp,
     if (user == dstOp)
       user->setOperand(use.getOperandNumber(), loadOp->getResult(0));
   }
-  // opRAWs.insert({loadOp, swi});
 }
 
 std::map<Operation *, ScheduleUnit>
@@ -915,8 +917,10 @@ void TemporalCGRAScheduler::makeScheduleSeq() {
   // scheduleSeq = workList;
 }
 
-void TemporalCGRAScheduler::rollBackMovOp(Value failVal) {
+void TemporalCGRAScheduler::rollBackMovOp(Value failVal, int maxIter) {
   // check whether failVal is produced by val + 0
+  if (maxIter <= 0)
+    return;
   auto definingOp = failVal.getDefiningOp();
   if (!definingOp || !isa<arith::AddIOp, arith::AddFOp>(definingOp))
     return;
@@ -931,10 +935,11 @@ void TemporalCGRAScheduler::rollBackMovOp(Value failVal) {
     return;
   }
   failVal.replaceAllUsesWith(definingOp->getOperand(0));
-  // remove the movOp and constant zero Op
+  // remove the movOp and constant zero Op, if they are not used
   definingOp->erase();
-  zeroOp->erase();
-  rollBackMovOp(definingOp->getOperand(0));
+  if (zeroOp->use_empty())
+    zeroOp->erase();
+  rollBackMovOp(definingOp->getOperand(0), maxIter - 1);
 }
 
 LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
@@ -987,7 +992,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
         } else {
           // step back, remove the additional sadd zero ops
           bbILPModel.setFailureStrategy(FailureStrategy::Split);
-          rollBackMovOp(bbILPModel.getSpillVal());
+          rollBackMovOp(bbILPModel.getSpillVal(), movNum);
           maxIter += 3;
         }
       }

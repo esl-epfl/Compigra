@@ -143,7 +143,6 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
     // Branch and constant operation is not interfered with other
     // operations
     Operation *op = it->second;
-    llvm::errs() << "Operation: " << *op << "\n";
     if (isa<LLVM::BrOp, LLVM::ConstantOp>(op))
       continue;
     if (op->getNumResults() == 0) {
@@ -253,8 +252,14 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
 
   // create interference graph with defOp and liveOut
   for (auto op : sortedOps) {
-    if (op->getNumResults() == 0)
+    if (op->getNumResults() == 0) {
+      // its livein should be interfered with each other
+      for (auto it1 = liveIn[op].begin(); it1 != liveIn[op].end(); ++it1)
+        for (auto it2 = std::next(it1); it2 != liveIn[op].end(); ++it2)
+          graph.addEdge(*it1, *it2);
+
       continue;
+    }
     auto defOp = getValueIndex(op->getResult(0), defMap);
     if (defOp == -1)
       continue;

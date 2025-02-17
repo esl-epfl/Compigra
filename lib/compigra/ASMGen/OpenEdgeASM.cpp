@@ -113,27 +113,36 @@ static char allocatePhysicalRegOnIG(std::unordered_set<int> interfNodes,
   return color;
 }
 
-// static int getValueIndex(Value val, std::map<int, Value> opResult) {
-//   for (auto [ind, res] : opResult)
-//     if (res.getDefiningOp() == val.getDefiningOp())
-//       return ind;
-//   return -1;
-// }
-
 // TODO[@YYY]: allocate register for the phi node (could be other PE, e.g.
 // RCL, RCR, RCT, RCB)
-std::map<int, int> getLimitationUseWithPhiNode(
+void getLimitationUseWithPhiNode(
     const std::vector<int> phiNodes,
     const std::map<int, std::pair<Operation *, Value>> opMap,
     const std::map<int, mlir::Operation *> opList,
     compigra::InterferenceGraph<int> &graph, unsigned maxReg) {
-  std::map<int, int> limitedUse;
+  // std::map<int, int> limitedUse;
   for (int node : phiNodes) {
+    // if the node is accessed by the operation in other PE, it should be ROUT
+    if (graph.colorMap.find(node) != graph.colorMap.end())
+      continue;
     // phi node should be block argument of the basic block
-    // BlockArgument arg = dyn_cast<BlockArgument>(opMap.at(node));
     auto arg = opMap.at(node).second.cast<BlockArgument>();
-
     auto defOps = getCntDefOpIndirectly(arg);
+
+    // Check if all defining operations are internal to current PE
+    bool allOperationsInternal =
+        std::all_of(defOps.begin(), defOps.end(), [&](const auto &defOp) {
+          return std::any_of(
+              opList.begin(), opList.end(),
+              [&](const auto &entry) { return entry.second == defOp; });
+        });
+
+    // If any operation is external, exit early
+    if (!allOperationsInternal) {
+      graph.colorMap[node] = maxReg;
+      continue;
+    }
+
     // allocate register for the phi node
     std::unordered_set<int> usedColors;
     for (auto u : graph.adjList[node]) {
@@ -141,25 +150,17 @@ std::map<int, int> getLimitationUseWithPhiNode(
         usedColors.insert(graph.colorMap[u]);
     }
 
-    // check whether the phi node is pre-colored
+    // allocate the register for the phi node
     char color = allocatePhysicalRegOnIG(graph.adjList[node], graph.colorMap,
                                          usedColors, maxReg);
+    llvm::errs() << "PHI NODE: " << node << " set color "
+                 << std::to_string(color) << "\n";
+    std::unordered_set<int> defNodes;
     for (auto defOp : defOps) {
-      // all defining op should be executed in the same PE, if it is executed in
-      // current PE, then it should be assigned to the same register.
-      bool internal = false;
-      for (auto [_, op] : opList)
-        if (op == defOp) {
-          internal = true;
-          break;
-        }
-
-      if (!internal)
-        break;
-
       // find the corresponding value in the graph
       int defNode = getValueIndex(defOp->getResult(0), opMap);
-      limitedUse[defNode] = {};
+      // limitedUse[defNode] = {};
+      defNodes.insert(defNode);
 
       // check whether the node is pre-colored, if yes then the color should be
       // the same
@@ -170,17 +171,16 @@ std::map<int, int> getLimitationUseWithPhiNode(
       }
     }
     // limit the coloring selection of the phi node
-    std::unordered_set<int> limited;
     // rewrite all value in limitedUse
-    for (auto [v, _] : limitedUse) {
-      limitedUse[v] = color;
-      // update adjacent list
+    for (auto v : defNodes) {
       graph.colorMap[v] = color;
+      llvm::errs() << v << ": " << std::to_string(color) << "\n";
+      // limitedUse[v] = color;
     }
-    limitedUse[node] = color;
+    // limitedUse[node] = color;
     graph.colorMap[node] = color;
   }
-  return limitedUse;
+  // return limitedUse;
 }
 
 LogicalResult compigra::allocateOutRegInPE(
@@ -191,18 +191,18 @@ LogicalResult compigra::allocateOutRegInPE(
   std::map<int, std::pair<Operation *, Value>> opMap;
   auto graph = createInterferenceGraph(opList, opMap, pcCtrlFlow);
   // print opMap
-  // for (auto [ind, pair] : opMap) {
-  //   llvm::errs() << ind << ": ";
-  //   if (pair.first)
-  //     llvm::errs() << *pair.first << " ";
-  //   else if (pair.second)
-  //     llvm::errs() << pair.second << " ";
-  //   llvm::errs() << "\n";
-  // }
+  for (auto [ind, pair] : opMap) {
+    llvm::errs() << ind << ": ";
+    if (pair.first)
+      llvm::errs() << *pair.first << " ";
+    else if (pair.second)
+      llvm::errs() << pair.second << " ";
+    llvm::errs() << "\n";
+  }
 
   // print opMap and interference graph
-  // llvm::errs() << "--------------Interference Graph-----------------\n";
-  // graph.printGraph();
+  llvm::errs() << "--------------Interference Graph-----------------\n";
+  graph.printGraph();
 
   // allocate register using graph coloring
   // TODO[@YYY]: Spill the graph if the number of registers is not
@@ -236,11 +236,13 @@ LogicalResult compigra::allocateOutRegInPE(
   llvm::errs() << "]\n";
 
   // write limitation to the graph
-  std::map<int, int> limitedUse =
-      getLimitationUseWithPhiNode(phiList, opMap, opList, graph, maxReg);
+  // std::map<int, int> limitedUse;
 
   // Color the vertices in the order of PEO
   for (auto v : peo) {
+    // update the phi node arrangement after each register allocation
+
+    getLimitationUseWithPhiNode(phiList, opMap, opList, graph, maxReg);
     Value val = opMap[v].second;
     auto defOp = val.getDefiningOp();
     if (!defOp)
@@ -255,16 +257,21 @@ LogicalResult compigra::allocateOutRegInPE(
       continue;
     }
 
-    // allocate register according to the limited use of the phi node
-    if (limitedUse.find(v) != limitedUse.end()) {
-      // TODO[@YYY]: check the validity of the limitation
-      graph.colorMap[v] = limitedUse[v];
-      llvm::errs() << v << ": "
-                   << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
-                   << val << "\n";
-      solution[defOp].reg = limitedUse[v];
+    if (graph.colorMap.find(v) != graph.colorMap.end()) {
+      llvm::errs() << v << ": " << std::to_string(graph.colorMap[v]) << "\n";
+      solution[defOp].reg = graph.colorMap[v];
       continue;
     }
+
+    // allocate register according to the limited use of the phi node
+    // if (limitedUse.find(v) != limitedUse.end()) {
+    //   graph.colorMap[v] = limitedUse[v];
+    //   llvm::errs() << v << "(phi): "
+    //                << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
+    //                << val << "\n";
+    //   solution[defOp].reg = limitedUse[v];
+    //   continue;
+    // }
 
     std::unordered_set<int> usedColors;
     // allocate register using the interference graph
