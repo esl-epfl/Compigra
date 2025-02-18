@@ -522,8 +522,6 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
     }
 
     for (auto prodOp : producers) {
-      llvm::errs() << "Creating local liveness constraints for: " << *consumer
-                   << " with " << *prodOp << "\n";
       if (failed(blockPeAssignment(
               model, prodOp, consumer, opTimeVar, opPeVar, varName,
               isa<cgra::ConditionalBranchOp>(consumer), check))) {

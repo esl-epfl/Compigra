@@ -31,6 +31,7 @@ namespace compigra {
 #include "compigra/ASMGen/Passes.h.inc"
 std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow = 3, int nCol = 3,
                                                      int mem = 0,
+                                                     StringRef msOpt = "",
                                                      StringRef asmOutDir = "");
 } // namespace compigra
 

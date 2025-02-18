@@ -60,9 +60,9 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
 
     // call the python code script to solve the MS
     llvm::errs() << "Running the SAT-Solver\n";
-    // int result = system(command.c_str());
-    // if (result != 0)
-    //   continue;
+    int result = system(command.c_str());
+    if (result != 0)
+      continue;
     llvm::errs() << "SAT-solver done\n";
     // read the result and update the schedule
     std::string mapResult =
@@ -101,7 +101,7 @@ namespace {
 struct ASMGenTemporalCGRAPass
     : public compigra::impl::ASMGenTemporalCGRABase<ASMGenTemporalCGRAPass> {
 
-  explicit ASMGenTemporalCGRAPass(int nRow, int nCol, int mem,
+  explicit ASMGenTemporalCGRAPass(int nRow, int nCol, int mem, StringRef msOpt,
                                   StringRef asmOutDir) {}
 
   void runOnOperation() override {
@@ -110,22 +110,19 @@ struct ASMGenTemporalCGRAPass
     if (asmOutDir.empty())
       asmOutDir = "out";
     std::string outDir = asmOutDir;
-    std::string pythonExectuable =
-        "python3  /home/yuxuan/Projects/24S/SAT-MapIt/Mapper/main.py";
 
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
-    TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
-    scheduler.setReserveMem(mem);
 
     size_t lastSlashPos = outDir.find_last_of("/");
     if (failed(outputDATE2023DAG(
             funcOp, outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
-            pythonExectuable, region, builder, nRow, 3)))
+            msOpt.substr(1, msOpt.size() - 2), region, builder, nRow, 3)))
       return signalPassFailure();
-    llvm::errs() << funcOp << "\n";
     return;
 
+    TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
+    scheduler.setReserveMem(mem);
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";
       return signalPassFailure();
@@ -146,8 +143,10 @@ struct ASMGenTemporalCGRAPass
 } // namespace
 
 namespace compigra {
-std::unique_ptr<mlir::Pass>
-createASMGenTemporalCGRA(int nRow, int nCol, int mem, StringRef asmOutDir) {
-  return std::make_unique<ASMGenTemporalCGRAPass>(nRow, nCol, mem, asmOutDir);
+std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow, int nCol,
+                                                     int mem, StringRef msOpt,
+                                                     StringRef asmOutDir) {
+  return std::make_unique<ASMGenTemporalCGRAPass>(nRow, nCol, mem, msOpt,
+                                                  asmOutDir);
 }
 } // namespace compigra

@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
 
@@ -270,14 +270,14 @@ void ModuloScheduleAdapter::addBranchArgument(Operation *term,
                                               bool insertBefore) {
   // need to create a new terminator to replace the old one
   builder.setInsertionPoint(term);
-  if (auto br = dyn_cast<LLVM::BrOp>(term)) {
+  if (auto br = dyn_cast<cf::BranchOp>(term)) {
     SmallVector<Value> operands{br.getOperands().begin(),
                                 br.getOperands().end()};
     if (insertBefore)
       operands.insert(operands.begin(), producer->getResult(0));
     else
       operands.push_back(producer->getResult(0));
-    builder.create<LLVM::BrOp>(term->getLoc(), operands, dest);
+    builder.create<cf::BranchOp>(term->getLoc(), operands, dest);
     term->erase();
     return;
   }
@@ -325,7 +325,7 @@ void ModuloScheduleAdapter::removeBlockArgs(Operation *term,
                                             std::vector<unsigned> argId,
                                             Block *dest) {
   builder.setInsertionPoint(term);
-  if (auto br = dyn_cast<LLVM::BrOp>(term)) {
+  if (auto br = dyn_cast<cf::BranchOp>(term)) {
     SmallVector<Value> operands;
     for (auto [ind, opr] : llvm::enumerate(br->getOperands())) {
       if (std::find(argId.begin(), argId.end(), (unsigned)ind) == argId.end()) {
@@ -334,7 +334,7 @@ void ModuloScheduleAdapter::removeBlockArgs(Operation *term,
       }
     }
 
-    builder.create<LLVM::BrOp>(term->getLoc(), operands, br.getSuccessor());
+    builder.create<cf::BranchOp>(term->getLoc(), operands, br.getSuccessor());
     term->erase();
     return;
   }
@@ -653,14 +653,6 @@ Block *ModuloScheduleAdapter::createExitBlock(
       exitOps.push_back(exitLoopOps);
   }
 
-  // print exitOps
-  for (auto opSet : exitOps) {
-    for (auto opId : opSet) {
-      llvm::errs() << opId << " ";
-    }
-    llvm::errs() << "\n";
-  }
-
   //   create DFG within the basic block
   if (!exitOps.empty())
     if (failed(
@@ -673,7 +665,7 @@ Block *ModuloScheduleAdapter::createExitBlock(
 
   // insert an unconditional branch to the start of the block
   builder.setInsertionPointToEnd(connBB);
-  builder.create<LLVM::BrOp>(loc, finiBlock);
+  builder.create<cf::BranchOp>(loc, finiBlock);
 
   return connBB;
 }
@@ -685,7 +677,6 @@ LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
   for (auto &op : finiBlock->getOperations()) {
     for (auto opr : op.getOperands()) {
       if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
-        llvm::errs() << op << ": " << opr << "\n";
         // if it is a block argument from other block, use the original value
         if (blockArg.getOwner() != finiBlock)
           continue;
@@ -772,6 +763,7 @@ void ModuloScheduleAdapter::removeTempletBlock() {
     op->erase();
 
   templateBlock->erase();
+
   // loopFalseBlk->erase();
 }
 
@@ -820,7 +812,6 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   /// Data structure to store the liveOut arguments in different loop
   /// iterations
   SmallVector<Block *> newBlks = {initBlock};
-
   SmallVector<Block *> preParts;
   SmallVector<Block *> postParts;
   // init has been pushed into newBlks, step to prolog
@@ -839,17 +830,6 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
 
     opSet = getOperationSet(opTimeMap, s, opSet, execTime, false);
     existIds.push_back(opSet);
-
-    // print opSet
-    llvm::errs() << "init DFG for " << ind << " th block\n";
-    for (auto set : opSet) {
-      llvm::errs() << "{";
-      for (auto opId : set) {
-        llvm::errs() << opId << " ";
-      }
-      llvm::errs() << "}";
-    }
-    llvm::errs() << "\n";
 
     // insert a new block before the template block
     auto newBlk = builder.createBlock(templateBlock);
@@ -875,7 +855,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
       // reverse the flag of the conditional branch
       reverseCondBrFlag(newTerm);
       preTermOp->erase();
-    } else if (auto br = dyn_cast<LLVM::BrOp>(preTermOp)) {
+    } else if (auto br = dyn_cast<cf::BranchOp>(preTermOp)) {
       br.setSuccessor(newBlk);
     }
 
@@ -937,7 +917,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
 
   // remove the template block in the region
   removeTempletBlock();
-  llvm::errs() << "finish remove block\n";
+  llvm::errs() << "finish remove template block\n";
 
   // remove the block arguments if it is not used
   removeUselessBlockArg();

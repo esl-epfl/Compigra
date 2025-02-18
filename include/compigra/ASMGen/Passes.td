@@ -41,6 +41,8 @@ def ASMGenTemporalCGRA : Pass<"gen-temporal-cgra-asm"> {
     Option<"nCol", "col", "int", "", "  Number of PE in one column">,
     Option<"mem", "mem", "int", "",
            "  Start address of the memory for the evicted value">,
+    Option<"msOpt", "ms-opt", "std::string", "",
+           "  Executable of modulo scheduler">,
     Option<"asmOutDir", "asm-out", "std::string", "",
            "  Specify the directory of the assembly file">,
   ];
