@@ -829,7 +829,7 @@ LogicalResult
 compigra::readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
                       int &II,
                       std::map<int, std::unordered_set<int>> &opTimeMap,
-                      std::vector<std::unordered_set<int>> &bbTimeMap,
+                      std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
                       std::map<int, Instruction> &instructions) {
   std::ifstream file(mapResult);
   if (!file.is_open()) {
@@ -851,13 +851,8 @@ compigra::readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
       continue;
     }
     // end of the modulo schedule result
-    if (cfgParse)
-      if (line.find("t:") == std::string::npos)
-        cfgParse = false;
-
-    if (line.find("Id:") != std::string::npos) {
-      parsing = true;
-    }
+    cfgParse = cfgParse && line.find("t:") != std::string::npos;
+    parsing = line.find("Id:") != std::string::npos;
 
     if (line.find("II: ") != std::string::npos) {
       II = std::stoi(line.substr(4));
@@ -865,7 +860,7 @@ compigra::readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
     }
 
     if (cfgParse)
-      satmapit::parsePKE(line, numOps, bbTimeMap, opTimeMap);
+      satmapit::parsePKE(line, numOps, timeSlotsOfBBs, opTimeMap);
 
     if (parsing)
       satmapit::parseLine(line, instructions, maxReg);

@@ -117,8 +117,8 @@ void PrintSatMapItDAG::addNodes(Operation *op) {
 
   // not find in existed node sets
   // if it is a constant operaiton, add it into constant
-  if (isa<LLVM::ConstantOp, arith::ConstantOp, arith::ConstantIntOp,
-          arith::ConstantFloatOp>(op)) {
+  if (isa<arith::ConstantOp, arith::ConstantIntOp, arith::ConstantFloatOp>(
+          op)) {
     constants.push_back(op);
     return;
   }
@@ -133,7 +133,7 @@ void PrintSatMapItDAG::addNodes(Operation *op) {
 static Value getCntBlockArgInPredcessor(unsigned ind, Block *pred,
                                         Block *block) {
   auto termOp = pred->getTerminator();
-  if (auto brOp = dyn_cast<LLVM::BrOp>(termOp))
+  if (auto brOp = dyn_cast<cf::BranchOp>(termOp))
     return brOp->getOperand(ind);
   if (auto condBrOp = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
     return getCondBranchOperand(ind, &condBrOp, block);
@@ -348,7 +348,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
         continue;
       int userInd = -1;
       // branch operator is propagated to the successor block
-      if (isa<LLVM::BrOp, cf::BranchOp>(user)) {
+      if (isa<cf::BranchOp>(user)) {
         if (user->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber();
       } else if (use.getOperandNumber() > 1 &&
@@ -429,14 +429,14 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
       // 2. the user is propagated to the successor block, where the user
       // receives the value from the basic block argument
       bool inUse = user->getBlock() == loopBlock;
-      inUse = inUse || (isa<LLVM::BrOp>(user) &&
+      inUse = inUse || (isa<cf::BranchOp>(user) &&
                         user->getBlock()->getSuccessor(0) == loopBlock);
       if (!inUse)
         continue;
       dotFile << getNodeIndex(liveIn) << " ";
 
       int userInd = -1;
-      if (auto brOp = dyn_cast<LLVM::BrOp>(user)) {
+      if (auto brOp = dyn_cast<cf::BranchOp>(user)) {
         if (brOp->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber();
       } else if (isa<cgra::ConditionalBranchOp>(user) &&
@@ -490,7 +490,7 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
 }
 
 void satmapit::parsePKE(const std::string &line, unsigned termId,
-                        std::vector<std::unordered_set<int>> &bbTimeMap,
+                        std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
                         std::map<int, std::unordered_set<int>> &opTimeMap) {
   std::istringstream lineStream(line);
   // first parse t: time
@@ -499,7 +499,7 @@ void satmapit::parsePKE(const std::string &line, unsigned termId,
   std::getline(lineStream, token, ' ');
   std::getline(lineStream, token, ' ');
   int tVal = std::stoi(token.substr(token.find(":") + 1));
-  bbTimeMap.back().insert(tVal);
+  timeSlotsOfBBs.back().insert(tVal);
 
   // Initialize the set for the values
   std::unordered_set<int> values;
@@ -510,7 +510,7 @@ void satmapit::parsePKE(const std::string &line, unsigned termId,
       values.insert(std::stoi(token));
       if (std::stoi(token) == termId)
         // push back a new set for the new basic block
-        bbTimeMap.push_back({});
+        timeSlotsOfBBs.push_back({});
     }
   }
   opTimeMap[tVal] = values;

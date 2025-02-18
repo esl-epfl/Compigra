@@ -47,8 +47,8 @@ LogicalResult initBlockArgs(Block *block,
                             OpBuilder &builder);
 
 /// Determine whether the loop execution time of operations belonging to
-/// different loop overlapped. `bbTimeMap` records the time of prolog,
-/// loop kernel, and epilog. If the end of the `bbTimeMap` which is the
+/// different loop overlapped. `timeSlotsOfBBs` records the time of prolog,
+/// loop kernel, and epilog. If the end of the `timeSlotsOfBBs` which is the
 /// epilog are empty, the loop execution time does not overlap.
 bool kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap);
 
@@ -61,7 +61,7 @@ getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap);
 LogicalResult readMapFile(std::string mapResult, unsigned maxReg,
                           unsigned numOps, int &II,
                           std::map<int, std::unordered_set<int>> &opTimeMap,
-                          std::vector<std::unordered_set<int>> &bbTimeMap,
+                          std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
                           std::map<int, Instruction> &instructions);
 
 class OpenEdgeASMGen {

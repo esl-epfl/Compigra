@@ -109,7 +109,7 @@ void parseLine(const std::string &line, std::map<int, Instruction> &instMap,
 
 /// Parse the module schedule result which include the prolog, kernel and epilog
 void parsePKE(const std::string &line, unsigned termId,
-              std::vector<std::unordered_set<int>> &bbTimeMap,
+              std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
               std::map<int, std::unordered_set<int>> &opTimeMap);
 
 } // namespace satmapit
