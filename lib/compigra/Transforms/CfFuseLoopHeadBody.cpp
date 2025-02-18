@@ -115,6 +115,9 @@ bool removeCertainCondBr(func::FuncOp funcOp, OpBuilder &builder) {
         termOp->getLoc(),
         result ? condBrOp.getTrueDest() : condBrOp.getFalseDest(), Operands);
     termOp->erase();
+    if (cmpOp.use_empty())
+      cmpOp.erase();
+    llvm::errs() << "Remove certain conditional branch\n";
     return true;
   }
   // does not exist certain conditional branch
@@ -313,13 +316,13 @@ struct CfFuseLoopHeadBodyPass
     // if get the fusible block, fuse it
     while (maxTry--) {
       auto fusibleBody = getFusibleBodyBlock(funcOp);
-      if (!fusibleBody.has_value() && !removeCertainCondBr(funcOp, builder))
-        break;
       if (fusibleBody.has_value()) {
         auto bodyBlk = fusibleBody.value();
         if (failed(fuseHeadToBody(*bodyBlk->pred_begin(), bodyBlk, builder)))
           return signalPassFailure();
       }
+      if (!removeCertainCondBr(funcOp, builder))
+        break;
     }
     removeUselessBlockArg(funcOp.getBody(), builder);
   };

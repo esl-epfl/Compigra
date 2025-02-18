@@ -358,7 +358,6 @@ void removeUselessBlockArg(Region &region, OpBuilder &builder) {
     // remove all block arguments
     llvm::BitVector bitVec(argId.size(), true);
     block.eraseArguments(bitVec);
-    llvm::errs() << *prevTerm << "\n";
     removeBlockArgs(prevTerm, argId, &block, builder);
   }
 }
