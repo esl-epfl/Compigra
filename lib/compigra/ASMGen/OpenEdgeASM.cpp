@@ -825,11 +825,12 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 
 /// Function to parse the scheduled results produced by SAT-MapIt line by
 /// line and store the instruction in the map.
-static LogicalResult
-readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps, int &II,
-            std::map<int, std::unordered_set<int>> &opTimeMap,
-            std::vector<std::unordered_set<int>> &bbTimeMap,
-            std::map<int, Instruction> &instructions) {
+LogicalResult
+compigra::readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
+                      int &II,
+                      std::map<int, std::unordered_set<int>> &opTimeMap,
+                      std::vector<std::unordered_set<int>> &bbTimeMap,
+                      std::map<int, Instruction> &instructions) {
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";
@@ -912,19 +913,9 @@ LogicalResult compigra::initBlockArgs(Block *block,
   return success();
 }
 
-/// Determine whether the loop execution time of operations belonging to
-/// different loop overlapped. `bbTimeMap` records the time of prolog,
-/// loop kernel, and epilog. If the end of the `bbTimeMap` which is the
-/// epilog are empty, the loop execution time does not overlap.
-static bool kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap) {
-  if (bbTimeMap.empty())
-    return false;
-  return !bbTimeMap.back().empty();
-}
-
 /// Get the execution time of operations in one loop iteration
-static std::map<int, int>
-getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap) {
+std::map<int, int> compigra::getLoopOpUnfoldExeTime(
+    const std::map<int, std::unordered_set<int>> opTimeMap) {
   std::map<int, int> opExecT;
   std::set<int> opIds;
   for (auto &timeSet : opTimeMap) {
@@ -935,6 +926,12 @@ getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap) {
       }
   }
   return opExecT;
+}
+
+bool compigra::kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap) {
+  if (bbTimeMap.empty())
+    return false;
+  return !bbTimeMap.back().empty();
 }
 
 /// Function to use the modulo schedule result to initialize existing results

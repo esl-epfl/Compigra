@@ -46,6 +46,24 @@ LogicalResult initBlockArgs(Block *block,
                             std::map<int, Instruction> &instructions,
                             OpBuilder &builder);
 
+/// Determine whether the loop execution time of operations belonging to
+/// different loop overlapped. `bbTimeMap` records the time of prolog,
+/// loop kernel, and epilog. If the end of the `bbTimeMap` which is the
+/// epilog are empty, the loop execution time does not overlap.
+bool kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap);
+
+/// Get the execution time of operations in one loop iteration
+std::map<int, int>
+getLoopOpUnfoldExeTime(const std::map<int, std::unordered_set<int>> opTimeMap);
+
+/// Function to parse the scheduled results produced by SAT-MapIt line by
+/// line and store the instruction in the map.
+LogicalResult readMapFile(std::string mapResult, unsigned maxReg,
+                          unsigned numOps, int &II,
+                          std::map<int, std::unordered_set<int>> &opTimeMap,
+                          std::vector<std::unordered_set<int>> &bbTimeMap,
+                          std::map<int, Instruction> &instructions);
+
 class OpenEdgeASMGen {
 public:
   // initialize the region and the maximum number of PEs

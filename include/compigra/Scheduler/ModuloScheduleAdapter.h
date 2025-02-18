@@ -63,7 +63,10 @@ public:
     loopOpNum = loopOpList.size();
     loopFalseBlk = getCondBrFalseDest(templateBlock);
     initBlock = getInitBlock(templateBlock);
-    finiBlock = loopFalseBlk->getSuccessor(0);
+    if (loopFalseBlk->hasNoSuccessors())
+      finiBlock = loopFalseBlk;
+    else
+      finiBlock = loopFalseBlk->getSuccessor(0);
   }
 
 private:

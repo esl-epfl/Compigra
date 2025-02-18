@@ -697,10 +697,11 @@ LogicalResult ModuloScheduleAdapter::replaceLiveOutWithNewPath(
         // still use block argument, the parameter propagation is handled by the
         // predecessor
         unsigned argId = blockArg.getArgNumber();
-        if (loopFalseBlk->getSuccessor(0) != finiBlock)
-          return failure();
-        Operation *defOp =
-            loopFalseBlk->getTerminator()->getOperand(argId).getDefiningOp();
+        // if (loopFalseBlk->getSuccessor(0) != finiBlock)
+        //   return failure();
+        auto cBr =
+            dyn_cast<cgra::ConditionalBranchOp>(templateBlock->getTerminator());
+        Operation *defOp = cBr.getFalseOperand(argId).getDefiningOp();
         unsigned opId = getOpId(templateBlock->getOperations(), defOp);
         for (auto opList : insertOpsList)
           addBranchArgument(opList[opId]->getBlock()->getTerminator(),
@@ -760,7 +761,7 @@ void ModuloScheduleAdapter::removeTempletBlock() {
   // collect all operations in reverse order in a temporary vector.
 
   // erase loopFalseBlk terminator in case it is used for parameter propagation.
-  loopFalseBlk->getTerminator()->erase();
+  // loopFalseBlk->getTerminator()->erase();
 
   std::vector<Operation *> toErase;
   for (auto &op : llvm::reverse(loopOpList)) {
@@ -771,7 +772,7 @@ void ModuloScheduleAdapter::removeTempletBlock() {
     op->erase();
 
   templateBlock->erase();
-  loopFalseBlk->erase();
+  // loopFalseBlk->erase();
 }
 
 /// get the corresponding operand in the init block, suppose in loop block,

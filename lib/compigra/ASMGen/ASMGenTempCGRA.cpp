@@ -26,14 +26,15 @@
 using namespace mlir;
 using namespace compigra;
 
-static LogicalResult outputDATE2023DAG(func::FuncOp funcOp,
-                                       std::string outputDAG,
-                                       std::string pythonExectuable,
-                                       unsigned peGridSize = 4) {
+static LogicalResult
+outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
+                  std::string pythonExectuable, Region &r, OpBuilder &builder,
+                  unsigned peGridSize = 4, unsigned maxReg = 3) {
 
   // Find the loop block
-  for (auto [ind, blk] : llvm::enumerate(funcOp.getBlocks())) {
-
+  int bbInd = -1;
+  for (auto &blk : llvm::make_early_inc_range(funcOp.getBlocks())) {
+    bbInd++;
     bool isLoop =
         std::find(blk.getSuccessors().begin(), blk.getSuccessors().end(),
                   &blk) != blk.getSuccessors().end();
@@ -48,23 +49,54 @@ static LogicalResult outputDATE2023DAG(func::FuncOp funcOp,
     // initialize print function
     satmapit::PrintSatMapItDAG printer(blk.getTerminator(), nodes);
     printer.init();
-    if (failed(printer.printDAG(outputDAG + "/bb" + std::to_string(ind))))
+    if (failed(printer.printDAG(outputDAG + "/bb" + std::to_string(bbInd))))
       continue;
 
     // detect whether the python executable exist
     std::string command = pythonExectuable + " --path " + outputDAG +
-                          "/ --bench bb" + std::to_string(ind) + " --unit " +
+                          "/ --bench bb" + std::to_string(bbInd) + " --unit " +
                           std::to_string(peGridSize) + " > " + outputDAG +
-                          "/out_raw_bb" + std::to_string(ind) + ".sat\n";
-    llvm::errs() << "Running the SAT-Solver\n";
-    int result = system(command.c_str());
-    if (result != 0)
-      continue;
+                          "/out_raw_bb" + std::to_string(bbInd) + ".sat\n";
 
     // call the python code script to solve the MS
+    llvm::errs() << "Running the SAT-Solver\n";
+    // int result = system(command.c_str());
+    // if (result != 0)
+    //   continue;
+    llvm::errs() << "SAT-solver done\n";
+    // read the result and update the schedule
+    std::string mapResult =
+        outputDAG + "/out_raw_bb" + std::to_string(bbInd) + ".sat";
+    int opSize = blk.getOperations().size();
+
+    int II;
+    std::map<int, Instruction> instructions;
+    std::map<int, std::unordered_set<int>> opTimeMap;
+    std::vector<std::unordered_set<int>> bbTimeMap = {{}};
+    if (failed(readMapFile(mapResult, maxReg,
+                           opSize + blk.getNumArguments() - 1, II, opTimeMap,
+                           bbTimeMap, instructions)))
+      continue;
+    // does not overlap the loop execution, not necessary to update the schedule
+    if (!kernelOverlap(bbTimeMap))
+      continue;
+
+    if (failed(initBlockArgs(&blk, instructions, builder)))
+      return failure();
+
+    // Adapt the CFG with the loop modulo schedule
+    std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
+    ModuloScheduleAdapter adapter(r, builder, blk.getOperations(), II, execTime,
+                                  opTimeMap, bbTimeMap);
+    llvm::errs() << "Adapt the loop block with the schedule result\n";
+
+    if (failed(adapter.adaptCFGWithLoopMS()))
+      return failure();
+    llvm::errs() << "Adapt one block\n";
   }
   return success();
 }
+
 namespace {
 struct ASMGenTemporalCGRAPass
     : public compigra::impl::ASMGenTemporalCGRABase<ASMGenTemporalCGRAPass> {
@@ -89,8 +121,9 @@ struct ASMGenTemporalCGRAPass
     size_t lastSlashPos = outDir.find_last_of("/");
     if (failed(outputDATE2023DAG(
             funcOp, outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
-            pythonExectuable)))
+            pythonExectuable, region, builder, nRow, 3)))
       return signalPassFailure();
+    llvm::errs() << funcOp << "\n";
     return;
 
     if (failed(scheduler.createSchedulerAndSolve())) {
