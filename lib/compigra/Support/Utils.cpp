@@ -290,4 +290,76 @@ bool isBackEdge(Operation *srcOp, Operation *dstOp) {
 
   return isBackEdge(srcOp->getBlock(), dstOp->getBlock());
 }
+
+void removeBlockArgs(Operation *term, std::vector<unsigned> argId, Block *dest,
+                     OpBuilder &builder) {
+  builder.setInsertionPoint(term);
+  if (auto br = dyn_cast<cf::BranchOp>(term)) {
+    SmallVector<Value> operands;
+    for (auto [ind, opr] : llvm::enumerate(br->getOperands())) {
+      if (std::find(argId.begin(), argId.end(), (unsigned)ind) == argId.end()) {
+        operands.push_back(opr);
+        llvm::errs() << "NOT FOUND " << ind;
+      }
+    }
+
+    builder.create<cf::BranchOp>(term->getLoc(), operands, br.getSuccessor());
+    term->erase();
+    return;
+  }
+
+  if (auto condBr = dyn_cast<cf::CondBranchOp>(term)) {
+    SmallVector<Value> trueOperands;
+    for (auto [ind, opr] : llvm::enumerate(condBr.getTrueDestOperands()))
+      if (condBr.getTrueDest() != dest ||
+          std::find(argId.begin(), argId.end(), ind) == argId.end())
+        trueOperands.push_back(opr);
+    SmallVector<Value> falseOperands;
+    for (auto [ind, opr] : llvm::enumerate(condBr.getFalseDestOperands()))
+      if (condBr.getFalseDest() != dest ||
+          std::find(argId.begin(), argId.end(), ind) == argId.end())
+        falseOperands.push_back(opr);
+    builder.create<cf::CondBranchOp>(term->getLoc(), condBr.getOperand(0),
+                                     condBr.getTrueDest(), trueOperands,
+                                     condBr.getFalseDest(), falseOperands);
+    term->erase();
+    return;
+  }
+}
+
+void removeUselessBlockArg(Region &region, OpBuilder &builder) {
+  for (auto &block : region) {
+    if (block.isEntryBlock())
+      continue;
+    if (block.getArguments().size() == 0 ||
+        std::distance(block.getPredecessors().begin(),
+                      block.getPredecessors().end()) > 1)
+      continue;
+
+    // the block has only one predecessor and have arguments
+    // get the corresponding value in the predecessor
+    auto prevTerm = (*block.getPredecessors().begin())->getTerminator();
+    auto oprIndBase = 0;
+    if (auto condBr = dyn_cast<cf::CondBranchOp>(prevTerm)) {
+      // the block is the false dest
+      oprIndBase = 1;
+      if (condBr.getFalseDest() == &block)
+        oprIndBase += condBr.getTrueDestOperands().size();
+    }
+
+    // find the corresponding value in the predecessor
+    std::vector<unsigned> argId;
+    unsigned oprInd = 0;
+    for (auto arg : llvm::make_early_inc_range(block.getArguments())) {
+      arg.replaceAllUsesWith(prevTerm->getOperand(oprIndBase + oprInd));
+      argId.push_back(oprInd);
+      oprInd++;
+    }
+    // remove all block arguments
+    llvm::BitVector bitVec(argId.size(), true);
+    block.eraseArguments(bitVec);
+    llvm::errs() << *prevTerm << "\n";
+    removeBlockArgs(prevTerm, argId, &block, builder);
+  }
+}
 } // namespace compigra

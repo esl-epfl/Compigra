@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Transforms/CfFuseLoopHeadBody.h"
+#include "compigra/Support/Utils.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -318,10 +319,9 @@ struct CfFuseLoopHeadBodyPass
         auto bodyBlk = fusibleBody.value();
         if (failed(fuseHeadToBody(*bodyBlk->pred_begin(), bodyBlk, builder)))
           return signalPassFailure();
-        llvm::errs() << "Fusing " << bodyBlk->getOperations().front() << "\n";
       }
     }
-    llvm::errs() << funcOp << "\n";
+    removeUselessBlockArg(funcOp.getBody(), builder);
   };
 };
 

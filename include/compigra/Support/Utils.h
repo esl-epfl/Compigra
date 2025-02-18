@@ -54,6 +54,9 @@ unsigned getShortestLiveHops(Operation *srcOp, Operation *dstOp);
 bool isBackEdge(Block *srcBlk, Block *dstBlk);
 
 bool isBackEdge(Operation *srcOp, Operation *dstOp);
+
+/// Remove the block arguments if there is only one predecessor of the block
+void removeUselessBlockArg(Region &region, OpBuilder &builder);
 } // namespace compigra
 
 #endif // UTILS_H
