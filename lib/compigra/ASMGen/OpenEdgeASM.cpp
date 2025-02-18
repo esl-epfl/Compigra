@@ -235,13 +235,8 @@ LogicalResult compigra::allocateOutRegInPE(
   }
   llvm::errs() << "]\n";
 
-  // write limitation to the graph
-  // std::map<int, int> limitedUse;
-
   // Color the vertices in the order of PEO
   for (auto v : peo) {
-    // update the phi node arrangement after each register allocation
-
     getLimitationUseWithPhiNode(phiList, opMap, opList, graph, maxReg);
     Value val = opMap[v].second;
     auto defOp = val.getDefiningOp();
@@ -879,9 +874,9 @@ readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps, int &II,
 }
 
 /// Initialize the block arguments to be SADD
-static LogicalResult initBlockArgs(Block *block,
-                                   std::map<int, Instruction> &instructions,
-                                   OpBuilder &builder) {
+LogicalResult compigra::initBlockArgs(Block *block,
+                                      std::map<int, Instruction> &instructions,
+                                      OpBuilder &builder) {
   // Get the phi nodes in the block
   unsigned nPhi = 0;
   for (auto [index, inst] : instructions) {

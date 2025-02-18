@@ -36,7 +36,7 @@ class PrintSatMapItDAG {
 public:
   // initialization
   PrintSatMapItDAG(Operation *terminator, SmallVector<Operation *> nodes,
-                   SmallVector<LLVM::ConstantOp> constants,
+                   SmallVector<Operation *> constants,
                    SmallVector<BlockArgument> &BlockArgs,
                    SmallVector<Value> &liveOutArgs)
       : terminator(terminator), nodes(nodes), constants(constants),
@@ -74,7 +74,7 @@ public:
 private:
   Operation *terminator = nullptr;
   SmallVector<Operation *> nodes = {};
-  SmallVector<LLVM::ConstantOp> constants = {};
+  SmallVector<Operation *> constants = {};
   SmallVector<BlockArgument> BlockArgs = {};
   SmallVector<Value> liveOutArgs = {};
 

@@ -14,6 +14,8 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
 
@@ -115,8 +117,9 @@ void PrintSatMapItDAG::addNodes(Operation *op) {
 
   // not find in existed node sets
   // if it is a constant operaiton, add it into constant
-  if (auto constOp = dyn_cast<LLVM::ConstantOp>(op)) {
-    constants.push_back(constOp);
+  if (isa<LLVM::ConstantOp, arith::ConstantOp, arith::ConstantIntOp,
+          arith::ConstantFloatOp>(op)) {
+    constants.push_back(op);
     return;
   }
 
@@ -233,6 +236,12 @@ LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
     size_t namePos = node->getName().getStringRef().str().find(".");
     std::string nodeName =
         node->getName().getStringRef().str().substr(namePos + 1);
+
+    // remove data type
+    if (nodeName == "addi" || nodeName == "addf" || nodeName == "subi" ||
+        nodeName == "subf" || nodeName == "muli" || nodeName == "mulf") {
+      nodeName = nodeName.substr(0, 3);
+    }
     if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(node)) {
       switch (condBr.getPredicate()) {
       case cgra::CondBrPredicate::eq:
@@ -295,27 +304,27 @@ LogicalResult PrintSatMapItDAG::printConsts(std::string fileName) {
   }
 
   for (auto [ind, constOp] : llvm::enumerate(constants)) {
-    // The constant should only have one user
-    if (std::distance(constOp->getUsers().begin(), constOp->getUsers().end()) >
-        1) {
-      llvm::errs() << "const " << constOp << " has more than one user\n";
-      return failure();
+    for (auto user : constOp->getUsers()) {
+      unsigned posLR = user->getOperand(0).getDefiningOp() == constOp ? 0 : 1;
+      int userInd = getNodeIndex(user);
+      if (userInd == -1)
+        continue;
+
+      // get the integer or floating point constant value of constOp
+      int constVal;
+      if (auto intAttr = constOp->getAttr("value").dyn_cast<IntegerAttr>()) {
+        constVal = intAttr.getInt();
+      } else if (auto floatAttr =
+                     constOp->getAttr("value").dyn_cast<FloatAttr>()) {
+        constVal = static_cast<int>(floatAttr.getValue().convertToFloat());
+      } else {
+        LLVM_DEBUG(llvm::dbgs() << "Unsupported constant type\n");
+        return failure();
+      }
+
+      dotFile << getNodeIndex(constOp) << " " << userInd;
+      dotFile << " " << constVal << " " << posLR << "\n";
     }
-
-    // get the one and only one user of the constant
-    auto user = *constOp->getUsers().begin();
-    unsigned posLR = user->getOperand(0).getDefiningOp() == constOp ? 0 : 1;
-
-    size_t userInd = getNodeIndex(user);
-
-    if (userInd == uint32_t(-1))
-      return failure();
-
-    // currently only support integer
-    int constVal = constOp.getValueAttr().cast<IntegerAttr>().getInt();
-
-    dotFile << getNodeIndex(constOp.getOperation()) << " " << userInd;
-    dotFile << " " << constVal << " " << posLR << "\n";
   }
   dotFile.close();
 
@@ -339,8 +348,8 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
         continue;
       int userInd = -1;
       // branch operator is propagated to the successor block
-      if (auto brOp = dyn_cast<LLVM::BrOp>(user)) {
-        if (brOp->getBlock()->getSuccessor(0) == loopBlock)
+      if (isa<LLVM::BrOp, cf::BranchOp>(user)) {
+        if (user->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber();
       } else if (use.getOperandNumber() > 1 &&
                  isa<cgra::ConditionalBranchOp>(user)) {
@@ -366,13 +375,17 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
   for (auto *node : nodes) {
     if (isa<cgra::ConditionalBranchOp>(node))
       continue;
+
     for (auto &use : node->getUses()) {
       // ignore the cgra branch operation's destination
       auto user = use.getOwner();
       // if user does not belong to loop stage, it should be live-out
       if (user->getBlock() != loopBlock)
         continue;
-      if (isa<cgra::ConditionalBranchOp>(user))
+      if (auto cbr = dyn_cast_or_null<cgra::ConditionalBranchOp>(user)) {
+        // if not the operand for loop block
+        if (use.getOperandNumber() >= 2 + cbr.getNumTrueDestOperands())
+          continue;
         // If it is for operand propagation through, where the two operands of
         // branch operations are for comparison flag generation
         if (use.getOperandNumber() > 1) {
@@ -380,7 +393,7 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
           dotFile << use.getOperandNumber() - 2 << " 1 1\n";
           continue;
         }
-
+      }
       dotFile << getNodeIndex(node) << " ";
       dotFile << getNodeIndex(user) << " 0 1\n";
     }

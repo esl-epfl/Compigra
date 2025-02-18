@@ -40,6 +40,12 @@ allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
                    unsigned maxReg,
                    std::map<int, std::unordered_set<int>> pcCtrlFlow);
 
+///  Allocate registers for the operations in the PE. The register allocation is
+///  conducted under the pre-colored constraints of `solution`.
+LogicalResult initBlockArgs(Block *block,
+                            std::map<int, Instruction> &instructions,
+                            OpBuilder &builder);
+
 class OpenEdgeASMGen {
 public:
   // initialize the region and the maximum number of PEs
@@ -135,7 +141,7 @@ private:
       {"MUL", "SMUL"},  {"DIV", "SDIV"},  {"OR", "LOR"},    {"ORI", "LOR"},
       {"XOR", "LXOR"},  {"XORI", "LXOR"}, {"LSHR", "SRT"},  {"ASHR", "SRA"},
       {"SHL", "SLT"},   {"SHRSI", "SRA"}, {"SHRUI", "SLT"}, {"SHLI", "SLT"},
-      {"AND", "LAND"},  {"ANDI", "LAND"},  {"BR", "JUMP"}};
+      {"AND", "LAND"},  {"ANDI", "LAND"}, {"BR", "JUMP"}};
 };
 
 std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",
