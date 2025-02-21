@@ -490,8 +490,8 @@ LogicalResult PrintSatMapItDAG::printDAG(std::string fileName) {
 }
 
 void satmapit::parsePKE(const std::string &line, unsigned termId,
-                        std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
-                        std::map<int, std::unordered_set<int>> &opTimeMap) {
+                        std::vector<std::set<int>> &timeSlotsOfBBs,
+                        std::map<int, std::set<int>> &opTimeMap) {
   std::istringstream lineStream(line);
   // first parse t: time
   std::string token, tStr;
@@ -502,7 +502,7 @@ void satmapit::parsePKE(const std::string &line, unsigned termId,
   timeSlotsOfBBs.back().insert(tVal);
 
   // Initialize the set for the values
-  std::unordered_set<int> values;
+  std::set<int> values;
 
   // Read the remaining parts (values)
   while (std::getline(lineStream, token, ' ')) {

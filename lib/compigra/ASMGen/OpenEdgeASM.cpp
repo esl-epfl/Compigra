@@ -825,12 +825,11 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 
 /// Function to parse the scheduled results produced by SAT-MapIt line by
 /// line and store the instruction in the map.
-LogicalResult
-compigra::readMapFile(std::string mapResult, unsigned maxReg, unsigned numOps,
-                      int &II,
-                      std::map<int, std::unordered_set<int>> &opTimeMap,
-                      std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
-                      std::map<int, Instruction> &instructions) {
+LogicalResult compigra::readMapFile(std::string mapResult, unsigned maxReg,
+                                    unsigned numOps, int &II,
+                                    std::map<int, std::set<int>> &opTimeMap,
+                                    std::vector<std::set<int>> &timeSlotsOfBBs,
+                                    std::map<int, Instruction> &instructions) {
   std::ifstream file(mapResult);
   if (!file.is_open()) {
     llvm::errs() << "Unable to open " << mapResult << "\n";
@@ -890,12 +889,12 @@ LogicalResult compigra::initBlockArgs(Block *block,
   for (int i = nPhi - 1; i >= 0; i--) {
     // insert constant Zero and SADD
     builder.setInsertionPoint(prevNode->getTerminator());
-    auto zeroOp = builder.create<LLVM::ConstantOp>(
+    auto zeroOp = builder.create<arith::ConstantOp>(
         prevNode->getTerminator()->getLoc(), builder.getIntegerType(32),
         builder.getI32IntegerAttr(0));
 
     builder.setInsertionPointToStart(block);
-    auto addOp = builder.create<LLVM::AddOp>(
+    auto addOp = builder.create<arith::AddIOp>(
         block->getArgument(i).getLoc(), builder.getIntegerType(32),
         block->getArgument(i), zeroOp.getResult());
     // Replace the block argument with the add operation
@@ -909,8 +908,8 @@ LogicalResult compigra::initBlockArgs(Block *block,
 }
 
 /// Get the execution time of operations in one loop iteration
-std::map<int, int> compigra::getLoopOpUnfoldExeTime(
-    const std::map<int, std::unordered_set<int>> opTimeMap) {
+std::map<int, int>
+compigra::getLoopOpUnfoldExeTime(const std::map<int, std::set<int>> opTimeMap) {
   std::map<int, int> opExecT;
   std::set<int> opIds;
   for (auto &timeSet : opTimeMap) {
@@ -923,7 +922,7 @@ std::map<int, int> compigra::getLoopOpUnfoldExeTime(
   return opExecT;
 }
 
-bool compigra::kernelOverlap(std::vector<std::unordered_set<int>> bbTimeMap) {
+bool compigra::kernelOverlap(std::vector<std::set<int>> bbTimeMap) {
   if (bbTimeMap.empty())
     return false;
   return !bbTimeMap.back().empty();
@@ -940,8 +939,8 @@ LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
 
   // read the loop basic block modulo schedule result
   std::map<int, Instruction> instructions;
-  std::map<int, std::unordered_set<int>> opTimeMap;
-  std::vector<std::unordered_set<int>> bbTimeMap = {{}};
+  std::map<int, std::set<int>> opTimeMap;
+  std::vector<std::set<int>> bbTimeMap = {{}};
   if (failed(readMapFile(mapResult, maxReg,
                          opSize + loopBlock->getNumArguments() - 1, II,
                          opTimeMap, bbTimeMap, instructions)))
@@ -957,8 +956,8 @@ LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
   // init modulo schedule result
   if (kernelOverlap(bbTimeMap)) {
     std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
-    ModuloScheduleAdapter adapter(r, builder, loopBlock->getOperations(), II,
-                                  execTime, opTimeMap, bbTimeMap);
+    ModuloScheduleAdapter adapter(r, loopBlock, builder, II, execTime,
+                                  opTimeMap, bbTimeMap);
     if (failed(adapter.adaptCFGWithLoopMS()))
       return failure();
 
@@ -969,25 +968,27 @@ LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
 
     int curPC = 0;
 
-    auto preParts = adapter.enterDFGs;
-    auto postParts = adapter.exitDFGs;
+    // auto preParts = adapter.enterDFGs;
+    // auto postParts = adapter.exitDFGs;
 
-    std::vector<std::vector<int>> preOpIds;
-    std::vector<int> bbStarts;
-    for (size_t i = 0; i < preParts.size(); i++) {
-      bbStarts.push_back(curPC);
-      scheduler.assignSchedule(preParts[i], II, curPC, execTime, instructions,
-                               totalRound);
-      curPC++;
-      preOpIds.push_back(totalRound);
-    }
+    // std::vector<std::vector<int>> preOpIds;
+    // std::vector<int> bbStarts;
+    // for (size_t i = 0; i < preParts.size(); i++) {
+    //   bbStarts.push_back(curPC);
+    //   scheduler.assignSchedule(preParts[i], II, curPC, execTime,
+    //   instructions,
+    //                            totalRound);
+    //   curPC++;
+    //   preOpIds.push_back(totalRound);
+    // }
 
-    for (int i = 0; i < preParts.size() - 1; i++) {
-      scheduler.assignSchedule(postParts[i], II, curPC, execTime, instructions,
-                               preOpIds[preParts.size() - 2 - i],
-                               curPC - bbStarts[preParts.size() - 1 - i]);
-      curPC++;
-    }
+    // for (int i = 0; i < preParts.size() - 1; i++) {
+    //   scheduler.assignSchedule(postParts[i], II, curPC, execTime,
+    //   instructions,
+    //                            preOpIds[preParts.size() - 2 - i],
+    //                            curPC - bbStarts[preParts.size() - 1 - i]);
+    //   curPC++;
+    // }
 
   } else
     scheduler.assignSchedule(loopBlock->getOperations(), instructions);

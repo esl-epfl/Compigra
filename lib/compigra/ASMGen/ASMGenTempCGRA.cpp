@@ -17,6 +17,7 @@
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -26,6 +27,57 @@
 using namespace mlir;
 using namespace compigra;
 
+static bool isSameAddr(cgra::LwiOp loadOp, cgra::SwiOp storeOp,
+                       bool strict = true) {
+
+  // if the load and store operations address are all arith::ConstantOp
+  // and unequal, continue the check
+  if (auto storeAddr =
+          storeOp.getOperand(1).getDefiningOp<arith::ConstantOp>()) {
+    if (auto loadAddr =
+            loadOp.getOperand().getDefiningOp<arith::ConstantOp>()) {
+      if (storeAddr.getValue().cast<IntegerAttr>().getInt() !=
+          loadAddr.getValue().cast<IntegerAttr>().getInt())
+        return !strict;
+    }
+  }
+}
+
+static bool memoryConsistencySchedule(const std::map<int, int> opExecTime,
+                                      unsigned II, Block *scheduleBB) {
+  // Get all store operations which must separate the load operations
+  auto storeOps = scheduleBB->getOps<cgra::SwiOp>();
+  unsigned startOpId = scheduleBB->getArguments().size();
+  for (auto storeOp : storeOps) {
+    // get storeOp Id in the block
+    int storeOpId = getOpId(scheduleBB->getOperations(), storeOp) + startOpId;
+    auto bound = opExecTime.at(storeOpId);
+    // check whether all load id < storeOpId, the execution time of load is
+    // smaller than the store, and vice versa
+    auto loadOps = scheduleBB->getOps<cgra::LwiOp>();
+    for (auto loadOp : loadOps) {
+      int loadOpId = getOpId(scheduleBB->getOperations(), loadOp) + startOpId;
+      auto loadExecTime = opExecTime.at(loadOpId);
+
+      if (loadOpId < storeOpId) {
+        if (loadExecTime >= bound || loadExecTime + II <= bound) {
+          if (!isSameAddr(loadOp, storeOp, false))
+            continue;
+          return false;
+        }
+      }
+
+      if (loadOpId > storeOpId) {
+        if (!isSameAddr(loadOp, storeOp, false))
+          continue;
+        if (loadExecTime <= bound || loadExecTime - II >= bound)
+          return false;
+      }
+    }
+  }
+  return true;
+}
+
 static LogicalResult
 outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
                   std::string pythonExectuable, Region &r, OpBuilder &builder,
@@ -33,21 +85,24 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
 
   // Find the loop block
   int bbInd = -1;
-  for (auto &blk : llvm::make_early_inc_range(funcOp.getBlocks())) {
-    bbInd++;
+  std::map<int, Block *> loopBlocks;
+  for (auto [bbInd, blk] : llvm::enumerate(funcOp.getBlocks())) {
     bool isLoop =
         std::find(blk.getSuccessors().begin(), blk.getSuccessors().end(),
                   &blk) != blk.getSuccessors().end();
-    if (!isLoop)
-      continue;
+    if (isLoop)
+      loopBlocks[bbInd] = &blk;
+  }
+
+  for (auto [bbInd, blk] : loopBlocks) {
     // Get the oeprations in the loop block
     SmallVector<Operation *> nodes;
-    for (Operation &op : blk.getOperations()) {
+    for (Operation &op : blk->getOperations()) {
       nodes.push_back(&op);
     }
 
     // initialize print function
-    satmapit::PrintSatMapItDAG printer(blk.getTerminator(), nodes);
+    satmapit::PrintSatMapItDAG printer(blk->getTerminator(), nodes);
     printer.init();
     if (failed(printer.printDAG(outputDAG + "/bb" + std::to_string(bbInd))))
       continue;
@@ -67,28 +122,35 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
     // read the result and update the schedule
     std::string mapResult =
         outputDAG + "/out_raw_bb" + std::to_string(bbInd) + ".sat";
-    int opSize = blk.getOperations().size();
+    int opSize = blk->getOperations().size();
 
     int II;
     std::map<int, Instruction> instructions;
-    std::map<int, std::unordered_set<int>> opTimeMap;
-    std::vector<std::unordered_set<int>> bbTimeMap = {{}};
+    std::map<int, std::set<int>> opTimeMap;
+    std::vector<std::set<int>> basicBlocksWithOpIds = {{}};
     if (failed(readMapFile(mapResult, maxReg,
-                           opSize + blk.getNumArguments() - 1, II, opTimeMap,
-                           bbTimeMap, instructions)))
-      continue;
-    // does not overlap the loop execution, not necessary to update the schedule
-    if (!kernelOverlap(bbTimeMap))
+                           opSize + blk->getNumArguments() - 1, II, opTimeMap,
+                           basicBlocksWithOpIds, instructions)))
       continue;
 
-    if (failed(initBlockArgs(&blk, instructions, builder)))
+    std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
+    if (!memoryConsistencySchedule(execTime, II, blk))
+      continue;
+    // does not overlap the loop execution, not necessary to update the
+    // schedule Adapt the CFG with the loop modulo schedule print basic block
+    // with op ids
+    if (!kernelOverlap(basicBlocksWithOpIds))
+      continue;
+
+    if (failed(initBlockArgs(blk, instructions, builder)))
       return failure();
 
-    // Adapt the CFG with the loop modulo schedule
-    std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
-    ModuloScheduleAdapter adapter(r, builder, blk.getOperations(), II, execTime,
-                                  opTimeMap, bbTimeMap);
-    llvm::errs() << "Adapt the loop block with the schedule result\n";
+    ModuloScheduleAdapter adapter(r, blk, builder, II, execTime, opTimeMap,
+                                  basicBlocksWithOpIds);
+    if (failed(adapter.init()))
+      continue;
+    llvm::errs() << "Adapt the " << bbInd
+                 << "' th loop block with the schedule result\n";
 
     if (failed(adapter.adaptCFGWithLoopMS()))
       return failure();
@@ -117,8 +179,12 @@ struct ASMGenTemporalCGRAPass
     size_t lastSlashPos = outDir.find_last_of("/");
     if (failed(outputDATE2023DAG(
             funcOp, outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
-            msOpt.substr(1, msOpt.size() - 2), region, builder, nRow, 3)))
+            msOpt.substr(1, msOpt.size() - 2), region, builder, nRow, 3))) {
+      llvm::errs() << funcOp << "\n";
+
       return signalPassFailure();
+    }
+    llvm::errs() << funcOp << "\n";
     return;
 
     TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);

@@ -14,7 +14,7 @@
 #define PRINT_SAT_MAP_IT_DAG_H
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "unordered_set"
+#include "set"
 
 using namespace mlir;
 
@@ -109,8 +109,8 @@ void parseLine(const std::string &line, std::map<int, Instruction> &instMap,
 
 /// Parse the module schedule result which include the prolog, kernel and epilog
 void parsePKE(const std::string &line, unsigned termId,
-              std::vector<std::unordered_set<int>> &timeSlotsOfBBs,
-              std::map<int, std::unordered_set<int>> &opTimeMap);
+              std::vector<std::set<int>> &timeSlotsOfBBs,
+              std::map<int, std::set<int>> &opTimeMap);
 
 } // namespace satmapit
 } // namespace compigra
