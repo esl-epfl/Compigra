@@ -1033,8 +1033,6 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
 
     saveSubILPModelResult(bbILPModel.getSolution());
     scheduleIdx++;
-    // if (scheduleIdx == 1)
-    //   return failure();
   }
 
   calculateTemporalSpatialSchedule("temporalSpatialSchedule.csv");

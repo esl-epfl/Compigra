@@ -432,13 +432,6 @@ static int existBlockArgument(std::vector<int> argIds, int id) {
   return -1;
 }
 
-static Operation *hasOpId(std::vector<opWithId> opIds, int id) {
-  for (auto [op, opId] : opIds)
-    if (opId == id)
-      return op;
-  return nullptr;
-}
-
 void ModuloScheduleAdapter::removeTempletBlock() {
   // delete the origianl loop block
   // collect all operations in reverse order in a temporary vector.
@@ -483,8 +476,8 @@ LogicalResult ModuloScheduleAdapter::initOperationsInBB(
   std::map<int, std::map<int, Operation *>> prologBBOps;
   for (auto t : bbTimeId) {
     std::set<int> opIds = opTimeMap.at(t);
-    // order elements in opIds according to their iteration, basicly the number
-    // of showing up times of the opId in prologOps
+    // order elements in opIds according to their iteration, basicly the
+    // number of showing up times of the opId in prologOps
     auto sortedOpIds = sortElementsByIteration(opIds, prologOps);
     for (auto opId : sortedOpIds) {
       // initialize new iteraions
@@ -639,8 +632,8 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
       loopQuit = epiBlk;
     }
 
-    // create terminator for bbId-1's block to connect the epilog block for loop
-    // exit and corresponding prolog(kernel) block for loop continuation
+    // create terminator for bbId-1's block to connect the epilog block for
+    // loop exit and corresponding prolog(kernel) block for loop continuation
     builder.setInsertionPointToEnd(curBlk);
     auto termOp = builder.create<cgra::ConditionalBranchOp>(
         curBlk->getOperations().back().getLoc(), cmpFlag, cmpOpr1, cmpOpr2,
@@ -658,25 +651,49 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   for (auto [propKey1, propKey2] : propOpsToEpilog) {
     Operation *propOp;
     propOp = prologOps[propKey1][propKey2];
-    // llvm::errs() << "Epilog propKey1: " << propKey1 << " propKey2: " <<
-    // propKey2
-    //              << "\n"
-    //              << *propOp << "\n";
     addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopQuit);
   }
 
   // Propagate the values for the kernel block
   for (auto [propKey1, propKey2] : propOpsToProlog) {
     auto propOp = prologOps[propKey1][propKey2];
-
-    // llvm::errs() << "Prolog propKey1: " << propKey1 << " propKey2: " <<
-    // propKey2
-    //              << "\n"
-    //              << *propOp << "\n";
     addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopCond);
   }
 
   removeTempletBlock();
   removeUselessBlockArg();
+  return success();
+}
+
+LogicalResult ModuloScheduleAdapter::assignScheduleResult(
+    const std::map<int, Instruction> instructions) {
+  // for operation in prologOps, its execution time is exectTime[opId] +
+  // iterId * II
+  for (auto [iterId, opMap] : prologOps) {
+    for (auto [opId, op] : opMap) {
+      auto execTimeInBB = execTime.at(opId) + iterId * II;
+      ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, -1};
+      solution[op] = schedule;
+    }
+  }
+
+  // for operations in epilogOpsBB, its execution time is execTime[opId] +
+  // iterStartTime, where iterStartTime is the earliest time among
+  // prologOps[iterId]
+  for (auto [_, opMap] : epilogOpsBB) {
+    for (auto [iterId, ops] : opMap) {
+      // get earliest time of ops in solution
+      int iterStartTime = INT_MAX;
+      for (auto [opId, op] : prologOps.at(iterId)) {
+        if (solution.find(op) != solution.end())
+          iterStartTime = std::min(iterStartTime, solution[op].time);
+      }
+      for (auto [opId, op] : ops) {
+        auto execTimeInBB = execTime.at(opId) + iterStartTime;
+        ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, -1};
+        solution[op] = schedule;
+      }
+    }
+  }
   return success();
 }

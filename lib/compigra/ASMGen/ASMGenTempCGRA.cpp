@@ -20,6 +20,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
 #include <set>
@@ -154,7 +155,21 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
 
     if (failed(adapter.adaptCFGWithLoopMS()))
       return failure();
-    llvm::errs() << "Adapt one block\n";
+
+    // assign basic block with the schedule result
+    if (failed(adapter.assignScheduleResult(instructions)))
+      return failure();
+
+    auto sol = adapter.getSolutions();
+    // print the schedule result
+    for (auto [op, inst] : sol) {
+      std::string opStr;
+      llvm::raw_string_ostream rso(opStr);
+      rso << *op;
+      rso.flush();
+      llvm::errs() << llvm::format("%-80s %d %d\n", opStr.c_str(), inst.time,
+                                   inst.pe);
+    }
   }
   return success();
 }
@@ -184,7 +199,7 @@ struct ASMGenTemporalCGRAPass
 
       return signalPassFailure();
     }
-    llvm::errs() << funcOp << "\n";
+    // llvm::errs() << funcOp << "\n";
     return;
 
     TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);

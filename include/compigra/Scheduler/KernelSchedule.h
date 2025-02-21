@@ -64,13 +64,6 @@ protected:
   std::map<Operation *, T> solution;
 };
 
-// Schedule unit is a pair of time and PE, and the register to store the result
-struct ScheduleUnit {
-  int time;
-  int pe;
-  int reg;
-};
-
 /// OpenEdge kernel scheduler class
 class OpenEdgeKernelScheduler : public CGRAKernelScheduler<ScheduleUnit> {
 public:

@@ -16,6 +16,7 @@
 
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
+#include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Support/LLVM.h"
 #include <set>
@@ -25,13 +26,20 @@
 using namespace mlir;
 namespace compigra {
 unsigned getOpId(Block::OpListType &opList, Operation *search);
+
+// Schedule unit is a pair of time and PE, and the register to store the result
+struct ScheduleUnit {
+  int time;
+  int pe;
+  int reg;
+};
+
 /// Data structure to map the operation id to the operation
-using mapId2Op = std::map<int, Operation *>;
-///
+
 using opWithId = std::pair<Operation *, int>;
 /// Data structure to store the operations index, each set contains the index of
 /// different interations.
-using opIdInIter = std::vector<std::set<int>>;
+// using opIdInIter = std::vector<std::set<int>>;
 
 /// The modulo scheduler might generate efficient schedule result by overlapping
 /// loop with prolog and epilog that does not exist in current CFG. This
@@ -104,9 +112,20 @@ public:
   /// Adapt the CFG with the modulo scheduling result.
   LogicalResult adaptCFGWithLoopMS();
 
+  LogicalResult
+  assignScheduleResult(const std::map<int, Instruction> instructions);
+
+  std::map<Operation *, ScheduleUnit> getSolutions() { return solution; }
+
   /// Support functions to adapt the CFG and create the DFG within new created
   /// basic blocks.
 private:
+  // Data structure to store the operations Id in the block
+  std::map<int, std::map<int, Operation *>> prologOps;
+  std::map<Block *, std::map<int, std::map<int, Operation *>>> epilogOpsBB;
+
+  std::map<Operation *, ScheduleUnit> solution;
+
   LogicalResult
   updateOperands(int bbId, int iterId, int opId, Operation *adaptOp,
                  const std::map<int, std::map<int, Operation *>> prologOpMap,
@@ -140,11 +159,6 @@ private:
   /// Remove the useless block arguments in the CFG for the prolog stage which
   /// takes the operands from initBlock unconditionally.
   void removeUselessBlockArg();
-
-private:
-  // Data structure to store the operations Id in the block
-  std::map<int, std::map<int, Operation *>> prologOps;
-  std::map<Block *, std::map<int, std::map<int, Operation *>>> epilogOpsBB;
 };
 
 } // namespace compigra

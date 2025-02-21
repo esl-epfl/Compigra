@@ -46,9 +46,8 @@ public:
 
   int getBlockStartT(Block *block) { return blockStartT[block]; }
 
-  void setBlockExecutionTime(Block *block, int timeStart, int timeEnd) {
+  void setBlockExecutionTime(Block *block, int timeStart) {
     blockStartT[block] = timeStart;
-    blockEndT[block] = timeEnd;
   }
 
   // Read the schedule result from the written file, usually avoid to call
