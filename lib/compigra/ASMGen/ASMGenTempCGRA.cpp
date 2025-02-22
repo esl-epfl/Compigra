@@ -160,6 +160,7 @@ static LogicalResult preScheduleUsingModuloScheduler(
       return failure();
 
     auto sol = adapter.getSolutions();
+    scheduler.blockBBSchedule(sol);
 
     // write the solution to the scheduler
     // print the schedule result
@@ -205,7 +206,6 @@ struct ASMGenTemporalCGRAPass
       return signalPassFailure();
     }
     // llvm::errs() << funcOp << "\n";
-    return;
 
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";

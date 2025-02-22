@@ -377,11 +377,9 @@ void TemporalCGRAScheduler::saveSubILPModelResult(
 }
 
 void TemporalCGRAScheduler::blockBBSchedule(
-    Block *block, const std::map<Operation *, ScheduleUnit> res) {
-  blockedBBs.push_back(block);
+    const std::map<Operation *, ScheduleUnit> res) {
   for (auto [op, su] : res) {
-    if (op->getBlock() != block)
-      continue;
+    blockedBBs.insert(op->getBlock());
     ScheduleUnit res = {su.time, su.pe, -1};
     solution[op] = res;
   }
