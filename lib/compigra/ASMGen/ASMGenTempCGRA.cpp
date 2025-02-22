@@ -79,31 +79,30 @@ static bool memoryConsistencySchedule(const std::map<int, int> opExecTime,
   return true;
 }
 
-static LogicalResult
-outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
-                  std::string pythonExectuable, Region &r, OpBuilder &builder,
-                  unsigned peGridSize = 4, unsigned maxReg = 3) {
+static LogicalResult preScheduleUsingModuloScheduler(
+    TemporalCGRAScheduler &scheduler, func::FuncOp funcOp,
+    std::string outputDAG, std::string pythonExectuable, Region &r,
+    OpBuilder &builder, unsigned peGridSize = 4, unsigned maxReg = 3) {
 
   // Find the loop block
   int bbInd = -1;
-  std::map<int, Block *> loopBlocks;
-  for (auto [bbInd, blk] : llvm::enumerate(funcOp.getBlocks())) {
+  for (auto &blk : llvm::make_early_inc_range(funcOp.getBlocks())) {
+    bbInd++;
     bool isLoop =
         std::find(blk.getSuccessors().begin(), blk.getSuccessors().end(),
                   &blk) != blk.getSuccessors().end();
-    if (isLoop)
-      loopBlocks[bbInd] = &blk;
-  }
+    if (!isLoop)
+      continue;
 
-  for (auto [bbInd, blk] : loopBlocks) {
+    // for (auto [bbInd, blk] : loopBlocks) {
     // Get the oeprations in the loop block
     SmallVector<Operation *> nodes;
-    for (Operation &op : blk->getOperations()) {
+    for (Operation &op : blk.getOperations()) {
       nodes.push_back(&op);
     }
 
     // initialize print function
-    satmapit::PrintSatMapItDAG printer(blk->getTerminator(), nodes);
+    satmapit::PrintSatMapItDAG printer(blk.getTerminator(), nodes);
     printer.init();
     if (failed(printer.printDAG(outputDAG + "/bb" + std::to_string(bbInd))))
       continue;
@@ -123,19 +122,19 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
     // read the result and update the schedule
     std::string mapResult =
         outputDAG + "/out_raw_bb" + std::to_string(bbInd) + ".sat";
-    int opSize = blk->getOperations().size();
+    int opSize = blk.getOperations().size();
 
     int II;
     std::map<int, Instruction> instructions;
     std::map<int, std::set<int>> opTimeMap;
     std::vector<std::set<int>> basicBlocksWithOpIds = {{}};
     if (failed(readMapFile(mapResult, maxReg,
-                           opSize + blk->getNumArguments() - 1, II, opTimeMap,
+                           opSize + blk.getNumArguments() - 1, II, opTimeMap,
                            basicBlocksWithOpIds, instructions)))
       continue;
 
     std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
-    if (!memoryConsistencySchedule(execTime, II, blk))
+    if (!memoryConsistencySchedule(execTime, II, &blk))
       continue;
     // does not overlap the loop execution, not necessary to update the
     // schedule Adapt the CFG with the loop modulo schedule print basic block
@@ -143,10 +142,10 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
     if (!kernelOverlap(basicBlocksWithOpIds))
       continue;
 
-    if (failed(initBlockArgs(blk, instructions, builder)))
+    if (failed(initBlockArgs(&blk, instructions, builder)))
       return failure();
 
-    ModuloScheduleAdapter adapter(r, blk, builder, II, execTime, opTimeMap,
+    ModuloScheduleAdapter adapter(r, &blk, builder, II, execTime, opTimeMap,
                                   basicBlocksWithOpIds);
     if (failed(adapter.init()))
       continue;
@@ -161,15 +160,17 @@ outputDATE2023DAG(func::FuncOp funcOp, std::string outputDAG,
       return failure();
 
     auto sol = adapter.getSolutions();
+
+    // write the solution to the scheduler
     // print the schedule result
-    for (auto [op, inst] : sol) {
-      std::string opStr;
-      llvm::raw_string_ostream rso(opStr);
-      rso << *op;
-      rso.flush();
-      llvm::errs() << llvm::format("%-80s %d %d\n", opStr.c_str(), inst.time,
-                                   inst.pe);
-    }
+    // for (auto [op, inst] : sol) {
+    //   std::string opStr;
+    //   llvm::raw_string_ostream rso(opStr);
+    //   rso << *op;
+    //   rso.flush();
+    //   llvm::errs() << llvm::format("%-80s %d %d\n", opStr.c_str(), inst.time,
+    //                                inst.pe);
+    // }
   }
   return success();
 }
@@ -191,9 +192,13 @@ struct ASMGenTemporalCGRAPass
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
 
+    TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
+    scheduler.setReserveMem(mem);
+
     size_t lastSlashPos = outDir.find_last_of("/");
-    if (failed(outputDATE2023DAG(
-            funcOp, outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
+    if (failed(preScheduleUsingModuloScheduler(
+            scheduler, funcOp,
+            outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
             msOpt.substr(1, msOpt.size() - 2), region, builder, nRow, 3))) {
       llvm::errs() << funcOp << "\n";
 
@@ -202,8 +207,6 @@ struct ASMGenTemporalCGRAPass
     // llvm::errs() << funcOp << "\n";
     return;
 
-    TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
-    scheduler.setReserveMem(mem);
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";
       return signalPassFailure();

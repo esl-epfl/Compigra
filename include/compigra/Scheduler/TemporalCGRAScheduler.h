@@ -66,6 +66,8 @@ private:
 
   // All live value and its located PE.
   liveVec liveValAndPEs;
+  // Blocked Basic Blocks which does not allow DFG split
+  std::vector<Block *> blockedBBs;
 
   // Start address of the memory for the evicted value
   unsigned reserveMem = 0;
@@ -96,6 +98,9 @@ private:
   void saveSubILPModelResult(const std::map<Operation *, ScheduleUnitBB> res);
 
   void storeLocalResult(const liveVec localVec);
+
+  void blockBBSchedule(Block *block,
+                       const std::map<Operation *, ScheduleUnit> res);
 
   /// Read the live value placement result to liveValInterPlaces and
   /// liveValExterPlaces.

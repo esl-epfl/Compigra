@@ -579,7 +579,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   unsigned iterInd = 0;
   Block *curBlk;
   Block *loopCond = nullptr;
-  Block *loopQuit;
+  Block *loopQuit = finiBlock;
 
   auto startBlk = builder.createBlock(templateBlock);
   curBlk = startBlk;
@@ -615,7 +615,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
 
     if (bbId <= loopBlkId) {
       // create the epilog block for bbId-1's block for loop exit
-      auto epiBlk = builder.createBlock(finiBlock);
+      auto epiBlk = builder.createBlock(loopQuit);
       builder.setInsertionPointToStart(epiBlk);
       if (failed(completeUnexecutedOperationsInBB(epiBlk, bbId, termIterId,
                                                   prologOps, propOpsToEpilog)))
@@ -638,8 +638,10 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     auto termOp = builder.create<cgra::ConditionalBranchOp>(
         curBlk->getOperations().back().getLoc(), cmpFlag, cmpOpr1, cmpOpr2,
         loopCond, loopQuit);
-    if (termOp.getFalseDest() != termOp->getBlock()->getNextNode())
+    if (bbId != loopBlkId + 1 &&
+        termOp.getFalseDest() != termOp->getBlock()->getNextNode())
       reverseCondBrFlag(termOp, true);
+
     prologOps[termIterId][loopOpNum - 1] = termOp;
     curBlk = loopCond;
 
@@ -669,18 +671,23 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
     const std::map<int, Instruction> instructions) {
   // for operation in prologOps, its execution time is exectTime[opId] +
   // iterId * II
+  int termPE = -1;
   for (auto [iterId, opMap] : prologOps) {
     for (auto [opId, op] : opMap) {
       auto execTimeInBB = execTime.at(opId) + iterId * II;
       ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, -1};
       solution[op] = schedule;
+      if (opId == loopOpNum - 1)
+        termPE = instructions.at(opId).pe;
     }
   }
 
   // for operations in epilogOpsBB, its execution time is execTime[opId] +
   // iterStartTime, where iterStartTime is the earliest time among
   // prologOps[iterId]
-  for (auto [_, opMap] : epilogOpsBB) {
+  for (auto [blk, opMap] : epilogOpsBB) {
+    int endBBTime;
+
     for (auto [iterId, ops] : opMap) {
       // get earliest time of ops in solution
       int iterStartTime = INT_MAX;
@@ -688,12 +695,18 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
         if (solution.find(op) != solution.end())
           iterStartTime = std::min(iterStartTime, solution[op].time);
       }
+      endBBTime = iterStartTime;
       for (auto [opId, op] : ops) {
         auto execTimeInBB = execTime.at(opId) + iterStartTime;
         ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, -1};
         solution[op] = schedule;
+        endBBTime = std::max(endBBTime, execTimeInBB);
       }
     }
+    // the last jump operation does not have a schedule, assign it with the same
+    // conditional branch operation
+    ScheduleUnit schedule = {endBBTime, termPE, -1};
+    solution[blk->getTerminator()] = schedule;
   }
   return success();
 }

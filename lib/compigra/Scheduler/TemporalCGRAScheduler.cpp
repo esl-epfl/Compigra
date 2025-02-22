@@ -376,6 +376,17 @@ void TemporalCGRAScheduler::saveSubILPModelResult(
   }
 }
 
+void TemporalCGRAScheduler::blockBBSchedule(
+    Block *block, const std::map<Operation *, ScheduleUnit> res) {
+  blockedBBs.push_back(block);
+  for (auto [op, su] : res) {
+    if (op->getBlock() != block)
+      continue;
+    ScheduleUnit res = {su.time, su.pe, -1};
+    solution[op] = res;
+  }
+}
+
 void TemporalCGRAScheduler::insertMovOp(Value origVal, Operation *user) {
   builder.setInsertionPoint(user);
   // determine whether origVal is fixed point type or integer type
