@@ -115,9 +115,9 @@ static LogicalResult preScheduleUsingModuloScheduler(
 
     // call the python code script to solve the MS
     llvm::errs() << "Running the SAT-Solver\n";
-    int result = system(command.c_str());
-    if (result != 0)
-      continue;
+    // int result = system(command.c_str());
+    // if (result != 0)
+    //   continue;
     llvm::errs() << "SAT-solver done\n";
     // read the result and update the schedule
     std::string mapResult =
@@ -202,10 +202,9 @@ struct ASMGenTemporalCGRAPass
             outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
             msOpt.substr(1, msOpt.size() - 2), region, builder, nRow, 3))) {
       llvm::errs() << funcOp << "\n";
-
       return signalPassFailure();
     }
-    // llvm::errs() << funcOp << "\n";
+    llvm::errs() << "MS pre-schedule done\n";
 
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";

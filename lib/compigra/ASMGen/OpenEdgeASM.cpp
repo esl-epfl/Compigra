@@ -840,6 +840,7 @@ LogicalResult compigra::readMapFile(std::string mapResult, unsigned maxReg,
 
   bool parsing = false;
   bool cfgParse = false;
+  bool parsed = false;
 
   // Read each line and parse it into the map
   while (std::getline(file, line)) {
@@ -858,14 +859,17 @@ LogicalResult compigra::readMapFile(std::string mapResult, unsigned maxReg,
       continue;
     }
 
-    if (cfgParse)
+    if (cfgParse) {
       satmapit::parsePKE(line, numOps, timeSlotsOfBBs, opTimeMap);
-
+      parsed = true;
+    }
     if (parsing)
       satmapit::parseLine(line, instructions, maxReg);
   }
 
-  return success();
+  if (parsed)
+    return success();
+  return failure();
 }
 
 /// Initialize the block arguments to be SADD

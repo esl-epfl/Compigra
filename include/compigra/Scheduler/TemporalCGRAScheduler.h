@@ -44,7 +44,11 @@ private:
 public:
   void printBlockLiveValue(std::string fileName);
 
-  int getBlockStartT(Block *block) { return blockStartT[block]; }
+  int getBlockStartT(Block *block) {
+    if (blockStartT.count(block))
+      return blockStartT[block];
+    return INT_MAX;
+  }
 
   void setBlockExecutionTime(Block *block, int timeStart) {
     blockStartT[block] = timeStart;
@@ -52,7 +56,7 @@ public:
 
   // Read the schedule result from the written file, usually avoid to call
   // `createSchedulerAndSolve` function for runtime efficiency.
-  LogicalResult readScheduleResult(const std::string fileName);
+  // LogicalResult readScheduleResult(const std::string fileName);
 
   void setMaxLivePath(unsigned maxLivePath) { this->maxLivePath = maxLivePath; }
 

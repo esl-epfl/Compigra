@@ -15,6 +15,7 @@
 #include "fstream"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include <iomanip> // For std::setw
 
 using namespace mlir;
 using namespace compigra;
@@ -129,6 +130,58 @@ blockPeAssignment(GRBModel &model, Operation *srcOp, Operation *dstOp,
         model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)
       return success();
     return failure();
+  }
+  return success();
+}
+
+// Function to split a string by a delimiter
+static std::vector<std::string> split(const std::string &str, char delimiter) {
+  std::vector<std::string> tokens;
+  std::stringstream ss(str);
+  std::string token;
+
+  while (std::getline(ss, token, delimiter)) {
+    tokens.push_back(token);
+  }
+  return tokens;
+}
+
+LogicalResult
+BasicBlockILPModel::readScheduleResult(const std::string filename) {
+  std::vector<std::vector<std::string>> data;
+  // std::map<std::string, ScheduleUnitBB> scheduleResult;
+  std::ifstream file(filename);
+
+  if (!file.is_open()) {
+    llvm::errs() << "Error: Could not open the file " << filename << "\n";
+    return failure();
+  }
+
+  std::string line;
+  while (std::getline(file, line)) {
+    // Split the line by commas and store the result
+    std::vector<std::string> row = split(line, '&');
+    data.push_back(row);
+  }
+
+  file.close();
+
+  for (auto &op : block->getOperations()) {
+    std::string opName;
+    llvm::raw_string_ostream rso(opName);
+    rso << op;
+    // test whether opName is in the data first and bbInd is in the last
+    auto it = std::find_if(
+        data.begin(), data.end(),
+        [&](std::vector<std::string> row) { return row[0] == opName; });
+    if (it == data.end())
+      continue;
+    ScheduleUnitBB su = {std::stoi((*it)[1]), std::stoi((*it)[2])};
+    solution[&op] = su;
+    std::ostringstream oss;
+    oss << std::left << std::setw(70) << opName << std::setw(10) << su.time
+        << std::setw(10) << su.pe;
+    // llvm::errs() << oss.str() << "\n";
   }
   return success();
 }
@@ -703,6 +756,13 @@ LogicalResult BasicBlockILPModel::createObjetiveFunction(
   return success();
 }
 
+void BasicBlockILPModel::setupPreScheduleResult(
+    const std::map<Operation *, ScheduleUnit> solution) {
+  for (auto [op, su] : solution) {
+    this->solution[op] = {su.time, su.pe};
+  }
+}
+
 void BasicBlockILPModel::saveSubILPModelResult(std::string filename) {
   std::ofstream csvFile(filename);
   // If the model is infeasible, write the model to solution
@@ -734,6 +794,8 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   initVariablesForBlock(model, timeVarMap, peVarMap);
 
   createObjetiveFunction(model, timeVarMap);
+
+  // write pre-scheduled result
 
   // THE ORDER OF CREATING CONSTRAINTS CANNOT BE CHANGED, WHICH COULD AFFECT THE
   // FAILURE HANDLER.

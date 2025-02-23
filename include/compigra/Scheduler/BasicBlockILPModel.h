@@ -86,6 +86,13 @@ public:
 
   void saveSubILPModelResult(std::string filename);
 
+  void
+  setupPreScheduleResult(const std::map<Operation *, ScheduleUnit> solution);
+
+  // Read the schedule result from the written file, usually avoid to call
+  // `createSchedulerAndSolve` function for runtime efficiency.
+  LogicalResult readScheduleResult(const std::string fileName);
+
 private:
   // Interface for the the global schduler if the ILP model does not have
   // solution

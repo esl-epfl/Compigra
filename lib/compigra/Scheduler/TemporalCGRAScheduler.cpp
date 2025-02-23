@@ -370,9 +370,12 @@ liveVec TemporalCGRAScheduler::getInternalLiveOut(Block *block) {
 
 void TemporalCGRAScheduler::saveSubILPModelResult(
     const std::map<Operation *, ScheduleUnitBB> res) {
+  int blockStart = INT_MAX;
   for (auto [op, su] : res) {
     ScheduleUnit res = {su.time, su.pe, -1};
     solution[op] = res;
+    if (getBlockStartT(op->getBlock()) > su.time)
+      setBlockExecutionTime(op->getBlock(), su.time);
   }
 }
 
@@ -876,8 +879,14 @@ static bool existInCycle(std::vector<Block *> &newCycle,
 void TemporalCGRAScheduler::makeScheduleSeq() {
   scheduleSeq.clear();
   scheduleIdx = 0;
-  for (auto &bb : region.getBlocks())
-    scheduleSeq.push_back(&bb);
+  // first assign the blocked BBs
+  for (auto &bb : blockedBBs)
+    scheduleSeq.push_back(bb);
+  for (auto &bb : region.getBlocks()) {
+    if (std::find(scheduleSeq.begin(), scheduleSeq.end(), &bb) ==
+        scheduleSeq.end())
+      scheduleSeq.push_back(&bb);
+  }
 
   // // init the schedule sequence
   // scheduleSeq.clear();
@@ -958,18 +967,31 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
   printBlockLiveValue("liveValue.txt");
 
   for (auto [bb, block] : llvm::enumerate(scheduleSeq)) {
-    for (auto [ind, seqBB] : llvm::enumerate(region))
-      if (block == &seqBB) {
-        llvm::errs() << "\nBlock " << ind << " is scheduling\n";
-        break;
-      }
+
     // llvm::errs() << "\nBlock " << bb << " is scheduling\n";
 
     BasicBlockILPModel bbILPModel(maxReg, nRow, nCol, block, bb, builder);
+
+    bbILPModel.setupPreScheduleResult(getBlockSubSolution(block));
     bbILPModel.setLiveOutPrerequisite(getExternalLiveOut(block),
                                       getInternalLiveOut(block));
     bbILPModel.setLiveInPrerequisite(getExternalLiveIn(block),
                                      getInternalLiveIn(block));
+    //  if the block has been scheduled by other scheduler, skip it
+    if (blockedBBs.find(block) != blockedBBs.end()) {
+      llvm::errs() << "Block " << bb << " is blocked\n";
+      bbILPModel.saveSubILPModelResult("sub_ilp_" + std::to_string(bb) +
+                                       ".csv");
+      saveSubILPModelResult(bbILPModel.getSolution());
+      continue;
+    }
+
+    bbILPModel.readScheduleResult("sub_ilp_" + std::to_string(bb) + ".csv");
+    saveSubILPModelResult(bbILPModel.getSolution());
+    llvm::errs() << "Block " << bb << " is scheduling\n";
+    continue;
+    // return success();
+    return success();
 
     int maxIter = 15;
     Operation *failUser = nullptr;
@@ -1043,7 +1065,6 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
     saveSubILPModelResult(bbILPModel.getSolution());
     scheduleIdx++;
   }
-
   calculateTemporalSpatialSchedule("temporalSpatialSchedule.csv");
   // printBlockLiveValue("liveValue.txt");
   return success();
@@ -1053,15 +1074,17 @@ void TemporalCGRAScheduler::calculateTemporalSpatialSchedule(
     const std::string fileName) {
   unsigned kernelTime = 0;
   for (auto &block : region.getBlocks()) {
-    int startTime = kernelTime;
+    int alignStartTime = kernelTime;
     int endTime = kernelTime;
-    blockStartT[&block] = startTime;
+    auto bbStart = getBlockStartT(&block);
+    auto gap = kernelTime - bbStart;
+    blockStartT[&block] = alignStartTime;
     for (auto &op : block.getOperations()) {
       if (solution.find(&op) == solution.end())
         continue;
 
       auto &su = solution[&op];
-      su.time += kernelTime;
+      su.time += gap;
       endTime = std::max(endTime, su.time);
     }
     blockEndT[&block] = endTime + 1;
@@ -1081,58 +1104,6 @@ void TemporalCGRAScheduler::calculateTemporalSpatialSchedule(
               << "\r\n";
     }
   }
-}
-
-// Function to split a string by a delimiter
-static std::vector<std::string> split(const std::string &str, char delimiter) {
-  std::vector<std::string> tokens;
-  std::stringstream ss(str);
-  std::string token;
-
-  while (std::getline(ss, token, delimiter)) {
-    tokens.push_back(token);
-  }
-  return tokens;
-}
-
-LogicalResult
-TemporalCGRAScheduler::readScheduleResult(const std::string filename) {
-  std::vector<std::vector<std::string>> data;
-  // std::map<std::string, ScheduleUnitBB> scheduleResult;
-  std::ifstream file(filename);
-
-  if (!file.is_open()) {
-    llvm::errs() << "Error: Could not open the file " << filename << "\n";
-    return failure();
-  }
-
-  std::string line;
-  while (std::getline(file, line)) {
-    // Split the line by commas and store the result
-    std::vector<std::string> row = split(line, '&');
-    data.push_back(row);
-  }
-
-  file.close();
-
-  for (auto [bbInd, bb] : llvm::enumerate(region.getBlocks())) {
-    for (auto &op : bb.getOperations()) {
-      std::string opName;
-      llvm::raw_string_ostream rso(opName);
-      rso << op;
-      // test whether opName is in the data first and bbInd is in the last
-      auto it = std::find_if(
-          data.begin(), data.end(), [&](std::vector<std::string> row) {
-            return row[0] == opName && std::stoi(row[3]) == bbInd;
-          });
-      if (it == data.end())
-        continue;
-      ScheduleUnit su = {std::stoi((*it)[1]), std::stoi((*it)[2]), -1};
-      solution[&op] = su;
-      std::ostringstream oss;
-      oss << std::left << std::setw(70) << opName << std::setw(10) << su.time
-          << std::setw(10) << su.pe;
-      llvm::errs() << oss.str() << "\n";
-    }
-  }
+  csvFile.close();
+  llvm::errs() << "Temporal spatial schedule is saved to " << fileName << "\n";
 }
