@@ -93,6 +93,8 @@ public:
   // `createSchedulerAndSolve` function for runtime efficiency.
   LogicalResult readScheduleResult(const std::string fileName);
 
+  void writeLiveOutResult();
+
 private:
   // Interface for the the global schduler if the ILP model does not have
   // solution

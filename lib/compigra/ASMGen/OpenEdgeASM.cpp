@@ -205,8 +205,6 @@ LogicalResult compigra::allocateOutRegInPE(
   graph.printGraph();
 
   // allocate register using graph coloring
-  // TODO[@YYY]: Spill the graph if the number of registers is not
-  // enough
   auto peo = lexBFS(graph.adjList);
   if (peo.empty())
     return success();

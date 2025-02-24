@@ -900,4 +900,49 @@ void BasicBlockILPModel::writeLiveOutResult(
     }
   }
 }
+
+void BasicBlockILPModel::writeLiveOutResult() {
+  for (auto &[val, index] : liveOutExter) {
+    Operation *defOp = val.getDefiningOp();
+    if (defOp && solution.count(defOp) > 0) {
+      int pe = solution.at(defOp).pe;
+      index = pe;
+      continue;
+    }
+    auto it = std::find_if(
+        liveInExter.begin(), liveInExter.end(),
+        [&](std::pair<Value, unsigned> p) { return p.first == val; });
+    if (it != liveInExter.end()) {
+      index = it->second;
+    }
+  }
+
+  for (auto &[val, index] : liveOutInter) {
+    Operation *defOp = val.getDefiningOp();
+    if (defOp && solution.count(defOp) > 0) {
+      int pe = solution.at(defOp).pe;
+      index = pe;
+      continue;
+    }
+    auto it = std::find_if(
+        liveInInter.begin(), liveInInter.end(),
+        [&](std::pair<Value, unsigned> p) { return p.first == val; });
+    if (it != liveInInter.end()) {
+      index = it->second;
+    }
+  }
+
+  for (auto &[val, index] : liveInInter) {
+    if (index != UINT32_MAX)
+      continue;
+    Operation *defOp = val.getDefiningOp();
+    // detect whether user is solved
+    for (auto user : val.getUsers()) {
+      if (solution.count(user) > 0) {
+        index = solution.at(user).pe;
+        break;
+      }
+    }
+  }
+}
 #endif

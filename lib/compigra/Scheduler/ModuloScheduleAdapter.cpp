@@ -330,20 +330,20 @@ static void reverseCondBrFlag(cgra::ConditionalBranchOp condBr,
     condBr.setPredicate(cgra::CondBrPredicate::ge);
     Value tmp = condBr.getOperand(0);
     // reverse the first operands order
-    condBr.setOperand(0, condBr.getOperand(1));
-    condBr.setOperand(1, tmp);
+    // condBr.setOperand(0, condBr.getOperand(1));
+    // condBr.setOperand(1, tmp);
     break;
   }
   case cgra::CondBrPredicate::ge: {
     condBr.setPredicate(cgra::CondBrPredicate::lt);
     Value tmp = condBr.getOperand(0);
     // reverse the first operands order
-    condBr.setOperand(0, condBr.getOperand(1));
-    condBr.setOperand(1, tmp);
+    // condBr.setOperand(0, condBr.getOperand(1));
+    // condBr.setOperand(1, tmp);
   }
   }
-  if (!reverseBB)
-    return;
+  // if (!reverseBB)
+  //   return;
   // reverse the true and false block
   auto tmp = condBr.getTrueDest();
   condBr.setTrueDest(condBr.getFalseDest());
@@ -607,11 +607,21 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     auto origTerm = templateBlock->getTerminator();
     Value cmpOpr1 = origTerm->getOperand(0);
     Value cmpOpr2 = origTerm->getOperand(1);
-    if (loopCmpOprId1 > 0)
-      cmpOpr1 = prologOps[termIterId][loopCmpOprId1]->getResult(0);
 
-    if (loopCmpOprId2 > 0)
-      cmpOpr2 = prologOps[termIterId][loopCmpOprId2]->getResult(0);
+    auto updateTermCmpOperand = [&](int cmpOprId, Value &cmpOpr) {
+      if (cmpOprId >= 0) {
+        cmpOpr = prologOps[termIterId][cmpOprId]->getResult(0);
+        if (cmpOpr.getParentBlock() != curBlk && bbId == loopBlkId + 1) {
+          curBlk->addArgument(cmpOpr.getType(), cmpOpr.getLoc());
+          cmpOpr = curBlk->getArguments().back();
+          propOpsToProlog.push_back({termIterId, cmpOprId});
+          propOpsToProlog.push_back({termIterId + 1, cmpOprId});
+        }
+      }
+    };
+
+    updateTermCmpOperand(loopCmpOprId1, cmpOpr1);
+    updateTermCmpOperand(loopCmpOprId2, cmpOpr2);
 
     if (bbId <= loopBlkId) {
       // create the epilog block for bbId-1's block for loop exit

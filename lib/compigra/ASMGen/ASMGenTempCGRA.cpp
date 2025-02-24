@@ -205,6 +205,7 @@ struct ASMGenTemporalCGRAPass
       return signalPassFailure();
     }
     llvm::errs() << "MS pre-schedule done\n";
+    // return;
 
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";

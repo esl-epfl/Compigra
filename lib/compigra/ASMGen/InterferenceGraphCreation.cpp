@@ -125,7 +125,9 @@ BlockArgument getCntBlockArgument(Value val, Block *succBlk) {
         return succBlk->getArgument(argIndex - 2);
 
       // false successor
-      if (user->getSuccessor(1) == succBlk) {
+      if (argIndex >= 2 + dyn_cast<cgra::ConditionalBranchOp>(user)
+                              .getNumTrueOperands() &&
+          user->getSuccessor(1) == succBlk) {
         return succBlk->getArgument(
             argIndex - 2 -
             dyn_cast<cgra::ConditionalBranchOp>(user).getNumTrueOperands());

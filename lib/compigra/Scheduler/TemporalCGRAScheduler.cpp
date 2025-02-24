@@ -225,6 +225,25 @@ void TemporalCGRAScheduler::writeLiveOutResult(const liveVec liveOutExter,
 bool TemporalCGRAScheduler::isExternalLive(Value val) {
   if (val.use_empty())
     return false;
+
+  // if used by the blocked block, return false
+  for (auto user : val.getUsers()) {
+    if (blockedBBs.count(user->getBlock()))
+      return false;
+
+    // if the user is br/cond_br, and the corresponding block is blocked, return
+    // false
+    if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(user)) {
+      if (blockedBBs.count(branchOp.getSuccessor()))
+        return false;
+    } else if (auto branchOp =
+                   dyn_cast_or_null<cgra::ConditionalBranchOp>(user)) {
+      if (blockedBBs.count(branchOp.getSuccessor(0)) ||
+          blockedBBs.count(branchOp.getSuccessor(1)))
+        return false;
+    }
+  }
+
   // if val is phi related, ensure it produced the same attributes for all
   // related values.
   if (isPhiRelatedValue(val)) {
@@ -977,21 +996,22 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
                                       getInternalLiveOut(block));
     bbILPModel.setLiveInPrerequisite(getExternalLiveIn(block),
                                      getInternalLiveIn(block));
+    bool findSolution = false;
+
     //  if the block has been scheduled by other scheduler, skip it
     if (blockedBBs.find(block) != blockedBBs.end()) {
-      llvm::errs() << "Block " << bb << " is blocked\n";
       bbILPModel.saveSubILPModelResult("sub_ilp_" + std::to_string(bb) +
                                        ".csv");
-      saveSubILPModelResult(bbILPModel.getSolution());
-      continue;
+      bbILPModel.writeLiveOutResult();
+      findSolution = true;
     }
 
-    bbILPModel.readScheduleResult("sub_ilp_" + std::to_string(bb) + ".csv");
-    saveSubILPModelResult(bbILPModel.getSolution());
-    llvm::errs() << "Block " << bb << " is scheduling\n";
-    continue;
+    // bbILPModel.readScheduleResult("sub_ilp_" + std::to_string(bb) + ".csv");
+    // saveSubILPModelResult(bbILPModel.getSolution());
+    // llvm::errs() << "Block " << bb << " is scheduling\n";
+    // continue;
+    // // return success();
     // return success();
-    return success();
 
     int maxIter = 15;
     Operation *failUser = nullptr;
@@ -1001,8 +1021,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
     bbILPModel.setFailureStrategy(FailureStrategy::Mov);
 
     // try to schedule the block
-    bool findSolution = false;
-    while (maxIter > 0) {
+    while (!findSolution && maxIter > 0) {
       // Run the ILP model
       if (succeeded(bbILPModel.createSchedulerAndSolve())) {
         findSolution = true;
@@ -1032,6 +1051,11 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
         // split the liveOut value
         spill = bbILPModel.getSpillVal();
         failUser = bbILPModel.getFailUser();
+        // if (spill.getParentBlock()) if spill or failUser is in blocked BBs,
+        // return failure
+        if (blockedBBs.find(spill.getParentBlock()) != blockedBBs.end() ||
+            blockedBBs.find(failUser->getBlock()) != blockedBBs.end())
+          return failure();
         bool pushPhiToMem = isPhiRelatedValue(spill);
         if (failed(splitDFGWithLSOps(spill, failUser, UINT_MAX, pushPhiToMem)))
           return failure();
@@ -1056,7 +1080,7 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
       llvm::errs() << "Failed to schedule block " << bb << "\n";
       return failure();
     }
-    llvm::errs() << scheduleIdx << " block is scheduled\n";
+    llvm::errs() << scheduleIdx << " block is scheduled\n\n";
     writeLiveOutResult(bbILPModel.getExternalLiveOutResult(),
                        bbILPModel.getInternalLiveOutResult(),
                        bbILPModel.getExternalLiveInResult(),
