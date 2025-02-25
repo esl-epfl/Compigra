@@ -66,35 +66,6 @@ unsigned compigra::getOpId(Block::OpListType &opList, Operation *search) {
   return -1;
 }
 
-/// Return the difference set
-// static std::set<int> getDiffSet(std::set<int> set1, std::set<int> set2) {
-//   std::set<int> diffSet;
-//   for (auto val : set1)
-//     if (set2.find(val) == set2.end())
-//       diffSet.insert(val);
-//   return diffSet;
-// }
-
-// static std::vector<std::set<int>> getDiffSet(std::vector<std::set<int>> set1,
-//                                              std::vector<std::set<int>> set2)
-//                                              {
-//   for (auto it1 = set1.begin(); it1 != set1.end();) {
-//     bool foundEqual = false;
-//     for (const auto &s2 : set2) {
-//       if (*it1 == s2) {
-//         foundEqual = true;
-//         break;
-//       }
-//     }
-//     if (foundEqual) {
-//       it1 = set1.erase(it1); // erase returns the next iterator
-//     } else {
-//       ++it1;
-//     }
-//   }
-//   return set1;
-// }
-
 /// Return the union set specified by key in keys
 static std::set<int> getUnionSet(std::map<int, std::set<int>> mapSet,
                                  std::set<int> keys) {
@@ -224,6 +195,15 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
   // Helper function to add block argument and record propagation
   auto addBlockArgAndPropagate = [&](Type argType, int operandId,
                                      int propOpId) {
+    auto src1 = getLatestIterId(mergedOpMap, propOpId);
+
+    // auto it = std::find(propagatedOps.begin(), propagatedOps.end(),
+    //                     std::make_pair(src1, propOpId));
+    // if (it != propagatedOps.end()) {
+    //   int index = std::distance(propagatedOps.begin(), it);
+    //   adaptOp->setOperand(operandId, blk->getArguments()[index]);
+    //   return;
+    // }
     Location loc = blk->getOperations().empty()
                        ? blk->getPrevNode()->getTerminator()->getLoc()
                        : blk->getOperations().front().getLoc();
@@ -231,7 +211,6 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
     blk->addArgument(argType, loc);
     adaptOp->setOperand(operandId, blk->getArguments().back());
 
-    auto src1 = getLatestIterId(mergedOpMap, propOpId);
     propagatedOps.push_back({src1, propOpId});
     propagatedOps.push_back({src1 + 1, propOpId});
   };
@@ -244,6 +223,8 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
 
   for (auto [adaptId, opr] : llvm::enumerate(adaptOp->getOperands())) {
     if (auto blockArg = dyn_cast<BlockArgument>(opr)) {
+      if (blockArg.getParentBlock() != templateBlock)
+        continue;
       // if iterId is in prologe, the argument is from previous iteration
       auto argInd = blockArg.getArgNumber();
       if (bbId < loopBlkId) {
@@ -266,6 +247,15 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
         auto propagatedVal =
             getTemplateTrueOperand(templateBlock->getTerminator(), argInd);
         auto propOpId = getOpId(loopOpList, propagatedVal.getDefiningOp());
+        if (newCreatedOps.count(iterId - 1) &&
+            newCreatedOps.at(iterId - 1).count(propOpId)) {
+          auto curDefOp = newCreatedOps.at(iterId - 1).at(propOpId);
+          adaptOp->setOperand(adaptId, curDefOp->getResult(0));
+          continue;
+        }
+        llvm::errs() << propagatedVal << " " << propOpId << "\n";
+        llvm::errs() << opId << " need propagate: " << propOpId << " "
+                     << getLatestIterId(mergedOpMap, propOpId) << "\n";
         addBlockArgAndPropagate(blockArg.getType(), adaptId, propOpId);
         continue;
       }
@@ -317,8 +307,7 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
 
 /// Reverse the conditional branch flag if the true and false block is
 /// reversed
-static void reverseCondBrFlag(cgra::ConditionalBranchOp condBr,
-                              bool reverseBB = false) {
+static void reverseCondBrFlag(cgra::ConditionalBranchOp condBr) {
   switch (condBr.getPredicate()) {
   case cgra::CondBrPredicate::ne:
     condBr.setPredicate(cgra::CondBrPredicate::eq);
@@ -329,21 +318,13 @@ static void reverseCondBrFlag(cgra::ConditionalBranchOp condBr,
   case cgra::CondBrPredicate::lt: {
     condBr.setPredicate(cgra::CondBrPredicate::ge);
     Value tmp = condBr.getOperand(0);
-    // reverse the first operands order
-    // condBr.setOperand(0, condBr.getOperand(1));
-    // condBr.setOperand(1, tmp);
     break;
   }
   case cgra::CondBrPredicate::ge: {
     condBr.setPredicate(cgra::CondBrPredicate::lt);
     Value tmp = condBr.getOperand(0);
-    // reverse the first operands order
-    // condBr.setOperand(0, condBr.getOperand(1));
-    // condBr.setOperand(1, tmp);
   }
   }
-  // if (!reverseBB)
-  //   return;
   // reverse the true and false block
   auto tmp = condBr.getTrueDest();
   condBr.setTrueDest(condBr.getFalseDest());
@@ -538,7 +519,18 @@ LogicalResult ModuloScheduleAdapter::completeUnexecutedOperationsInBB(
   // the epilog block would directly jump to the fini block
   // insert an unconditional branch to the start of the block
   builder.setInsertionPointToEnd(blk);
-  builder.create<cf::BranchOp>(blk->getOperations().back().getLoc(), finiBlock);
+  SmallVector<Value> BlockArgument;
+  for (auto arg : finiBlock->getArguments()) {
+    // get the opid from the template terminator
+    auto opId =
+        getOpId(loopOpList, getPropagatedValue(templateBlock->getTerminator(),
+                                               finiBlock, arg.getArgNumber())
+                                .getDefiningOp());
+    auto iterId = getLatestIterId(epilogOps, opId);
+    BlockArgument.push_back(epilogOps[iterId][opId]->getResult(0));
+  }
+  builder.create<cf::BranchOp>(blk->getOperations().back().getLoc(), finiBlock,
+                               BlockArgument);
   epilogOpsBB[blk] = epilogOps;
   return success();
 }
@@ -645,12 +637,27 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     // create terminator for bbId-1's block to connect the epilog block for
     // loop exit and corresponding prolog(kernel) block for loop continuation
     builder.setInsertionPointToEnd(curBlk);
+    SmallVector<Value> contArgs;
+    SmallVector<Value> finiArgs;
+    // add arguments to finiBlock for the last iteration
+    if (loopQuit == finiBlock) {
+      // add the arguments to the finiBlock
+      for (auto arg : finiBlock->getArguments()) {
+        // get the opid from the template terminator
+        auto opId = getOpId(loopOpList, getPropagatedValue(origTerm, finiBlock,
+                                                           arg.getArgNumber())
+                                            .getDefiningOp());
+        auto iterId = getLatestIterId(prologOps, opId);
+        finiArgs.push_back(prologOps[iterId][opId]->getResult(0));
+      }
+    }
     auto termOp = builder.create<cgra::ConditionalBranchOp>(
         curBlk->getOperations().back().getLoc(), cmpFlag, cmpOpr1, cmpOpr2,
-        loopCond, loopQuit);
+        loopCond, contArgs, loopQuit, finiArgs);
+
     if (bbId != loopBlkId + 1 &&
         termOp.getFalseDest() != termOp->getBlock()->getNextNode())
-      reverseCondBrFlag(termOp, true);
+      reverseCondBrFlag(termOp);
 
     prologOps[termIterId][loopOpNum - 1] = termOp;
     curBlk = loopCond;
@@ -658,6 +665,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     if (bbId == loopBlkId + 1)
       break;
   }
+  llvm::errs() << "propagate to epilog: " << propOpsToEpilog.size() << "\n";
 
   // Propagate the values for the exit block of the kernel block
   for (auto [propKey1, propKey2] : propOpsToEpilog) {
@@ -665,15 +673,19 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     propOp = prologOps[propKey1][propKey2];
     addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopQuit);
   }
-
+  llvm::errs() << "propagate to prolog: " << propOpsToProlog.size() << "\n";
   // Propagate the values for the kernel block
   for (auto [propKey1, propKey2] : propOpsToProlog) {
-    auto propOp = prologOps[propKey1][propKey2];
+    Operation *propOp;
+    propOp = prologOps[propKey1][propKey2];
+    llvm::errs() << "[" << propKey1 << "," << propKey2 << "]"
+                 << " : " << *propOp << "\n";
     addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopCond);
   }
-
   removeTempletBlock();
+  llvm::errs() << "removeTempletBlock\n";
   removeUselessBlockArg();
+  llvm::errs() << "removeUselessBlockArg\n";
   return success();
 }
 
@@ -713,8 +725,8 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
         endBBTime = std::max(endBBTime, execTimeInBB);
       }
     }
-    // the last jump operation does not have a schedule, assign it with the same
-    // conditional branch operation
+    // the last jump operation does not have a schedule, assign it with the
+    // same conditional branch operation
     ScheduleUnit schedule = {endBBTime, termPE, -1};
     solution[blk->getTerminator()] = schedule;
   }

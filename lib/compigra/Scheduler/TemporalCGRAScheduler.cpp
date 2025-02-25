@@ -1010,7 +1010,6 @@ LogicalResult TemporalCGRAScheduler::createSchedulerAndSolve() {
     // saveSubILPModelResult(bbILPModel.getSolution());
     // llvm::errs() << "Block " << bb << " is scheduling\n";
     // continue;
-    // // return success();
     // return success();
 
     int maxIter = 15;

@@ -115,9 +115,9 @@ static LogicalResult preScheduleUsingModuloScheduler(
 
     // call the python code script to solve the MS
     llvm::errs() << "Running the SAT-Solver\n";
-    // int result = system(command.c_str());
-    // if (result != 0)
-    //   continue;
+    int result = system(command.c_str());
+    if (result != 0)
+      continue;
     llvm::errs() << "SAT-solver done\n";
     // read the result and update the schedule
     std::string mapResult =
@@ -161,17 +161,6 @@ static LogicalResult preScheduleUsingModuloScheduler(
 
     auto sol = adapter.getSolutions();
     scheduler.blockBBSchedule(sol);
-
-    // write the solution to the scheduler
-    // print the schedule result
-    // for (auto [op, inst] : sol) {
-    //   std::string opStr;
-    //   llvm::raw_string_ostream rso(opStr);
-    //   rso << *op;
-    //   rso.flush();
-    //   llvm::errs() << llvm::format("%-80s %d %d\n", opStr.c_str(), inst.time,
-    //                                inst.pe);
-    // }
   }
   return success();
 }
@@ -205,7 +194,8 @@ struct ASMGenTemporalCGRAPass
       return signalPassFailure();
     }
     llvm::errs() << "MS pre-schedule done\n";
-    // return;
+    // llvm::errs() << funcOp << "\n";
+    return;
 
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";

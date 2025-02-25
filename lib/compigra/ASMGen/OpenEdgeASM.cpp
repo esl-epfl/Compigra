@@ -374,6 +374,7 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
       auto userList = getCntUserIndirectly(op->getResult(0));
       bool allUserOutside = true;
+      bool placeExternal = true;
       for (auto user : userList) {
         // Operation *user = getCntUseOpIndirectly(use);
         int userPE = solution[user].pe;
@@ -381,6 +382,21 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
         // stored in Rout.
         if (userPE == pe) {
           allUserOutside = false;
+        }
+
+        if (user->getBlock() != op->getBlock()) {
+          placeExternal = false;
+        } else {
+          // if during time to solution[user].time - 1, there is operation used
+          // pe, it has to be stored in internal register
+          for (int t = time; t < solution[user].time; t++) {
+            auto userOps = getOperationsAtTime(t);
+            for (auto [userPE, userOp] : userOps)
+              if (userPE == pe) {
+                placeExternal = false;
+                break;
+              }
+          }
         }
 
         if (solution[user].reg != -1 &&
@@ -408,7 +424,9 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
 
         // if the user PE is not restricted, don't allocate register for now
       }
-      if (allUserOutside) {
+
+      // bool internalBBU
+      if (allUserOutside || placeExternal) {
         solution[op].reg = maxReg;
         llvm::errs() << *op << " -> " << maxReg << "\n";
       }
