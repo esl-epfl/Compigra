@@ -155,12 +155,26 @@ static LogicalResult preScheduleUsingModuloScheduler(
     if (failed(adapter.adaptCFGWithLoopMS()))
       return failure();
 
+    // DFG split inside the scheduled block is disabled, which must be performed
+    // in its surrouding blocks;
+    auto guardStart = adapter.initBlock;
+    auto guardEnd = adapter.finiBlock;
+
+    for (auto newBB : adapter.getPrologAndKernelBlocks())
+      scheduler.setupLoadForRestriction(newBB, guardStart);
+
     // assign basic block with the schedule result
     if (failed(adapter.assignScheduleResult(instructions)))
       return failure();
+    auto prereq = adapter.getPrerequisites();
+    // print prerequisites
+    for (auto [val, pe] : prereq) {
+      llvm::errs() << "Prerequisite: " << val << " " << pe << "\n";
+    }
+    scheduler.setupPrerequisite(prereq);
 
-    auto sol = adapter.getSolutions();
-    scheduler.blockBBSchedule(sol);
+    auto sol = adapter.getPrologAndKernelSolutions();
+    scheduler.resctrictBBSchedule(sol);
   }
   return success();
 }
@@ -195,12 +209,14 @@ struct ASMGenTemporalCGRAPass
     }
     llvm::errs() << "MS pre-schedule done\n";
     // llvm::errs() << funcOp << "\n";
-    return;
+    // return;
 
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";
+      return;
       return signalPassFailure();
     }
+    return;
 
     // assign schedule results and produce assembly
     // scheduler.readScheduleResult("temporalSpatialSchedule.csv");

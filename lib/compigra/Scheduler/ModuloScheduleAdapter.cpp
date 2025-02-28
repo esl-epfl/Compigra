@@ -12,21 +12,55 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
+#include "compigra/Support/Utils.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
-
-#include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 using namespace compigra;
 
 /// Get the init block of the region
 Block *ModuloScheduleAdapter::getInitBlock(Block *loopBlk) {
-  for (auto pred : loopBlk->getPredecessors())
-    if (pred != loopBlk)
-      return pred;
-  return nullptr;
+  // if there is only one predecessor different from the loop block, return it,
+  // otherwise, create an empty block and connect it to the loop block.
+  if (std::distance(loopBlk->getPredecessors().begin(),
+                    loopBlk->getPredecessors().end()) == 2) {
+    for (auto pred : loopBlk->getPredecessors())
+      if (pred != loopBlk)
+        return pred;
+  } else {
+    // TODO[@YYY]: test with corresponding cases
+    OpBuilder builder(loopBlk->getParentOp());
+    auto newBlock = builder.createBlock(loopBlk->getParent());
+    builder.setInsertionPointToEnd(newBlock);
+    // change the precessor to the new block
+    SmallVector<Value, 4> mergeArgs;
+    for (auto arg : templateBlock->getArguments()) {
+      auto newArg = newBlock->addArgument(arg.getType(), arg.getLoc());
+      mergeArgs.push_back(newArg);
+    }
+    builder.create<cf::BranchOp>(loopBlk->getOperations().front().getLoc(),
+                                 loopBlk, mergeArgs);
+    for (auto pred : loopBlk->getPredecessors()) {
+      if (pred == loopBlk)
+        continue;
+      // replace the branch to the loop block with the new block
+      auto termOp = pred->getTerminator();
+      if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(termOp)) {
+        branchOp.setDest(newBlock);
+      } else if (auto condBrOp =
+                     dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
+        if (condBrOp.getTrueDest() == loopBlk)
+          condBrOp.setTrueDest(newBlock);
+        else
+          condBrOp.setFalseDest(newBlock);
+      }
+    }
+    // remove all block argument s
+    return newBlock;
+  }
 }
 
 /// the conditional branch block has two successors, for the loop the true
@@ -36,6 +70,27 @@ Block *ModuloScheduleAdapter::getCondBrFalseDest(Block *blk) {
     if (succ != blk)
       return succ;
   return nullptr;
+}
+
+std::map<Operation *, ScheduleUnit>
+ModuloScheduleAdapter::getPrologAndKernelSolutions() {
+  std::map<Operation *, ScheduleUnit> prologAndKernelSolution;
+  for (auto [op, su] : solution) {
+    if (epilogOpsBB.count(op->getBlock()))
+      continue;
+    prologAndKernelSolution[op] = su;
+  }
+  return prologAndKernelSolution;
+}
+
+SmallVector<Block *, 4> ModuloScheduleAdapter::getPrologAndKernelBlocks() {
+  SmallVector<Block *, 4> prologAndKernelBlocks;
+  for (auto blk : newBlocks) {
+    if (epilogOpsBB.count(blk))
+      continue;
+    prologAndKernelBlocks.push_back(blk);
+  }
+  return prologAndKernelBlocks;
 }
 
 /// Determine whether a  basic block is the loop kernel by counting the
@@ -122,8 +177,8 @@ LogicalResult ModuloScheduleAdapter::init() {
     return failure();
 
   // finiBlock = loopFalseBlk;
-  // The last block in the timeSlotsOfBBs is the epilog block, and the second to
-  // last block is the loop block
+  // The last block in the timeSlotsOfBBs is the epilog block, and the second
+  // to last block is the loop block
   unsigned termCount = 0;
   for (auto [ind, s] : llvm::enumerate(timeSlotsOfBBs)) {
     // timeStep += s.size();
@@ -161,8 +216,8 @@ static Value getPropagatedValue(Operation *terminator, Block *dstBlk,
 }
 
 /// Return the latest iteration id of an operation.
-/// opMap stores all the executed operations with their iteration id and op id,
-/// given a opId, get the latest iteration id for the op
+/// opMap stores all the executed operations with their iteration id and op
+/// id, given a opId, get the latest iteration id for the op
 static int
 getLatestIterId(const std::map<int, std::map<int, Operation *>> opMap, int opId,
                 bool getExisted = true) {
@@ -584,6 +639,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     startBlk->addArgument(arg.getType(), arg.getLoc());
   std::vector<std::pair<int, int>> emptySet;
   startBlock = startBlk;
+  newBlocks.push_back(startBlk);
   initOperationsInBB(startBlk, 0, timeSlotsOfBBs[0], emptySet);
 
   std::vector<std::pair<int, int>> propOpsToEpilog;
@@ -622,13 +678,14 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
       if (failed(completeUnexecutedOperationsInBB(epiBlk, bbId, termIterId,
                                                   prologOps, propOpsToEpilog)))
         return failure();
+      newBlocks.push_back(epiBlk);
 
       // create the prolog block for bbId's block for loop continuation
       auto proBlk = builder.createBlock(templateBlock);
-
       builder.setInsertionPointToStart(proBlk);
       if (failed(initOperationsInBB(proBlk, bbId, s, propOpsToProlog)))
         return failure();
+      newBlocks.push_back(proBlk);
 
       loopCond = proBlk;
       loopQuit = epiBlk;
@@ -665,7 +722,6 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     if (bbId == loopBlkId + 1)
       break;
   }
-  llvm::errs() << "propagate to epilog: " << propOpsToEpilog.size() << "\n";
 
   // Propagate the values for the exit block of the kernel block
   for (auto [propKey1, propKey2] : propOpsToEpilog) {
@@ -673,20 +729,143 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     propOp = prologOps[propKey1][propKey2];
     addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopQuit);
   }
-  llvm::errs() << "propagate to prolog: " << propOpsToProlog.size() << "\n";
   // Propagate the values for the kernel block
   for (auto [propKey1, propKey2] : propOpsToProlog) {
     Operation *propOp;
     propOp = prologOps[propKey1][propKey2];
-    llvm::errs() << "[" << propKey1 << "," << propKey2 << "]"
-                 << " : " << *propOp << "\n";
     addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopCond);
   }
   removeTempletBlock();
-  llvm::errs() << "removeTempletBlock\n";
   removeUselessBlockArg();
-  llvm::errs() << "removeUselessBlockArg\n";
   return success();
+}
+
+/// Copy a block argument for another user use
+void copyAnotherBlockArgument(BlockArgument arg, BlockArgument newArg,
+                              SetVector<Block *> &visited, OpBuilder &builder) {
+  Block *block = arg.getOwner();
+  if (visited.count(block))
+    return;
+  visited.insert(block);
+
+  // relatedVals.insert(val);
+  unsigned ind = arg.getArgNumber();
+  for (Block *pred : block->getPredecessors()) {
+    Operation *branchOp = pred->getTerminator();
+    Value operand = nullptr;
+    if (auto br = dyn_cast<cf::BranchOp>(branchOp)) {
+      operand = br.getOperand(ind);
+      if (operand.isa<BlockArgument>()) {
+        auto newArg = pred->addArgument(arg.getType(), arg.getLoc());
+        copyAnotherBlockArgument(operand.cast<BlockArgument>(), newArg, visited,
+                                 builder);
+        continue;
+      }
+      auto defOp = operand.getDefiningOp();
+      // copy the defOp and add it to the branch operands
+      builder.setInsertionPointAfter(defOp);
+      auto newOp = builder.clone(*defOp);
+      // if the newOp use the arg for computation, replace it with the new
+      // block argument
+      for (auto &use : arg.getUses()) {
+        if (use.getOwner() == newOp) {
+          use.set(newArg);
+        }
+      }
+      // attach the result of newOp to the branch operand
+      SmallVector<Value, 4> newOperands(br.getOperands().begin(),
+                                        br.getOperands().end());
+      newOperands.push_back(newOp->getResult(0));
+      branchOp->setOperands(newOperands);
+    } else if (auto cbr = dyn_cast<cgra::ConditionalBranchOp>(branchOp)) {
+      if (block == cbr.getTrueDest()) {
+        operand = cbr.getTrueOperand(ind);
+        if (operand.isa<BlockArgument>()) {
+          auto newArg = pred->addArgument(arg.getType(), arg.getLoc());
+          copyAnotherBlockArgument(operand.cast<BlockArgument>(), newArg,
+                                   visited, builder);
+          continue;
+        }
+        auto defOp = operand.getDefiningOp();
+        // copy the defOp and add it to the branch operands
+        builder.setInsertionPointAfter(defOp);
+        auto newOp = builder.clone(*defOp);
+        for (auto &use : arg.getUses()) {
+          if (use.getOwner() == newOp) {
+            use.set(newArg);
+          }
+        }
+        cbr.getTrueDestOperandsMutable().append(newOp->getResult(0));
+
+      } else {
+        operand = cbr.getFalseOperand(ind);
+        if (operand.isa<BlockArgument>()) {
+          auto newArg = pred->addArgument(arg.getType(), arg.getLoc());
+          copyAnotherBlockArgument(operand.cast<BlockArgument>(), newArg,
+                                   visited, builder);
+          continue;
+        }
+        auto defOp = operand.getDefiningOp();
+        // copy the defOp and add it to the branch operands
+        builder.setInsertionPointAfter(defOp);
+        auto newOp = builder.clone(*defOp);
+        for (auto &use : arg.getUses()) {
+          if (use.getOwner() == newOp) {
+            use.set(newArg);
+          }
+        }
+        cbr.getFalseDestOperandsMutable().append(newOp->getResult(0));
+      }
+    }
+  }
+  return;
+}
+
+static void assignPrerequisite(Value val, Operation *consumerOp,
+                               std::vector<std::pair<Value, int>> &existArgs,
+                               OpBuilder &builder, ScheduleUnit schedule) {
+  // if val is a block argument
+  if (auto bbArg = dyn_cast_or_null<BlockArgument>(val)) {
+    for (auto [arg, prereqPE] : existArgs) {
+      if (prereqPE == schedule.pe) {
+        val.replaceUsesWithIf(arg, [&](OpOperand &operand) {
+          return operand.getOwner() == consumerOp;
+        });
+        return;
+      }
+    }
+    auto origInd = bbArg.getArgNumber();
+    // if cannot find reused value, add another block argument
+    auto newArg =
+        val.getParentBlock()->addArgument(val.getType(), val.getLoc());
+    existArgs.push_back({newArg, schedule.pe});
+    // copy the corresponding propagated value
+    // TODO[@YYY26/Feb], code refactor
+    SetVector<Block *> visited;
+    copyAnotherBlockArgument(bbArg, newArg, visited, builder);
+    val.replaceUsesWithIf(newArg, [&](OpOperand &operand) {
+      return operand.getOwner() == consumerOp;
+    });
+    return;
+  }
+  auto defOp = val.getDefiningOp();
+
+  for (auto [arg, prereqPE] : existArgs) {
+    if (prereqPE == schedule.pe) {
+      defOp->replaceUsesWithIf(arg.getDefiningOp(), [&](OpOperand &operand) {
+        return operand.getOwner() == consumerOp;
+      });
+      return;
+    }
+  }
+
+  // copy the value
+  builder.setInsertionPointAfter(defOp);
+  auto newOp = builder.clone(*defOp);
+  defOp->replaceUsesWithIf(newOp, [&](OpOperand &operand) {
+    return operand.getOwner() == consumerOp;
+  });
+  existArgs.push_back({newOp->getResult(0), schedule.pe});
 }
 
 LogicalResult ModuloScheduleAdapter::assignScheduleResult(
@@ -694,6 +873,14 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
   // for operation in prologOps, its execution time is exectTime[opId] +
   // iterId * II
   int termPE = -1;
+
+  // key to sort the live in arguments
+  std::vector<Value> origLiveInArgs;
+
+  // the first vector records the original live in arguments, and the second
+  // vector records the value split from the original live in arguments and
+  // their placement.
+  std::vector<std::vector<std::pair<Value, int>>> liveInArgs;
   for (auto [iterId, opMap] : prologOps) {
     for (auto [opId, op] : opMap) {
       auto execTimeInBB = execTime.at(opId) + iterId * II;
@@ -701,7 +888,41 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
       solution[op] = schedule;
       if (opId == loopOpNum - 1)
         termPE = instructions.at(opId).pe;
+      // assign the corresponding consumer with the schedule
+      for (auto opr : op->getOperands()) {
+        // if the operand has been resolved by the schedule solution, no need
+        // to write them to the prerequisites
+        if (std::find(newBlocks.begin(), newBlocks.end(),
+                      opr.getParentBlock()) != newBlocks.end())
+          continue;
+
+        if (auto defOp = opr.getDefiningOp())
+          if (isa<arith::ConstantOp>(defOp))
+            continue;
+
+        unsigned liveInArgId = origLiveInArgs.size();
+
+        // whether the livein value has already been initialized
+        if (std::find(origLiveInArgs.begin(), origLiveInArgs.end(), opr) ==
+            origLiveInArgs.end()) {
+          origLiveInArgs.push_back(opr);
+          liveInArgs.push_back({});
+        } else {
+          liveInArgId = std::distance(
+              origLiveInArgs.begin(),
+              std::find(origLiveInArgs.begin(), origLiveInArgs.end(), opr));
+        }
+        if (liveInArgs[liveInArgId].size() == 0)
+          liveInArgs[liveInArgId].push_back({opr, instructions.at(opId).pe});
+        assignPrerequisite(opr, op, liveInArgs[liveInArgId], builder, schedule);
+      }
     }
+  }
+
+  // for element pair in liveInArgs, write them to prerequisites
+  for (auto liveInArg : liveInArgs) {
+    for (auto splitVal : liveInArg)
+      prerequisites.push_back(splitVal);
   }
 
   // for operations in epilogOpsBB, its execution time is execTime[opId] +

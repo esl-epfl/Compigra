@@ -54,17 +54,20 @@ public:
     blockStartT[block] = timeStart;
   }
 
-  // Read the schedule result from the written file, usually avoid to call
-  // `createSchedulerAndSolve` function for runtime efficiency.
-  // LogicalResult readScheduleResult(const std::string fileName);
-
   void setMaxLivePath(unsigned maxLivePath) { this->maxLivePath = maxLivePath; }
 
   void setReserveMem(unsigned reserveMem) { this->reserveMem = reserveMem; }
 
   // The schedule result comes from external scheduler, which does not support
   // DFG split for the blocks.
-  void blockBBSchedule(const std::map<Operation *, ScheduleUnit> res);
+  void resctrictBBSchedule(const std::map<Operation *, ScheduleUnit> res);
+
+  void setupLoadForRestriction(Block *restrictBB, Block *enableLoad) {
+    restrictedBBs.insert(restrictBB);
+    enableLoads[restrictBB] = enableLoad;
+  }
+
+  void setupPrerequisite(std::vector<std::pair<Value, int>> valPlacement);
 
 private:
   // ======================== Liveness Data Structures =======================
@@ -74,8 +77,14 @@ private:
 
   // All live value and its located PE.
   liveVec liveValAndPEs;
-  // Blocked Basic Blocks which does not allow DFG split
-  std::set<Block *> blockedBBs;
+  // Restricted Basic Blocks which does not allow DFG split
+  std::set<Block *> restrictedBBs;
+
+  // if the DFG split involved the blocked BB, the enableLoad and enableStore
+  // specify its only predecessor and successor where the load and store can be
+  // performed.
+  std::map<Block *, Block *> enableLoads;
+  std::map<Block *, Block *> enableStores;
 
   // Start address of the memory for the evicted value
   unsigned reserveMem = 0;
@@ -113,6 +122,9 @@ private:
                           const liveVec liveOutInter, const liveVec liveInExter,
                           const liveVec liveInInter);
 
+  std::optional<cgra::LwiOp>
+  existAvailableLoad(unsigned memLoc, Operation *failUser, Block *loadBlk);
+
   /// Each basic block has its own ILP model to schedule the operations. which
   /// is assumed to start from T = 0. To fullfill the temporal spatial schedule,
   /// the basic block start time should be placed to ensure the basic block
@@ -146,18 +158,18 @@ private:
   /// Insert a load operation from `addr`. This load operation is placed after
   /// refOp
   cgra::LwiOp insertLoadOp(Operation *refOp, unsigned addr, Value origVal,
-                           unsigned opIndex = -1);
+                           unsigned opIndex = -1, Block *customBBLoc = nullptr);
 
   /// If the block has been scheduled, place the lwi/swi operation to the
   /// block's original schedule result without rerun its ILP model.
 
   // block: the block to place the lwi/swi operation
   // refOp and opIndex specify the value to be replaced by the lwi operation
-  void placeLwiOpToBlock(Block *block, Operation *refOp, unsigned opIndex,
-                         cgra::LwiOp lwiOp);
+  void placeLwiOpToBlock(Block *block, unsigned seekPE, int seekTime,
+                         cgra::LwiOp lwiOp, bool onlyPE = false);
 
   LogicalResult placeLwiOpToBlock(Block *block, BlockArgument arg,
-                                  cgra::LwiOp lwiOp);
+                                  cgra::LwiOp lwiOp, int time = 0);
 
   void placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp);
 

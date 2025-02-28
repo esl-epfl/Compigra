@@ -74,7 +74,7 @@ int PrintSatMapItDAG::getNodeIndex(Operation *op) {
   // seek the live-in operation
   size_t liveInBase = constBase + constants.size() + 10;
   for (auto [ind, liveIn] : llvm::enumerate(liveIns))
-    if (op == liveIn)
+    if (op->getNumResults() > 0 && op->getResult(0) == liveIn)
       return ind * 10 + liveInBase + 1;
 
   // seek the live-out operation
@@ -99,33 +99,42 @@ int PrintSatMapItDAG::getNodeIndex(Value val) {
     if (val == arg)
       return ind;
 
+  // seek the live-in operation
+  size_t liveInBase = blockArg + nodes.size() + 10 + constants.size() + 10;
+  for (auto [ind, liveIn] : llvm::enumerate(liveIns))
+    if (val == liveIn)
+      return ind * 10 + liveInBase + 1;
+
   return -1;
 }
 
-void PrintSatMapItDAG::addNodes(Operation *op) {
-  for (auto node : nodes)
-    if (op == node)
-      return;
+void PrintSatMapItDAG::addNodes(Value val) {
+  auto op = val.getDefiningOp();
+  if (op) {
+    for (auto node : nodes)
+      if (op == node)
+        return;
 
-  for (auto node : constants)
-    if (op == node)
-      return;
+    for (auto node : constants)
+      if (op == node)
+        return;
 
-  for (auto node : liveIns)
-    if (op == node)
+    // not find in existed node sets
+    // if it is a constant operaiton, add it into constant
+    if (isa<arith::ConstantOp, arith::ConstantIntOp, arith::ConstantFloatOp>(
+            op)) {
+      constants.push_back(op);
       return;
-
-  // not find in existed node sets
-  // if it is a constant operaiton, add it into constant
-  if (isa<arith::ConstantOp, arith::ConstantIntOp, arith::ConstantFloatOp>(
-          op)) {
-    constants.push_back(op);
-    return;
+    }
   }
 
+  for (auto node : liveIns)
+    if (val == node)
+      return;
+
   // not find in existed node sets, add it into liveIn
-  if (op->getBlock() == initBlock) {
-    liveIns.push_back(op);
+  if (val.getParentBlock() != loopBlock) {
+    liveIns.push_back(val);
     return;
   }
 }
@@ -169,21 +178,22 @@ LogicalResult PrintSatMapItDAG::init() {
       if (isa<cgra::ConditionalBranchOp>(pred->getTerminator()))
         corrArg = getCntBlockArgInPredcessor(ind, pred, loopBlock);
       parameters.push_back(corrArg);
-      auto defOp = corrArg.getDefiningOp();
-      if (defOp) {
-        addNodes(defOp);
-      }
+      // auto defOp = corrArg.getDefiningOp();
+      // if (defOp) {
+      addNodes(corrArg);
+      // }
     }
     argMaps[ind] = parameters;
   }
 
   for (auto [ind, node] : llvm::enumerate(nodes)) {
     for (auto Operand : node->getOperands()) {
-      if (auto defOp = Operand.getDefiningOp())
-        addNodes(defOp);
+      addNodes(Operand);
+      // if (auto defOp = Operand.getDefiningOp())
+      //   addNodes(defOp);
     }
   }
-
+  llvm::errs() << "Init success\n";
   return success();
 }
 
@@ -203,28 +213,39 @@ LogicalResult PrintSatMapItDAG::printNodes(std::string fileName) {
     auto ops = argPair.second;
 
     int predicateSel = -1;
-    int leftOpInd, rightOpInd;
-    Value leftOp = ops[0];
-    if (auto defOp = leftOp.getDefiningOp()) {
-      leftOpInd = getNodeIndex(defOp);
-    } else if (auto blockArg = leftOp.dyn_cast<BlockArgument>()) {
-      // The leftOp could be a block argument
+    int leftOpInd = -1, rightOpInd = -1;
+    Value leftOpr = ops[0];
+    auto blockArg = dyn_cast_or_null<BlockArgument>(leftOpr);
+    if (blockArg && leftOpr.getParentBlock() == loopBlock) {
       leftOpInd = blockArg.getArgNumber();
     } else {
+      leftOpInd = getNodeIndex(leftOpr);
+    }
+    if (leftOpInd == -1) {
       LLVM_DEBUG(llvm::dbgs() << "The left operand is not defined\n");
       return failure();
     }
 
-    Value rightOp = ops[1];
-    if (auto defOp = rightOp.getDefiningOp()) {
-      rightOpInd = getNodeIndex(defOp);
-    } else if (auto blockArg = rightOp.dyn_cast<BlockArgument>()) {
-      // The rightOp could be a block argument
+    Value rightOpr = ops[1];
+    blockArg = dyn_cast_or_null<BlockArgument>(rightOpr);
+    if (blockArg && rightOpr.getParentBlock() == loopBlock) {
       rightOpInd = blockArg.getArgNumber();
     } else {
+      rightOpInd = getNodeIndex(rightOpr);
+    }
+    if (rightOpInd == -1) {
       LLVM_DEBUG(llvm::dbgs() << "The right operand is not defined\n");
       return failure();
     }
+    // if (auto defOp = rightOp.getDefiningOp()) {
+    //   rightOpInd = getNodeIndex(defOp);
+    // } else if (auto blockArg = rightOp.dyn_cast<BlockArgument>()) {
+    //   // The rightOp could be a block argument
+    //   rightOpInd = blockArg.getArgNumber();
+    // } else {
+    //   LLVM_DEBUG(llvm::dbgs() << "The right operand is not defined\n");
+    //   return failure();
+    // }
 
     dotFile << std::to_string(ind) << " " << nodeName << " " << leftOpInd << " "
             << rightOpInd << " " << std::to_string(predicateSel);
@@ -353,10 +374,11 @@ LogicalResult PrintSatMapItDAG::printEdges(std::string fileName) {
           userInd = use.getOperandNumber();
       } else if (use.getOperandNumber() > 1 &&
                  isa<cgra::ConditionalBranchOp>(user)) {
-        // if it is propagated to the successor block through bne, beq, blt, bge
+        // if it is propagated to the successor block through bne, beq, blt,
+        // bge
         if (user->getBlock()->getSuccessor(0) == loopBlock) {
-          // LLVM to CGRA conversion should adapt the loopblock to be the first
-          // block successor
+          // LLVM to CGRA conversion should adapt the loopblock to be the
+          // first block successor
           userInd = use.getOperandNumber() - 2;
         }
       } else {
@@ -422,7 +444,7 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
   // print live-in edges to the text file
   dotFile.open(inEdgeFile.c_str());
   for (auto liveIn : liveIns) {
-    for (auto &use : liveIn->getUses()) {
+    for (auto &use : liveIn.getUses()) {
       auto user = use.getOwner();
       // the use could be used in the loop block in two ways:
       // 1. the user belongs to the loop block
@@ -441,7 +463,8 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
           userInd = use.getOperandNumber();
       } else if (isa<cgra::ConditionalBranchOp>(user) &&
                  use.getOperandNumber() > 1) {
-        // if it is propagated to the successor block through bne, beq, blt, bge
+        // if it is propagated to the successor block through bne, beq, blt,
+        // bge
         if (user->getBlock()->getSuccessor(0) == loopBlock)
           userInd = use.getOperandNumber() - 2;
       } else {
@@ -454,7 +477,7 @@ LogicalResult PrintSatMapItDAG::printLiveIns(std::string fileName) {
     }
   }
   dotFile.close();
-
+  llvm::errs() << "LiveIn nodes and edges are printed\n";
   return success();
 }
 

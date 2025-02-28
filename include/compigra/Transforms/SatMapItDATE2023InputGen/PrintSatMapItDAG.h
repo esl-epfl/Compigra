@@ -67,7 +67,7 @@ public:
   // If the operation is constant, add it to constants; if the operation belongs
   // to initBlock, add it to liveIns; if the operation is propated to finiBlock,
   // add the corresponding operation finiBlock to liveOuts.
-  void addNodes(Operation *op);
+  void addNodes(Value val);
   int getNodeIndex(Operation *op);
   int getNodeIndex(Value val);
 
@@ -82,7 +82,7 @@ private:
   unsigned blockArg = 0;
 
   // operation out of SAT-MapIt schedule block
-  SmallVector<Operation *> liveIns = {};
+  SmallVector<Value> liveIns = {};
   SmallVector<Operation *> liveOuts = {};
 
   // Argument with corresponding definition operations

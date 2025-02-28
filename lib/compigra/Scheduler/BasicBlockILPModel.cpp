@@ -418,6 +418,10 @@ LogicalResult BasicBlockILPModel::createRoutingConstraints(
     SetVector<Operation *> producers;
     for (auto [ind, opVal] : llvm::enumerate(op->getOperands())) {
       auto defOp = opVal.getDefiningOp();
+      // ===============DEBUG: remove unnecessary phi propagation
+      if (isa<cf::BranchOp>(op) ||
+          (isa<cgra::ConditionalBranchOp>(op) && ind >= 2))
+        continue;
       if (defOp && opPeVar.count(defOp) > 0)
         producers.insert(opVal.getDefiningOp());
     }
@@ -657,6 +661,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     model.optimize();
     if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
         model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+      strategy = FailureStrategy::Split;
       spill = val;
       failUser = nullptr;
       return failure();
@@ -810,7 +815,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   if (failed(createGlobalLiveOutInterConstraints(model, timeVarMap, peVarMap,
                                                  varName)))
     return failure();
-  llvm::errs() << "Create global live out inter constraints\n";
+  llvm::errs() << "Created global live out inter constraints\n";
   if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
     return failure();
   llvm::errs() << "Created routing constraints\n";
@@ -902,6 +907,7 @@ void BasicBlockILPModel::writeLiveOutResult(
 }
 
 void BasicBlockILPModel::writeLiveOutResult() {
+  llvm::errs() << "Writing live out result\n";
   for (auto &[val, index] : liveOutExter) {
     Operation *defOp = val.getDefiningOp();
     if (defOp && solution.count(defOp) > 0) {
@@ -933,6 +939,7 @@ void BasicBlockILPModel::writeLiveOutResult() {
   }
 
   for (auto &[val, index] : liveInInter) {
+    llvm::errs() << "pre livein: " << val << " " << index << "\n";
     if (index != UINT32_MAX)
       continue;
     Operation *defOp = val.getDefiningOp();
@@ -940,6 +947,7 @@ void BasicBlockILPModel::writeLiveOutResult() {
     for (auto user : val.getUsers()) {
       if (solution.count(user) > 0) {
         index = solution.at(user).pe;
+        llvm::errs() << "LiveInInter: " << val << " " << index << "\n";
         break;
       }
     }

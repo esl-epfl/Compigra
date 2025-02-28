@@ -199,6 +199,7 @@ LogicalResult compigra::allocateOutRegInPE(
       llvm::errs() << pair.second << " ";
     llvm::errs() << "\n";
   }
+  llvm::errs() << opList.size() << " " << opMap.size() << "\n";
 
   // print opMap and interference graph
   llvm::errs() << "--------------Interference Graph-----------------\n";
@@ -565,7 +566,7 @@ static std::string getConstantString(Operation *op) {
 
 LogicalResult OpenEdgeASMGen::convertToInstructionMap() {
   for (auto [op, unit] : solution) {
-    if (isa<LLVM::BrOp>(op)) {
+    if (isa<LLVM::BrOp, cf::BranchOp>(op)) {
       continue;
     }
 

@@ -92,10 +92,9 @@ private:
   // original loop block that will be replaced, initBlock and finiBlock are the
   // connected to the loop block to initiate and finalize the loop.
   Block *templateBlock = nullptr;
-  Block *initBlock = nullptr;
-  Block *finiBlock = nullptr;
   // startBlock is the new created block to start the loop execution.
   Block *startBlock = nullptr;
+  SmallVector<Block *, 4> newBlocks;
   // Number of operations in the templateBlock
   unsigned loopOpNum = 0;
   // The loop block id in the timeSlotsOfBBs
@@ -109,13 +108,26 @@ private:
   cgra::CondBrPredicate cmpFlag;
 
 public:
+  // The initialization and the finalization block for the loop kernel
+  Block *initBlock = nullptr;
+  Block *finiBlock = nullptr;
   /// Adapt the CFG with the modulo scheduling result.
   LogicalResult adaptCFGWithLoopMS();
+
+  SmallVector<Block *, 4> getNewBlocks() { return newBlocks; }
+
+  SmallVector<Block *, 4> getPrologAndKernelBlocks();
 
   LogicalResult
   assignScheduleResult(const std::map<int, Instruction> instructions);
 
   std::map<Operation *, ScheduleUnit> getSolutions() { return solution; }
+
+  std::map<Operation *, ScheduleUnit> getPrologAndKernelSolutions();
+
+  std::vector<std::pair<Value, int>> getPrerequisites() {
+    return prerequisites;
+  }
 
   /// Support functions to adapt the CFG and create the DFG within new created
   /// basic blocks.
@@ -126,6 +138,8 @@ private:
 
   std::map<Operation *, ScheduleUnit> solution;
 
+  std::vector<std::pair<Value, int>> prerequisites;
+
   LogicalResult
   updateOperands(int bbId, int iterId, int opId, Operation *adaptOp,
                  const std::map<int, std::map<int, Operation *>> prologOpMap,
@@ -133,16 +147,16 @@ private:
                  std::vector<std::pair<int, int>> &propagatedOps,
                  bool isEpilog = false);
 
-  // Create operations in bbId's block(prolog or kernel) of the modulo scheduled
-  // loop. `bbTimeId` is PC specified for the block, `propOpSets` is the set of
-  // operations that need to be propagated to the next block.
+  // Create operations in bbId's block(prolog or kernel) of the modulo
+  // scheduled loop. `bbTimeId` is PC specified for the block, `propOpSets` is
+  // the set of operations that need to be propagated to the next block.
   LogicalResult
   initOperationsInBB(Block *blk, int bbId, const std::set<int> bbTimeId,
                      std::vector<std::pair<int, int>> &propOpSets);
 
-  // Complete the epilog for the end of execution of bbId's block. `termIter` is
-  // the iteration id which should be executed. All operations belong to the
-  // later iterations should be dropped.
+  // Complete the epilog for the end of execution of bbId's block. `termIter`
+  // is the iteration id which should be executed. All operations belong to
+  // the later iterations should be dropped.
   LogicalResult completeUnexecutedOperationsInBB(
       Block *blk, int bbId, unsigned termIter,
       const std::map<int, std::map<int, Operation *>> executedOpMap,
