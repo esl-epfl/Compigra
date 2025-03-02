@@ -160,8 +160,8 @@ static LogicalResult preScheduleUsingModuloScheduler(
     auto guardStart = adapter.initBlock;
     auto guardEnd = adapter.finiBlock;
 
-    for (auto newBB : adapter.getPrologAndKernelBlocks())
-      scheduler.setupLoadForRestriction(newBB, guardStart);
+    // for (auto newBB : adapter.getPrologAndKernelBlocks())
+    //   scheduler.setupLoadForRestriction(newBB, guardStart);
 
     // assign basic block with the schedule result
     if (failed(adapter.assignScheduleResult(instructions)))
@@ -173,7 +173,7 @@ static LogicalResult preScheduleUsingModuloScheduler(
     }
     scheduler.setupPrerequisite(prereq);
 
-    auto sol = adapter.getPrologAndKernelSolutions();
+    auto sol = adapter.getSolutions();
     scheduler.resctrictBBSchedule(sol);
   }
   return success();
@@ -216,7 +216,7 @@ struct ASMGenTemporalCGRAPass
       return;
       return signalPassFailure();
     }
-    return;
+    // return;
 
     // assign schedule results and produce assembly
     // scheduler.readScheduleResult("temporalSpatialSchedule.csv");

@@ -38,21 +38,29 @@ private:
   Region &region;
   OpBuilder builder;
 
-  std::map<Block *, int> blockStartT;
+  // std::map<Block *, int> blockStartT;
   std::map<Block *, int> blockEndT;
 
 public:
   void printBlockLiveValue(std::string fileName);
 
   int getBlockStartT(Block *block) {
-    if (blockStartT.count(block))
-      return blockStartT[block];
-    return INT_MAX;
+    int blockStart = INT_MAX;
+    for (auto &[op, su] : solution) {
+      if (op->getBlock() == block) {
+        if (su.time < blockStart)
+          blockStart = su.time;
+      }
+    }
+    // if (blockStartT.count(block))
+    //   return blockStartT[block];
+    return blockStart;
+    // return INT_MAX;
   }
 
-  void setBlockExecutionTime(Block *block, int timeStart) {
-    blockStartT[block] = timeStart;
-  }
+  // void setBlockExecutionTime(Block *block, int timeStart) {
+  //   blockStartT[block] = timeStart;
+  // }
 
   void setMaxLivePath(unsigned maxLivePath) { this->maxLivePath = maxLivePath; }
 
@@ -62,10 +70,10 @@ public:
   // DFG split for the blocks.
   void resctrictBBSchedule(const std::map<Operation *, ScheduleUnit> res);
 
-  void setupLoadForRestriction(Block *restrictBB, Block *enableLoad) {
-    restrictedBBs.insert(restrictBB);
-    enableLoads[restrictBB] = enableLoad;
-  }
+  // void setupLoadForRestriction(Block *restrictBB, Block *enableLoad) {
+  //   restrictedBBs.insert(restrictBB);
+  //   enableLoads[restrictBB] = enableLoad;
+  // }
 
   void setupPrerequisite(std::vector<std::pair<Value, int>> valPlacement);
 

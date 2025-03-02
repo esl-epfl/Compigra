@@ -645,10 +645,11 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
   // the inter value should be distributed among the PEs
-  std::vector<int> availUse(nRow * nCol, 2);
+  std::vector<int> availUse(nRow * nCol, maxReg - 1);
   for (auto &[val, index] : liveInInter) {
     if (index == UINT32_MAX)
       continue;
+    llvm::errs() << "live in inter: " << val << " " << index << "\n";
     availUse[index] -= 1;
   }
 
@@ -939,10 +940,24 @@ void BasicBlockILPModel::writeLiveOutResult() {
   }
 
   for (auto &[val, index] : liveInInter) {
-    llvm::errs() << "pre livein: " << val << " " << index << "\n";
     if (index != UINT32_MAX)
       continue;
-    Operation *defOp = val.getDefiningOp();
+    if (isPhiRelatedValue(val)) {
+      SetVector<Value> relatedVals;
+      getAllPhiRelatedValues(val, relatedVals);
+      for (auto relatedVal : relatedVals) {
+        auto it = std::find_if(liveOutInter.begin(), liveOutInter.end(),
+                               [&](std::pair<Value, unsigned> p) {
+                                 return p.first == relatedVal;
+                               });
+        if (it != liveOutInter.end()) {
+          index = it->second;
+          break;
+        }
+      }
+      if (index != UINT32_MAX)
+        continue;
+    }
     // detect whether user is solved
     for (auto user : val.getUsers()) {
       if (solution.count(user) > 0) {
