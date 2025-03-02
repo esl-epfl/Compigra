@@ -848,8 +848,8 @@ static void assignPrerequisite(Value val, Operation *consumerOp,
     });
     return;
   }
-  auto defOp = val.getDefiningOp();
 
+  auto defOp = val.getDefiningOp();
   for (auto [arg, prereqPE] : existArgs) {
     if (prereqPE == schedule.pe) {
       defOp->replaceUsesWithIf(arg.getDefiningOp(), [&](OpOperand &operand) {
@@ -919,12 +919,6 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
     }
   }
 
-  // for element pair in liveInArgs, write them to prerequisites
-  for (auto liveInArg : liveInArgs) {
-    for (auto splitVal : liveInArg)
-      prerequisites.push_back(splitVal);
-  }
-
   // for operations in epilogOpsBB, its execution time is execTime[opId] +
   // iterStartTime, where iterStartTime is the earliest time among
   // prologOps[iterId]
@@ -944,12 +938,56 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
         ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, -1};
         solution[op] = schedule;
         endBBTime = std::max(endBBTime, execTimeInBB);
+
+        // assign the live-in value
+        for (auto opr : op->getOperands()) {
+          // if the operand has been resolved by the schedule solution, no need
+          // to write them to the prerequisites
+          if (std::find(newBlocks.begin(), newBlocks.end(),
+                        opr.getParentBlock()) != newBlocks.end())
+            continue;
+
+          // if it is the blockArgument of this block, no need to assign
+          if (std::find(blk->getArguments().begin(), blk->getArguments().end(),
+                        opr) != blk->getArguments().end())
+            continue;
+
+          if (auto defOp = opr.getDefiningOp())
+            if (isa<arith::ConstantOp>(defOp))
+              continue;
+
+          unsigned liveInArgId = origLiveInArgs.size();
+
+          // whether the livein value has already been initialized
+          if (std::find(origLiveInArgs.begin(), origLiveInArgs.end(), opr) ==
+              origLiveInArgs.end()) {
+            origLiveInArgs.push_back(opr);
+            liveInArgs.push_back({});
+          } else {
+            liveInArgId = std::distance(
+                origLiveInArgs.begin(),
+                std::find(origLiveInArgs.begin(), origLiveInArgs.end(), opr));
+          }
+          if (liveInArgs[liveInArgId].size() == 0)
+            liveInArgs[liveInArgId].push_back({opr, instructions.at(opId).pe});
+
+          llvm::errs() << "EPILOG [" << opr << " -> " << *op << " ]put in "
+                       << schedule.pe << "\n";
+          assignPrerequisite(opr, op, liveInArgs[liveInArgId], builder,
+                             schedule);
+        }
       }
     }
     // the last jump operation does not have a schedule, assign it with the
     // same conditional branch operation
     ScheduleUnit schedule = {endBBTime, termPE, -1};
     solution[blk->getTerminator()] = schedule;
+  }
+
+  // for element pair in liveInArgs, write them to prerequisites
+  for (auto liveInArg : liveInArgs) {
+    for (auto splitVal : liveInArg)
+      prerequisites.push_back(splitVal);
   }
   return success();
 }

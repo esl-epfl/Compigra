@@ -388,6 +388,9 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
         if (user->getBlock() != op->getBlock()) {
           placeExternal = false;
         } else {
+          // not check the back edge
+          if (time >= solution[user].time)
+            placeExternal = false;
           // if during time to solution[user].time - 1, there is operation used
           // pe, it has to be stored in internal register
           for (int t = time; t < solution[user].time; t++) {
@@ -429,7 +432,8 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
       // bool internalBBU
       if (allUserOutside || placeExternal) {
         solution[op].reg = maxReg;
-        llvm::errs() << *op << " -> " << maxReg << "\n";
+        llvm::errs() << *op << " -> " << maxReg << " [" << allUserOutside << " "
+                     << placeExternal << "]\n";
       }
     }
     llvm::errs() << "PE " << pe << " reference done\n";
