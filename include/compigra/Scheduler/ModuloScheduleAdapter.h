@@ -118,8 +118,15 @@ public:
 
   SmallVector<Block *, 4> getPrologAndKernelBlocks();
 
+  // Write the schedule result of the modulo scheduler to solutions, the
+  // execution time is calculated by its basic block start time and the
+  // operation's execution time in the block, the PE is the operation PE, and
+  // the register is only assigned if Rout==maxReg, while the internal register
+  // allocation from the modulo scheduler is dropped because it is useless for
+  // the global register allocation.
   LogicalResult
-  assignScheduleResult(const std::map<int, Instruction> instructions);
+  assignScheduleResult(const std::map<int, Instruction> instructions,
+                       int maxReg);
 
   std::map<Operation *, ScheduleUnit> getSolutions() { return solution; }
 

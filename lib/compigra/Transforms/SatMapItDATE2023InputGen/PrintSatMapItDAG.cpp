@@ -595,7 +595,7 @@ void satmapit::parseLine(const std::string &line,
   inst.name = nameVal;
   inst.time = std::stoi(timeVal);
   inst.pe = std::stoi(peVal);
-  // inst.Rout = std::stoi(RoutVal);
+  inst.Rout = std::stoi(RoutVal);
   // inst.opA = opAVal;
   // inst.opB = opBVal;
 

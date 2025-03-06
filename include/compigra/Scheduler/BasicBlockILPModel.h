@@ -93,11 +93,16 @@ public:
   // `createSchedulerAndSolve` function for runtime efficiency.
   LogicalResult readScheduleResult(const std::string fileName);
 
-  void writeLiveOutResult();
+  void writeKnownResult();
+
+  // if mode == 0, it indenpendently solve the ILP model, if mode == 1, it use
+  // the modulo scheduler result and solve the liveness dependency.
+  void setSolverMode(int mode) { solverMode = mode; }
 
 private:
   // Interface for the the global schduler if the ILP model does not have
   // solution
+  int solverMode = 0;
   unsigned storeAddr;
   FailureStrategy strategy = FailureStrategy::Abort;
   Value spill = nullptr;
@@ -120,6 +125,11 @@ private:
   LogicalResult initVariablesForBlock(GRBModel &model,
                                       std::map<Operation *, GRBVar> &opTimeVar,
                                       std::map<Operation *, GRBVar> &opPeVar);
+
+  LogicalResult
+  createPreScheduleConstraints(GRBModel &model,
+                               const std::map<Operation *, GRBVar> opTimeVar,
+                               const std::map<Operation *, GRBVar> opPeVar);
 
   LogicalResult createLocalDominanceConstraints(
       GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar);

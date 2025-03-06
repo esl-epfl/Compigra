@@ -164,7 +164,7 @@ static LogicalResult preScheduleUsingModuloScheduler(
     //   scheduler.setupLoadForRestriction(newBB, guardStart);
 
     // assign basic block with the schedule result
-    if (failed(adapter.assignScheduleResult(instructions)))
+    if (failed(adapter.assignScheduleResult(instructions, maxReg)))
       return failure();
     auto prereq = adapter.getPrerequisites();
     // print prerequisites
@@ -196,14 +196,16 @@ struct ASMGenTemporalCGRAPass
     Region &region = funcOp.getBody();
     OpBuilder builder(funcOp);
 
-    TemporalCGRAScheduler scheduler(region, 3, nRow, nCol, builder);
+    unsigned maxReg = 3;
+    TemporalCGRAScheduler scheduler(region, maxReg, nRow, nCol, builder);
     scheduler.setReserveMem(mem);
 
     size_t lastSlashPos = outDir.find_last_of("/");
     if (failed(preScheduleUsingModuloScheduler(
             scheduler, funcOp,
             outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
-            msOpt.substr(1, msOpt.size() - 2), region, builder, nRow, 3))) {
+            msOpt.substr(1, msOpt.size() - 2), region, builder, nRow,
+            maxReg))) {
       llvm::errs() << funcOp << "\n";
       return signalPassFailure();
     }
@@ -220,7 +222,7 @@ struct ASMGenTemporalCGRAPass
 
     // assign schedule results and produce assembly
     // scheduler.readScheduleResult("temporalSpatialSchedule.csv");
-    OpenEdgeASMGen asmGen(region, 3, nRow);
+    OpenEdgeASMGen asmGen(region, maxReg, nRow);
     asmGen.setSolution(scheduler.getSolution());
     if (failed(asmGen.allocateRegisters(scheduler.knownRes))) {
       llvm::errs() << "Failed to allocate registers\n";

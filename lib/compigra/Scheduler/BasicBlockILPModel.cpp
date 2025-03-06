@@ -326,7 +326,30 @@ LogicalResult BasicBlockILPModel::createLocalDominanceConstraints(
       if (isa<cgra::ConditionalBranchOp>(userOp) && use.getOperandNumber() >= 2)
         continue;
       model.addConstr(var + 1 <= opTimeVar.at(userOp));
+      model.optimize();
+      if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
+          model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+        llvm::errs() << "Failed to create local dominance constraints for "
+                     << *op << " and " << *userOp << "\n";
+        strategy = FailureStrategy::Abort;
+        return failure();
+      }
     }
+  }
+  return success();
+}
+
+LogicalResult BasicBlockILPModel::createPreScheduleConstraints(
+    GRBModel &model, const std::map<Operation *, GRBVar> opTimeVar,
+    const std::map<Operation *, GRBVar> opPeVar) {
+  for (auto op : scheduleOps) {
+    if (solution.count(op) == 0)
+      continue;
+    auto su = solution.at(op);
+    model.addConstr(opTimeVar.at(op) == su.time);
+    model.addConstr(opPeVar.at(op) == su.pe);
+    llvm::errs() << "Pre-schedule: " << *op << " at [" << su.time << " "
+                 << su.pe << "]\n";
   }
   return success();
 }
@@ -498,6 +521,9 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInInterConstraints(
       model.optimize();
       if (model.get(GRB_IntAttr_Status) != GRB_OPTIMAL &&
           model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
+        llvm::errs() << "Failed to create global internal live in: " << val
+                     << " at " << pe << " for " << *user << "\n";
+        strategy = FailureStrategy::Split;
         spill = val;
         failUser = user;
         return failure();
@@ -515,8 +541,6 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
   unsigned constrId = 0;
   for (auto [val, pe] : liveInExter) {
     for (auto user : val.getUsers()) {
-      llvm::errs() << "Creating global live in for: " << val << " at " << pe
-                   << " for " << *user << "\n";
       if (opPeVar.count(user) == 0)
         continue;
       GRBVar peVar = model.addVar(0, nRow * nCol - 1, 0, GRB_INTEGER);
@@ -532,8 +556,8 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInExterConstraints(
         strategy = FailureStrategy::Split;
         spill = val;
         failUser = nullptr;
-        llvm::errs() << "Failed to create global live in for " << val << " at "
-                     << pe << "\n";
+        llvm::errs() << "Failed to create global external live in for " << val
+                     << " at " << pe << " for " << *user << "\n";
         // store val, replace val with swi value
         return failure();
       }
@@ -649,7 +673,6 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
   for (auto &[val, index] : liveInInter) {
     if (index == UINT32_MAX)
       continue;
-    llvm::errs() << "live in inter: " << val << " " << index << "\n";
     availUse[index] -= 1;
   }
 
@@ -681,7 +704,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
       if (!defOp || opTimeVar.count(defOp) <= 0)
         continue;
 
-      GRBVar pAvail = model.addVar(0, 2, 0, GRB_INTEGER);
+      GRBVar pAvail = model.addVar(0, maxReg - 1, 0, GRB_INTEGER);
       model.addConstr(pAvail == availUse[p]);
       if (failed(limitInternalRegUse(model, opPeVar.at(defOp), p,
                                      accumulatedSum, pAvail))) {
@@ -787,7 +810,7 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   env.set(GRB_IntParam_OutputFlag, 0);
   env.start();
   GRBModel model = GRBModel(env);
-  int time_limit = 1200;
+  int time_limit = 1500;
   model.set(GRB_DoubleParam_TimeLimit, time_limit);
   model.set(GRB_DoubleParam_MIPGap, 0.15);
 
@@ -802,12 +825,17 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   createObjetiveFunction(model, timeVarMap);
 
   // write pre-scheduled result
+  if (solverMode == 1) {
+    createPreScheduleConstraints(model, timeVarMap, peVarMap);
+  }
 
   // THE ORDER OF CREATING CONSTRAINTS CANNOT BE CHANGED, WHICH COULD AFFECT THE
   // FAILURE HANDLER.
   createMemoryConsistencyConstraints(model, timeVarMap);
 
-  createLocalDominanceConstraints(model, timeVarMap);
+  if (failed(createLocalDominanceConstraints(model, timeVarMap)))
+    return failure();
+  llvm::errs() << "Created local dominance constraints\n";
 
   if (failed(createGlobalLiveInInterConstraints(model, timeVarMap, peVarMap)))
     return failure();
@@ -817,22 +845,26 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
                                                  varName)))
     return failure();
   llvm::errs() << "Created global live out inter constraints\n";
-  if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
-    return failure();
-  llvm::errs() << "Created routing constraints\n";
 
-  if (failed(
-          createLocalLivenessConstraints(model, timeVarMap, peVarMap, varName)))
-    return failure();
-  llvm::errs() << "Created local liveness constraints\n";
+  if (solverMode == 0) {
+    if (failed(createRoutingConstraints(model, timeVarMap, peVarMap, varName)))
+      return failure();
+    llvm::errs() << "Created routing constraints\n";
 
-  if (failed(createGlobalLiveInExterConstraints(model, timeVarMap, peVarMap)))
-    return failure();
-  llvm::errs() << "Created global live in exter constraints\n";
+    if (failed(createLocalLivenessConstraints(model, timeVarMap, peVarMap,
+                                              varName)))
+      return failure();
+    llvm::errs() << "Created local liveness constraints\n";
 
-  if (failed(createGlobalLiveOutExterConstraints(model, timeVarMap, peVarMap)))
-    return failure();
-  llvm::errs() << "Created global live out exter constraints\n";
+    if (failed(createGlobalLiveInExterConstraints(model, timeVarMap, peVarMap)))
+      return failure();
+    llvm::errs() << "Created global live in exter constraints\n";
+
+    if (failed(
+            createGlobalLiveOutExterConstraints(model, timeVarMap, peVarMap)))
+      return failure();
+    llvm::errs() << "Created global live out exter constraints\n";
+  }
 
   time_limit = 1200;
   // model.set(GRB_DoubleParam_TimeLimit, time_limit);
@@ -841,17 +873,9 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
   model.set(GRB_DoubleParam_MIPGap, 0.05);
   model.optimize();
 
-  if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL ||
-      model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL) {
-  } else if (model.get(GRB_IntAttr_Status) == GRB_TIME_LIMIT) {
-    int solCount = model.get(GRB_IntAttr_SolCount);
-    if (solCount == 0) {
-      llvm::errs() << "No solution found within " << time_limit << "s\n";
-      strategy = FailureStrategy::Abort;
-      return failure();
-    }
-    // If solCount > 0, continue with partial solution
-  } else {
+  int status = model.get(GRB_IntAttr_Status);
+  bool feasible = (status == GRB_OPTIMAL || status == GRB_SUBOPTIMAL);
+  if (!feasible) {
     llvm::errs() << "Model is infeasible\n";
     return failure();
   }
@@ -907,8 +931,7 @@ void BasicBlockILPModel::writeLiveOutResult(
   }
 }
 
-void BasicBlockILPModel::writeLiveOutResult() {
-  llvm::errs() << "Writing live out result\n";
+void BasicBlockILPModel::writeKnownResult() {
   for (auto &[val, index] : liveOutExter) {
     Operation *defOp = val.getDefiningOp();
     if (defOp && solution.count(defOp) > 0) {
@@ -940,6 +963,7 @@ void BasicBlockILPModel::writeLiveOutResult() {
   }
 
   for (auto &[val, index] : liveInInter) {
+    // if the value has been assigned to a PE, skip
     if (index != UINT32_MAX)
       continue;
     if (isPhiRelatedValue(val)) {
@@ -962,7 +986,6 @@ void BasicBlockILPModel::writeLiveOutResult() {
     for (auto user : val.getUsers()) {
       if (solution.count(user) > 0) {
         index = solution.at(user).pe;
-        llvm::errs() << "LiveInInter: " << val << " " << index << "\n";
         break;
       }
     }

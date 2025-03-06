@@ -311,6 +311,9 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
         llvm::errs() << propagatedVal << " " << propOpId << "\n";
         llvm::errs() << opId << " need propagate: " << propOpId << " "
                      << getLatestIterId(mergedOpMap, propOpId) << "\n";
+        //  add initial value to the block
+        if (getLatestIterId(mergedOpMap, propOpId) == -1)
+          prologOps[-1][propOpId] = opr.getDefiningOp();
         addBlockArgAndPropagate(blockArg.getType(), adaptId, propOpId);
         continue;
       }
@@ -605,20 +608,19 @@ void replaceSuccessor(Block *blk, Block *oldBlk, Block *newBlk) {
   }
 }
 
-void addPropagateValue(Operation *sucTermOp, Operation *propOp,
-                       Block *targetBB) {
+void addPropagateValue(Operation *sucTermOp, Value propVal, Block *targetBB) {
   if (auto br = dyn_cast<cf::BranchOp>(sucTermOp)) {
     if (br.getSuccessor() == targetBB) {
       SmallVector<Value, 4> newOperands(br.getOperands().begin(),
                                         br.getOperands().end());
-      newOperands.push_back(propOp->getResult(0));
+      newOperands.push_back(propVal);
       br.getOperation()->setOperands(newOperands);
     }
   } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(sucTermOp)) {
     if (condBr.getTrueDest() == targetBB)
-      condBr.getTrueDestOperandsMutable().append(propOp->getResult(0));
+      condBr.getTrueDestOperandsMutable().append(propVal);
     else if (condBr.getFalseDest() == targetBB)
-      condBr.getFalseDestOperandsMutable().append(propOp->getResult(0));
+      condBr.getFalseDestOperandsMutable().append(propVal);
   }
 }
 
@@ -727,13 +729,21 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   for (auto [propKey1, propKey2] : propOpsToEpilog) {
     Operation *propOp;
     propOp = prologOps[propKey1][propKey2];
-    addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopQuit);
+    addPropagateValue(propOp->getBlock()->getTerminator(), propOp->getResult(0),
+                      loopQuit);
   }
+
   // Propagate the values for the kernel block
   for (auto [propKey1, propKey2] : propOpsToProlog) {
-    Operation *propOp;
-    propOp = prologOps[propKey1][propKey2];
-    addPropagateValue(propOp->getBlock()->getTerminator(), propOp, loopCond);
+    // Operation *propOp;
+    Value propVal;
+    if (propKey2 >= 0) {
+      propVal = prologOps[propKey1][propKey2]->getResult(0);
+    } else {
+      // get the initial value
+    }
+    addPropagateValue(propVal.getParentBlock()->getTerminator(), propVal,
+                      loopCond);
   }
   removeTempletBlock();
   removeUselessBlockArg();
@@ -869,7 +879,7 @@ static void assignPrerequisite(Value val, Operation *consumerOp,
 }
 
 LogicalResult ModuloScheduleAdapter::assignScheduleResult(
-    const std::map<int, Instruction> instructions) {
+    const std::map<int, Instruction> instructions, int maxReg) {
   // for operation in prologOps, its execution time is exectTime[opId] +
   // iterId * II
   int termPE = -1;
@@ -884,7 +894,8 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
   for (auto [iterId, opMap] : prologOps) {
     for (auto [opId, op] : opMap) {
       auto execTimeInBB = execTime.at(opId) + iterId * II;
-      ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, -1};
+      int reg = instructions.at(opId).Rout == maxReg ? maxReg : -1;
+      ScheduleUnit schedule = {execTimeInBB, instructions.at(opId).pe, reg};
       solution[op] = schedule;
       if (opId == loopOpNum - 1)
         termPE = instructions.at(opId).pe;

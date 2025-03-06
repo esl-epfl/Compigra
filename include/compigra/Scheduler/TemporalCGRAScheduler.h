@@ -130,8 +130,8 @@ private:
                           const liveVec liveOutInter, const liveVec liveInExter,
                           const liveVec liveInInter);
 
-  std::optional<cgra::LwiOp>
-  existAvailableLoad(unsigned memLoc, Operation *failUser, Block *loadBlk);
+  // std::optional<cgra::LwiOp>
+  // existAvailableLoad(unsigned memLoc, Operation *failUser, Block *loadBlk);
 
   /// Each basic block has its own ILP model to schedule the operations. which
   /// is assumed to start from T = 0. To fullfill the temporal spatial schedule,
@@ -166,7 +166,7 @@ private:
   /// Insert a load operation from `addr`. This load operation is placed after
   /// refOp
   cgra::LwiOp insertLoadOp(Operation *refOp, unsigned addr, Value origVal,
-                           unsigned opIndex = -1, Block *customBBLoc = nullptr);
+                           unsigned opIndex = -1, bool forcePlacement = false);
 
   /// If the block has been scheduled, place the lwi/swi operation to the
   /// block's original schedule result without rerun its ILP model.
@@ -176,8 +176,8 @@ private:
   void placeLwiOpToBlock(Block *block, unsigned seekPE, int seekTime,
                          cgra::LwiOp lwiOp, bool onlyPE = false);
 
-  LogicalResult placeLwiOpToBlock(Block *block, BlockArgument arg,
-                                  cgra::LwiOp lwiOp, int time = 0);
+  void placeLwiOpToBlock(Block *block, BlockArgument arg, cgra::LwiOp lwiOp,
+                         unsigned seekPE);
 
   void placeSwiOpToBlock(Block *block, cgra::SwiOp swiOp);
 
