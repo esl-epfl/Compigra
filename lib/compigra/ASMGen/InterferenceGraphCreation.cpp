@@ -71,7 +71,7 @@ SmallVector<Value, 2> getSrcOprandsOfPhi(BlockArgument arg, bool eraseUse) {
         // remove argIndex from the false operand
         if (eraseUse)
           branchOp.eraseOperand(argIndex + 2);
-      } else {
+      } else if (blk == branchOp.getSuccessor(1)) {
         srcOprands.push_back(branchOp.getFalseOperand(argIndex));
         if (eraseUse)
           branchOp.eraseOperand(argIndex + 2 + branchOp.getNumTrueOperands());

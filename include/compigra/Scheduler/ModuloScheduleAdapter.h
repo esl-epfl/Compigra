@@ -126,7 +126,7 @@ public:
   // the global register allocation.
   LogicalResult
   assignScheduleResult(const std::map<int, Instruction> instructions,
-                       int maxReg);
+                       int maxReg, int maxPE);
 
   std::map<Operation *, ScheduleUnit> getSolutions() { return solution; }
 

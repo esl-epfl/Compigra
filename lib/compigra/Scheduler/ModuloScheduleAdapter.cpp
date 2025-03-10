@@ -228,6 +228,27 @@ getLatestIterId(const std::map<int, std::map<int, Operation *>> opMap, int opId,
   return getExisted ? iterId - 1 : iterId;
 }
 
+Operation *getInitialValue(Value opr, Block *initBlock = nullptr) {
+  if (opr.getDefiningOp())
+    return opr.getDefiningOp();
+
+  if (auto arg = dyn_cast<BlockArgument>(opr)) {
+
+    auto succ = arg.getOwner()->getSuccessors().front();
+    if (initBlock) {
+      succ = initBlock;
+    }
+    auto term = succ->getTerminator();
+    if (auto br = dyn_cast<cf::BranchOp>(term))
+      return getInitialValue(br.getOperand(arg.getArgNumber()));
+    if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(term)) {
+      if (succ == condBr.getTrueDest())
+        return getInitialValue(condBr.getTrueOperand(arg.getArgNumber()));
+      return getInitialValue(condBr.getFalseOperand(arg.getArgNumber()));
+    }
+  }
+}
+
 LogicalResult ModuloScheduleAdapter::updateOperands(
     int bbId, int iterId, int opId, Operation *adaptOp,
     const std::map<int, std::map<int, Operation *>> prologOpMap,
@@ -308,12 +329,14 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
           adaptOp->setOperand(adaptId, curDefOp->getResult(0));
           continue;
         }
-        llvm::errs() << propagatedVal << " " << propOpId << "\n";
-        llvm::errs() << opId << " need propagate: " << propOpId << " "
-                     << getLatestIterId(mergedOpMap, propOpId) << "\n";
         //  add initial value to the block
-        if (getLatestIterId(mergedOpMap, propOpId) == -1)
-          prologOps[-1][propOpId] = opr.getDefiningOp();
+        if (getLatestIterId(mergedOpMap, propOpId) == -1) {
+          auto corrArg = isa<BlockArgument>(opr)
+                             ? startBlock->getArgument(
+                                   opr.cast<BlockArgument>().getArgNumber())
+                             : opr;
+          prologOps[-1][propOpId] = getInitialValue(corrArg, initBlock);
+        }
         addBlockArgAndPropagate(blockArg.getType(), adaptId, propOpId);
         continue;
       }
@@ -556,28 +579,30 @@ LogicalResult ModuloScheduleAdapter::completeUnexecutedOperationsInBB(
   std::map<int, std::map<int, Operation *>> epilogOps;
   for (auto [iterId, opMap] : executedOpMap) {
     if (iterId > termIter)
-      break;
+      continue;
+
     for (unsigned opId = 0; opId < loopOpNum - 1; ++opId) {
-      if (opMap.count(opId) == 0) {
-        // create the operation in the block
-        builder.setInsertionPointToEnd(blk);
-        Operation *op = builder.clone(*getOp(loopOpList, opId));
-        std::vector<std::pair<int, int>> propagatedOps;
-        if (failed(updateOperands(bbId, iterId, opId, op, executedOpMap,
-                                  epilogOps, propagatedOps, true)))
-          return failure();
-        epilogOps[iterId][opId] = op;
-        // merge propagatedOps to the propOpSets
-        propOpSets.insert(propOpSets.end(), propagatedOps.begin(),
-                          propagatedOps.end());
-      }
+      if (opMap.count(opId) != 0)
+        continue;
+
+      // create the operation in the block
+      builder.setInsertionPointToEnd(blk);
+      Operation *op = builder.clone(*getOp(loopOpList, opId));
+      std::vector<std::pair<int, int>> propagatedOps;
+      if (failed(updateOperands(bbId, iterId, opId, op, executedOpMap,
+                                epilogOps, propagatedOps, true)))
+        return failure();
+      epilogOps[iterId][opId] = op;
+      // merge propagatedOps to the propOpSets
+      propOpSets.insert(propOpSets.end(), propagatedOps.begin(),
+                        propagatedOps.end());
     }
   }
 
   // the epilog block would directly jump to the fini block
   // insert an unconditional branch to the start of the block
   builder.setInsertionPointToEnd(blk);
-  SmallVector<Value> BlockArgument;
+  SmallVector<Value> jumpArgs;
   for (auto arg : finiBlock->getArguments()) {
     // get the opid from the template terminator
     auto opId =
@@ -585,10 +610,16 @@ LogicalResult ModuloScheduleAdapter::completeUnexecutedOperationsInBB(
                                                finiBlock, arg.getArgNumber())
                                 .getDefiningOp());
     auto iterId = getLatestIterId(epilogOps, opId);
-    BlockArgument.push_back(epilogOps[iterId][opId]->getResult(0));
+    if (epilogOps.count(iterId) && epilogOps[iterId].count(opId)) {
+      jumpArgs.push_back(epilogOps[iterId][opId]->getResult(0));
+    } else {
+      // seek the latest iteration id from the prolog block
+      iterId = getLatestIterId(prologOps, opId);
+      jumpArgs.push_back(prologOps[iterId][opId]->getResult(0));
+    }
   }
   builder.create<cf::BranchOp>(blk->getOperations().back().getLoc(), finiBlock,
-                               BlockArgument);
+                               jumpArgs);
   epilogOpsBB[blk] = epilogOps;
   return success();
 }
@@ -630,19 +661,19 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   Block *loopCond = nullptr;
   Block *loopQuit = finiBlock;
 
-  auto startBlk = builder.createBlock(templateBlock);
-  curBlk = startBlk;
+  startBlock = builder.createBlock(templateBlock);
+  curBlk = startBlock;
   // adapt the initBlock to the start block
-  replaceSuccessor(initBlock, templateBlock, startBlk);
+  replaceSuccessor(initBlock, templateBlock, startBlock);
 
   // Initialize the block arguments to match the init block value
   // propagation
   for (auto arg : templateBlock->getArguments())
-    startBlk->addArgument(arg.getType(), arg.getLoc());
+    startBlock->addArgument(arg.getType(), arg.getLoc());
   std::vector<std::pair<int, int>> emptySet;
-  startBlock = startBlk;
-  newBlocks.push_back(startBlk);
-  initOperationsInBB(startBlk, 0, timeSlotsOfBBs[0], emptySet);
+  // startBlock = startBlk;
+  newBlocks.push_back(startBlock);
+  initOperationsInBB(startBlock, 0, timeSlotsOfBBs[0], emptySet);
 
   std::vector<std::pair<int, int>> propOpsToEpilog;
   std::vector<std::pair<int, int>> propOpsToProlog;
@@ -651,6 +682,7 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
     // already created the start block
     if (bbId == 0)
       continue;
+
     auto termIterId = getLatestIterId(prologOps, loopOpNum - 1, false);
 
     // get condition to loopCond and loopQuit
@@ -729,22 +761,22 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   for (auto [propKey1, propKey2] : propOpsToEpilog) {
     Operation *propOp;
     propOp = prologOps[propKey1][propKey2];
-    addPropagateValue(propOp->getBlock()->getTerminator(), propOp->getResult(0),
-                      loopQuit);
+    Operation *controlOp = propOp->getBlock()->getTerminator();
+    if (propKey1 == -1)
+      controlOp = newBlocks.end()[-3]->getTerminator();
+    addPropagateValue(controlOp, propOp->getResult(0), loopQuit);
   }
 
   // Propagate the values for the kernel block
   for (auto [propKey1, propKey2] : propOpsToProlog) {
     // Operation *propOp;
-    Value propVal;
-    if (propKey2 >= 0) {
-      propVal = prologOps[propKey1][propKey2]->getResult(0);
-    } else {
-      // get the initial value
-    }
-    addPropagateValue(propVal.getParentBlock()->getTerminator(), propVal,
-                      loopCond);
+    Operation *propOp = prologOps[propKey1][propKey2];
+    Operation *controlOp = propOp->getBlock()->getTerminator();
+    if (propKey1 == -1)
+      controlOp = newBlocks.end()[-3]->getTerminator();
+    addPropagateValue(controlOp, propOp->getResult(0), loopCond);
   }
+
   removeTempletBlock();
   removeUselessBlockArg();
   return success();
@@ -878,8 +910,30 @@ static void assignPrerequisite(Value val, Operation *consumerOp,
   existArgs.push_back({newOp->getResult(0), schedule.pe});
 }
 
+static int seekAvailableSlot(
+    const std::map<mlir::Operation *, compigra::ScheduleUnit> solution,
+    Operation *assginOp, int preferPE, int maxPE, int time) {
+  bool usePreferPE = true;
+  std::vector<int> usedPEs;
+  for (auto [op, schedule] : solution) {
+    if (op->getBlock() == assginOp->getBlock() && schedule.time == time) {
+      usedPEs.push_back(schedule.pe);
+      if (schedule.pe == preferPE)
+        usePreferPE = false;
+    }
+  }
+  if (usePreferPE)
+    return preferPE;
+
+  for (int i = 0; i < maxPE; ++i)
+    if (std::find(usedPEs.begin(), usedPEs.end(), i) == usedPEs.end())
+      return i;
+
+  return -1;
+}
+
 LogicalResult ModuloScheduleAdapter::assignScheduleResult(
-    const std::map<int, Instruction> instructions, int maxReg) {
+    const std::map<int, Instruction> instructions, int maxReg, int maxPE) {
   // for operation in prologOps, its execution time is exectTime[opId] +
   // iterId * II
   int termPE = -1;
@@ -892,6 +946,8 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
   // their placement.
   std::vector<std::vector<std::pair<Value, int>>> liveInArgs;
   for (auto [iterId, opMap] : prologOps) {
+    if (iterId == -1)
+      continue;
     for (auto [opId, op] : opMap) {
       auto execTimeInBB = execTime.at(opId) + iterId * II;
       int reg = instructions.at(opId).Rout == maxReg ? maxReg : -1;
@@ -937,6 +993,8 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
     int endBBTime;
 
     for (auto [iterId, ops] : opMap) {
+      if (iterId == -1)
+        continue;
       // get earliest time of ops in solution
       int iterStartTime = INT_MAX;
       for (auto [opId, op] : prologOps.at(iterId)) {
@@ -982,8 +1040,6 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
           if (liveInArgs[liveInArgId].size() == 0)
             liveInArgs[liveInArgId].push_back({opr, instructions.at(opId).pe});
 
-          llvm::errs() << "EPILOG [" << opr << " -> " << *op << " ]put in "
-                       << schedule.pe << "\n";
           assignPrerequisite(opr, op, liveInArgs[liveInArgId], builder,
                              schedule);
         }
@@ -991,7 +1047,11 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
     }
     // the last jump operation does not have a schedule, assign it with the
     // same conditional branch operation
-    ScheduleUnit schedule = {endBBTime, termPE, -1};
+    // if at endBBTime, termPE is free, assign it to termPE, otherwise, assign a
+    // free PE
+    int assignPE = seekAvailableSlot(solution, blk->getTerminator(), termPE,
+                                     maxPE, endBBTime);
+    ScheduleUnit schedule = {endBBTime, assignPE, -1};
     solution[blk->getTerminator()] = schedule;
   }
 

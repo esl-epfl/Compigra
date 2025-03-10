@@ -38,6 +38,8 @@ void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals) {
 
   if (val.isa<BlockArgument>()) {
     relatedVals.insert(val);
+
+    // Get the related values from the predecessor blocks
     unsigned ind = val.cast<BlockArgument>().getArgNumber();
     Block *block = val.getParentBlock();
     for (Block *pred : block->getPredecessors()) {
@@ -54,6 +56,30 @@ void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals) {
       relatedVals.insert(operand);
       // recursively get the related values
       getAllPhiRelatedValues(operand, relatedVals);
+    }
+
+    // Get the related values from the successor blocks
+    // if val is used as branch argument
+    for (auto &use : val.getUses()) {
+      if (auto br = dyn_cast<cf::BranchOp>(use.getOwner())) {
+        getAllPhiRelatedValues(
+            br.getSuccessor()->getArgument(use.getOperandNumber()),
+            relatedVals);
+      }
+      if (auto cbr = dyn_cast<cgra::ConditionalBranchOp>(use.getOwner())) {
+        if (use.getOperandNumber() < 2)
+          continue;
+        if (use.getOperandNumber() < 2 + cbr.getNumTrueDestOperands()) {
+          getAllPhiRelatedValues(
+              cbr.getTrueDest()->getArgument(use.getOperandNumber() - 2),
+              relatedVals);
+        } else {
+          getAllPhiRelatedValues(
+              cbr.getFalseDest()->getArgument(use.getOperandNumber() -
+                                              cbr.getNumTrueDestOperands() - 2),
+              relatedVals);
+        }
+      }
     }
     return;
   }
