@@ -35,7 +35,7 @@ def OpenEdgeASMGen : Pass<"gen-openedge-asm"> {
 def ASMGenTemporalCGRA : Pass<"gen-temporal-cgra-asm"> {
   let summary = "Generate temporal cgra code";
   let constructor = "compigra::createASMGenTemporalCGRA()";
-  let dependentDialects = ["cgra::CgraDialect"];
+  let dependentDialects = ["cgra::CgraDialect", "cf::ControlFlowDialect"];
   let options = [
     Option<"nRow", "row", "int", "", "  Number of PE in one row">,
     Option<"nCol", "col", "int", "", "  Number of PE in one column">,

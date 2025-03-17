@@ -114,7 +114,8 @@ static LogicalResult preScheduleUsingModuloScheduler(
                           "/out_raw_bb" + std::to_string(bbInd) + ".sat\n";
 
     // call the python code script to solve the MS
-    llvm::errs() << "Running the SAT-Solver\n";
+    llvm::errs() << "Running the SAT-Solver for bb: " << bbInd << "\n";
+
     int result = system(command.c_str());
     if (result != 0)
       continue;
@@ -149,28 +150,15 @@ static LogicalResult preScheduleUsingModuloScheduler(
                                   basicBlocksWithOpIds);
     if (failed(adapter.init()))
       continue;
-    llvm::errs() << "Adapt the " << bbInd
-                 << "' th loop block with the schedule result\n";
 
     if (failed(adapter.adaptCFGWithLoopMS()))
       return failure();
 
-    // DFG split inside the scheduled block is disabled, which must be performed
-    // in its surrouding blocks;
-    auto guardStart = adapter.initBlock;
-    auto guardEnd = adapter.finiBlock;
-
-    // for (auto newBB : adapter.getPrologAndKernelBlocks())
-    //   scheduler.setupLoadForRestriction(newBB, guardStart);
-
     // assign basic block with the schedule result
-    if (failed(adapter.assignScheduleResult(instructions, maxReg)))
+    if (failed(adapter.assignScheduleResult(instructions, maxReg,
+                                            peGridSize * peGridSize)))
       return failure();
     auto prereq = adapter.getPrerequisites();
-    // print prerequisites
-    for (auto [val, pe] : prereq) {
-      llvm::errs() << "Prerequisite: " << val << " " << pe << "\n";
-    }
     scheduler.setupPrerequisite(prereq);
 
     auto sol = adapter.getSolutions();
@@ -201,7 +189,9 @@ struct ASMGenTemporalCGRAPass
     scheduler.setReserveMem(mem);
 
     size_t lastSlashPos = outDir.find_last_of("/");
-    if (failed(preScheduleUsingModuloScheduler(
+    // if msOpt is empty, skip the pre-schedule
+    if (!msOpt.empty() &&
+        failed(preScheduleUsingModuloScheduler(
             scheduler, funcOp,
             outDir.substr(0, lastSlashPos) + "/IR_opt/satmapit",
             msOpt.substr(1, msOpt.size() - 2), region, builder, nRow,
@@ -215,7 +205,6 @@ struct ASMGenTemporalCGRAPass
 
     if (failed(scheduler.createSchedulerAndSolve())) {
       llvm::errs() << "Failed to create scheduler and solve\n";
-      return;
       return signalPassFailure();
     }
     // return;

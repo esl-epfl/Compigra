@@ -150,12 +150,9 @@ void getLimitationUseWithPhiNode(
         usedColors.insert(graph.colorMap[u]);
     }
 
-    // allocate the register for the phi node
-    char color = allocatePhysicalRegOnIG(graph.adjList[node], graph.colorMap,
-                                         usedColors, maxReg);
-    llvm::errs() << "PHI NODE: " << node << " set color "
-                 << std::to_string(color) << "\n";
+    char color;
     std::unordered_set<int> defNodes;
+    bool isPreColored = false;
     for (auto defOp : defOps) {
       // find the corresponding value in the graph
       int defNode = getValueIndex(defOp->getResult(0), opMap);
@@ -166,10 +163,23 @@ void getLimitationUseWithPhiNode(
       // the same
       if (graph.colorMap.find(defNode) != graph.colorMap.end()) {
         color = graph.colorMap[defNode];
+        isPreColored = true;
         llvm::errs() << "DEF NODE: " << defNode << " set color "
                      << std::to_string(color) << "\n";
+        break;
+      }
+
+      // limit used colors for the defOp
+      for (auto u : graph.adjList[defNode]) {
+        if (graph.colorMap.find(u) != graph.colorMap.end())
+          usedColors.insert(graph.colorMap[u]);
       }
     }
+
+    // allocate the register for the phi node
+    if (!isPreColored)
+      color = allocatePhysicalRegOnIG(graph.adjList[node], graph.colorMap,
+                                      usedColors, maxReg);
     // limit the coloring selection of the phi node
     // rewrite all value in limitedUse
     for (auto v : defNodes) {
@@ -177,7 +187,9 @@ void getLimitationUseWithPhiNode(
       llvm::errs() << v << ": " << std::to_string(color) << "\n";
       // limitedUse[v] = color;
     }
-    // limitedUse[node] = color;
+
+    llvm::errs() << "PHI NODE: " << node << " set color "
+                 << std::to_string(color) << "\n";
     graph.colorMap[node] = color;
   }
   // return limitedUse;

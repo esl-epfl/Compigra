@@ -138,6 +138,17 @@ BlockArgument getCntBlockArgument(Value val, Block *succBlk) {
   return nullptr;
 }
 
+static bool earlitestOpInBlock(const std::map<int, mlir::Operation *> opList,
+                               Operation *op) {
+  auto block = op->getBlock();
+  // detect whether the key for op is the earlitest in the block
+  for (auto it = opList.begin(); it != opList.end(); ++it) {
+    if (it->second->getBlock() == block)
+      return it->second == op;
+  }
+  return false;
+}
+
 InterferenceGraph<int>
 createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
                         std::map<int, std::pair<Operation *, Value>> &defMap,
@@ -223,9 +234,6 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
           if (liveIn.find(succ) == liveIn.end())
             continue;
           for (auto live : liveIn[succ]) {
-            // don't add the result operators from other PE to liveOut
-            // if (!graph.needColor(live))
-            //   continue;
             if (liveOut[op].find(live) == liveOut[op].end()) {
               changed = true;
               liveOut[op].insert(live);
@@ -241,11 +249,17 @@ createInterferenceGraph(std::map<int, mlir::Operation *> &opList,
       else
         opInd = getValueIndex(op->getResult(0), defMap);
       std::unordered_set<int> newLiveIn = use[opInd];
-      for (auto v : liveOut[op])
-        // if (def[op].find(v) == def[op].end())
-        //   newLiveIn.insert(v);
+      for (auto v : liveOut[op]) {
+        // if opInd defines v, skip
+        if (isa<BlockArgument>(defMap[v].second)) {
+          SetVector<mlir::Value> relatedVals;
+          getAllPhiRelatedValues(defMap[v].second, relatedVals);
+          if (op->getNumResults() > 0 && relatedVals.count(op->getResult(0)))
+            continue;
+        }
         if (v != opInd)
           newLiveIn.insert(v);
+      }
 
       // check whether liveIn is changed
       if (!equalValueSet(newLiveIn, liveIn[op])) {
