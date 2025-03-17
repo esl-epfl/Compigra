@@ -272,14 +272,6 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
   auto addBlockArgAndPropagate = [&](Type argType, int operandId,
                                      int propOpId) {
     auto src1 = getLatestIterId(mergedOpMap, propOpId);
-
-    // auto it = std::find(propagatedOps.begin(), propagatedOps.end(),
-    //                     std::make_pair(src1, propOpId));
-    // if (it != propagatedOps.end()) {
-    //   int index = std::distance(propagatedOps.begin(), it);
-    //   adaptOp->setOperand(operandId, blk->getArguments()[index]);
-    //   return;
-    // }
     Location loc = blk->getOperations().empty()
                        ? blk->getPrevNode()->getTerminator()->getLoc()
                        : blk->getOperations().front().getLoc();
@@ -291,6 +283,7 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
     propagatedOps.push_back({src1 + 1, propOpId});
   };
 
+  // Helper function to get the true operand of a conditional branch
   auto getTemplateTrueOperand = [&](Operation *op, unsigned argId) {
     if (auto condBr = dyn_cast_or_null<cgra::ConditionalBranchOp>(op))
       return condBr.getTrueOperand(argId);
@@ -311,9 +304,19 @@ LogicalResult ModuloScheduleAdapter::updateOperands(
         // get the last iteration id
         auto propagatedVal =
             getTemplateTrueOperand(templateBlock->getTerminator(), argInd);
-        auto op = opMap.at(iterId - 1)
-                      .at(getOpId(loopOpList, propagatedVal.getDefiningOp()));
-        adaptOp->setOperand(adaptId, op->getResult(0));
+        auto propOpId = getOpId(loopOpList, propagatedVal.getDefiningOp());
+
+        if (opMap.count(iterId - 1) && opMap.at(iterId - 1).count(propOpId)) {
+          auto op = opMap.at(iterId - 1)
+                        .at(getOpId(loopOpList, propagatedVal.getDefiningOp()));
+          adaptOp->setOperand(adaptId, op->getResult(0));
+        } else if (newCreatedOps.count(iterId - 1) &&
+                   newCreatedOps.at(iterId - 1).count(propOpId)) {
+          auto op = newCreatedOps.at(iterId - 1).at(propOpId);
+          adaptOp->setOperand(adaptId, op->getResult(0));
+        } else {
+          return failure();
+        }
         continue;
       }
 
@@ -1010,8 +1013,8 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
 
         // assign the live-in value
         for (auto opr : op->getOperands()) {
-          // if the operand has been resolved by the schedule solution, no need
-          // to write them to the prerequisites
+          // if the operand has been resolved by the schedule solution, no
+          // need to write them to the prerequisites
           if (std::find(newBlocks.begin(), newBlocks.end(),
                         opr.getParentBlock()) != newBlocks.end())
             continue;
@@ -1047,8 +1050,8 @@ LogicalResult ModuloScheduleAdapter::assignScheduleResult(
     }
     // the last jump operation does not have a schedule, assign it with the
     // same conditional branch operation
-    // if at endBBTime, termPE is free, assign it to termPE, otherwise, assign a
-    // free PE
+    // if at endBBTime, termPE is free, assign it to termPE, otherwise, assign
+    // a free PE
     int assignPE = seekAvailableSlot(solution, blk->getTerminator(), termPE,
                                      maxPE, endBBTime);
     ScheduleUnit schedule = {endBBTime, assignPE, -1};

@@ -348,8 +348,6 @@ LogicalResult BasicBlockILPModel::createPreScheduleConstraints(
     auto su = solution.at(op);
     model.addConstr(opTimeVar.at(op) == su.time);
     model.addConstr(opPeVar.at(op) == su.pe);
-    llvm::errs() << "Pre-schedule: " << *op << " at [" << su.time << " "
-                 << su.pe << "]\n";
   }
   return success();
 }
@@ -523,7 +521,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveInInterConstraints(
           model.get(GRB_IntAttr_Status) != GRB_SUBOPTIMAL) {
         llvm::errs() << "Failed to create global internal live in: " << val
                      << " at " << pe << " for " << *user << "\n";
-        strategy = FailureStrategy::Split;
+        // strategy = FailureStrategy::Split;
         spill = val;
         failUser = user;
         return failure();
@@ -593,9 +591,15 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
     //   continue;
     std::set<Operation *> producers;
     for (auto &opr : consumer->getOpOperands()) {
-      // if (isa<cgra::ConditionalBranchOp>(consumer) &&
-      //     opr.getOperandNumber() >= 2)
-      //   continue;
+      if (isa<cgra::ConditionalBranchOp>(consumer) &&
+          opr.getOperandNumber() >= 2) {
+        // if it is internal live out, skip
+        auto it =
+            std::find_if(liveOutInter.begin(), liveOutInter.end(),
+                         [&](auto pair) { return pair.first == opr.get(); });
+        if (it != liveOutInter.end())
+          continue;
+      }
       auto opVal = opr.get();
       auto defOp = opVal.getDefiningOp();
       if (defOp && opPeVar.count(defOp) > 0)
@@ -608,7 +612,7 @@ LogicalResult BasicBlockILPModel::createLocalLivenessConstraints(
               isa<cgra::ConditionalBranchOp>(consumer), check))) {
         llvm::errs() << "Failed to create local liveness of " << *prodOp
                      << " for " << *consumer << "\n";
-        // strategy = FailureStrategy::Split;
+        strategy = FailureStrategy::Split;
         spill = prodOp->getResult(0);
         failUser = consumer;
         checkptr = consumer;
@@ -669,7 +673,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
     const std::map<Operation *, GRBVar> opPeVar,
     const std::map<Operation *, std::string> varName) {
   // the inter value should be distributed among the PEs
-  std::vector<int> availUse(nRow * nCol, maxReg - 1);
+  std::vector<int> availUse(nRow * nCol, maxReg);
   for (auto &[val, index] : liveInInter) {
     if (index == UINT32_MAX)
       continue;
@@ -704,7 +708,7 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutInterConstraints(
       if (!defOp || opTimeVar.count(defOp) <= 0)
         continue;
 
-      GRBVar pAvail = model.addVar(0, maxReg - 1, 0, GRB_INTEGER);
+      GRBVar pAvail = model.addVar(0, maxReg, 0, GRB_INTEGER);
       model.addConstr(pAvail == availUse[p]);
       if (failed(limitInternalRegUse(model, opPeVar.at(defOp), p,
                                      accumulatedSum, pAvail))) {
@@ -787,8 +791,14 @@ LogicalResult BasicBlockILPModel::createObjetiveFunction(
 
 void BasicBlockILPModel::setupPreScheduleResult(
     const std::map<Operation *, ScheduleUnit> solution) {
+  // shift the solution to start from min (sol.time, 0)
+  int minTime = INT_MAX;
   for (auto [op, su] : solution) {
-    this->solution[op] = {su.time, su.pe};
+    minTime = std::min(minTime, su.time);
+  }
+  int shift = std::max(0, -minTime);
+  for (auto [op, su] : solution) {
+    this->solution[op] = {su.time + shift, su.pe};
   }
 }
 
@@ -831,7 +841,8 @@ LogicalResult BasicBlockILPModel::createSchedulerAndSolve() {
 
   // THE ORDER OF CREATING CONSTRAINTS CANNOT BE CHANGED, WHICH COULD AFFECT THE
   // FAILURE HANDLER.
-  createMemoryConsistencyConstraints(model, timeVarMap);
+  if (solverMode == 0)
+    createMemoryConsistencyConstraints(model, timeVarMap);
 
   if (failed(createLocalDominanceConstraints(model, timeVarMap)))
     return failure();
