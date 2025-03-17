@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Transforms/CfFixIndexWidth.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Value.h"
@@ -109,6 +110,8 @@ struct CfFixIndexWidthPass
 
   void runOnOperation() override {
     OpBuilder builder(&getContext());
+    ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+    auto funcOp = *modOp.getOps<func::FuncOp>().begin();
 
     // set every operation type to int32
     std::vector<Operation *> ops;
@@ -118,7 +121,13 @@ struct CfFixIndexWidthPass
         return signalPassFailure();
     }
 
-    ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
+    // revise the block argument type to desired bitwidth
+    for (auto &blk : funcOp.getBlocks()) {
+      for (auto arg : blk.getArguments())
+        if (arg.getType().isIntOrIndex())
+          arg.setType(IntegerType::get(arg.getContext(), bitwidth));
+    }
+
     MLIRContext *ctx = &getContext();
     RewritePatternSet patterns{ctx};
     OpenEdgeHWTarget target(ctx);
@@ -129,6 +138,7 @@ struct CfFixIndexWidthPass
 
     if (failed(applyPartialConversion(modOp, target, std::move(patterns))))
       signalPassFailure();
+    llvm::errs() << funcOp << "\n";
   }
 };
 

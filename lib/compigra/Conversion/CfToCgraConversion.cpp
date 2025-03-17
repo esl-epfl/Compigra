@@ -160,6 +160,42 @@ static cgra::CondBrPredicate getCgraBrPredicate(arith::CmpIPredicate pred,
   }
 }
 
+// static LogicalResult replaceExistingSelectOp(func::FuncOp funcOp) {
+//   for (auto selectOp :
+//        llvm::make_early_inc_range(funcOp.getOps<arith::SelectOp>())) {
+//     OpBuilder builder(selectOp);
+//     auto trueVal = selectOp.getTrueValue();
+//     auto falseVal = selectOp.getFalseValue();
+//     auto cond = selectOp.getCondition();
+//     auto newSelectOp = builder.create<cgra::BzfaOp>(
+//         selectOp.getLoc(), selectOp->getResult(0).getType(), cond,
+//         SmallVector<Value>({falseVal, trueVal}));
+//     selectOp.replaceAllUsesWith(newSelectOp->getResult(0));
+//     selectOp.erase();
+//   }
+//   return success();
+// }
+
+/// Lower arith::SelectOp to cgra::BzfaOp
+struct ArithSelectOpConversion : OpConversionPattern<arith::SelectOp> {
+  using OpConversionPattern<arith::SelectOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(arith::SelectOp selectOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto trueVal = selectOp.getTrueValue();
+    auto falseVal = selectOp.getFalseValue();
+    auto cond = selectOp.getCondition();
+
+    // replace arith.select with cgra.bzfa
+    rewriter.replaceOpWithNewOp<cgra::BzfaOp>(
+        selectOp, selectOp->getResult(0).getType(), cond,
+        SmallVector<Value>({falseVal, trueVal}));
+
+    return success();
+  }
+};
+
 /// Lower cf::CondBranchOp to cgra::CondBranchOp
 struct CfCondBrOpConversion : OpConversionPattern<cf::CondBranchOp> {
   using OpConversionPattern<cf::CondBranchOp>::OpConversionPattern;
@@ -589,6 +625,7 @@ void compigra::populateCfToCgraConversionPatterns(
     DenseMap<Operation *, SmallVector<Operation *>> &offValMap) {
   patterns.add<CfCondBrOpConversion>(patterns.getContext());
   patterns.add<ArithCmpIOpConversion>(patterns.getContext());
+  patterns.add<ArithSelectOpConversion>(patterns.getContext());
   patterns.add<MemRefRWOpConversion<memref::LoadOp>,
                MemRefRWOpConversion<memref::StoreOp>>(
       patterns.getContext(), constAddr, globalConstAddrs, offValMap);
@@ -618,6 +655,7 @@ void CfToCgraConversionPass::runOnOperation() {
   target.addIllegalOp<cf::CondBranchOp>();
   target.addIllegalOp<memref::StoreOp>();
   target.addIllegalOp<memref::GetGlobalOp>();
+  target.addIllegalOp<arith::SelectOp>();
 
   target.addLegalOp<cgra::ConditionalBranchOp>();
   target.addLegalOp<cgra::LwiOp>();

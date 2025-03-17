@@ -449,7 +449,7 @@ ParseResult BsfaOp::parse(OpAsmParser &parser, OperationState &result) {
   // assign the same type to all operands
   SmallVector<Type, 3> dataOperandsTypes;
   dataOperandsTypes.assign(2, dataType);
-  dataOperandsTypes.push_back(selectType);
+  dataOperandsTypes.insert(dataOperandsTypes.begin(), selectType);
 
   llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
   result.addTypes(dataType);
