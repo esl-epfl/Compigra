@@ -160,22 +160,6 @@ static cgra::CondBrPredicate getCgraBrPredicate(arith::CmpIPredicate pred,
   }
 }
 
-// static LogicalResult replaceExistingSelectOp(func::FuncOp funcOp) {
-//   for (auto selectOp :
-//        llvm::make_early_inc_range(funcOp.getOps<arith::SelectOp>())) {
-//     OpBuilder builder(selectOp);
-//     auto trueVal = selectOp.getTrueValue();
-//     auto falseVal = selectOp.getFalseValue();
-//     auto cond = selectOp.getCondition();
-//     auto newSelectOp = builder.create<cgra::BzfaOp>(
-//         selectOp.getLoc(), selectOp->getResult(0).getType(), cond,
-//         SmallVector<Value>({falseVal, trueVal}));
-//     selectOp.replaceAllUsesWith(newSelectOp->getResult(0));
-//     selectOp.erase();
-//   }
-//   return success();
-// }
-
 /// Lower arith::SelectOp to cgra::BzfaOp
 struct ArithSelectOpConversion : OpConversionPattern<arith::SelectOp> {
   using OpConversionPattern<arith::SelectOp>::OpConversionPattern;
