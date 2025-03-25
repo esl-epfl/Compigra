@@ -315,8 +315,7 @@ bool TemporalCGRAScheduler::isExternalLive(Value val) {
 
     // For all the values in relatedVals, their theoretical live path cannot
     // exceed certain hops.
-    if (maxHop < maxLivePath)
-      return true;
+    return maxHop < maxLivePath;
   }
 
   return false;
