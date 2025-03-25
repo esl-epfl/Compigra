@@ -38,6 +38,8 @@ All the passes including front end optimization and back end assembly generation
 ./bin/compigra-opt -h
 ```
 
+For detailed instructions on compiling your C code using Compigra, refer to the [`runner_compile.sh`](./runner_compile.sh) script. This script integrates front-end parsing, user-defined middle-end optimizations, back-end mapping, and optimizations using modulo scheduling.
+
 
 ## Simulate your result
 ### Software simulation
