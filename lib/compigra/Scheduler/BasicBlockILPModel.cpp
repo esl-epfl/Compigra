@@ -733,8 +733,6 @@ LogicalResult BasicBlockILPModel::createGlobalLiveOutExterConstraints(
     Operation *defOp = val.getDefiningOp();
 
     if (defOp && opTimeVar.count(defOp) > 0) {
-      llvm::errs() << "Prerequisite LiveOutExter: " << val << " "
-                   << prequisitePE << "\n";
 
       if (prequisitePE != UINT32_MAX)
         // the user operation should be assigned to the same PE

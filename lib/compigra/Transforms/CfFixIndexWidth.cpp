@@ -138,7 +138,6 @@ struct CfFixIndexWidthPass
 
     if (failed(applyPartialConversion(modOp, target, std::move(patterns))))
       signalPassFailure();
-    llvm::errs() << funcOp << "\n";
   }
 };
 
