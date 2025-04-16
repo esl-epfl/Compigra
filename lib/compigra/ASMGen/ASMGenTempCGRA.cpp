@@ -12,11 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/ASMGen/ASMGenTempCGRA.h"
-#include "compigra/ASMGen/OpenEdgeASM.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Scheduler/ModuloScheduleAdapter.h"
+#include "compigra/Support/OpenEdgeASM.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -135,12 +135,8 @@ static LogicalResult preScheduleUsingModuloScheduler(
       continue;
 
     std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
-    if (!memoryConsistencySchedule(execTime, II, &blk))
-      continue;
-    // does not overlap the loop execution, not necessary to update the
-    // schedule Adapt the CFG with the loop modulo schedule print basic block
-    // with op ids
-    if (!kernelOverlap(basicBlocksWithOpIds))
+    if (!memoryConsistencySchedule(execTime, II, &blk) ||
+        !kernelOverlap(basicBlocksWithOpIds))
       continue;
 
     if (failed(initBlockArgs(&blk, instructions, builder)))

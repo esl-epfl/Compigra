@@ -14,9 +14,9 @@
 #ifndef TEMPORAL_CGRA_SCHEDULER_H
 #define TEMPORAL_CGRA_SCHEDULER_H
 
-#include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/BasicBlockILPModel.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "compigra/Support/InterferenceGraphCreation.h"
 #include "compigra/Support/Utils.h"
 
 using namespace mlir;

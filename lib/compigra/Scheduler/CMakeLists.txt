@@ -1,5 +1,4 @@
 add_compigra_library(MLIRCompigraKernelSchedule
-  OpenEdgeScheduler.cpp
   ModuloScheduleAdapter.cpp
   TemporalCGRAScheduler.cpp 
   BasicBlockILPModel.cpp

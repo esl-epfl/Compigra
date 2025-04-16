@@ -14,7 +14,7 @@
 #ifndef BASIC_BLOCK_ILP_MODEL_H
 #define BASIC_BLOCK_ILP_MODEL_H
 
-#include "compigra/ASMGen/InterferenceGraphCreation.h"
+// #include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Support/Utils.h"
 

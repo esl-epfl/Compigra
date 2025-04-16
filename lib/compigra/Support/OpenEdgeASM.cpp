@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/ASMGen/OpenEdgeASM.h"
+#include "compigra/Support/OpenEdgeASM.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
@@ -40,6 +40,112 @@ static Block *getLoopBlock(Region &region) {
         return &block;
   return nullptr;
 }
+
+namespace compigra {
+SmallPtrSet<Operation *, 4> getCntUserIndirectly(Value val) {
+  SmallPtrSet<Operation *, 4> cntOps;
+  // SmallPtrSet<Operation *, 4> visited;
+  for (auto &use : val.getUses()) {
+    auto user = use.getOwner();
+    auto argIndex = use.getOperandNumber();
+    if (isa<LLVM::BrOp>(user) || isa<cf::BranchOp>(user)) {
+      Block *currBlock = user->getBlock();
+      Block *userBlock = user->getBlock()->getSuccessor(0);
+      // find the corresponding users that use the block argument
+      auto users = getCntUserIndirectly(userBlock->getArgument(argIndex));
+      cntOps.insert(users.begin(), users.end());
+      continue;
+    }
+    if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(user)) {
+      if (argIndex >= 2 && argIndex < 2 + condBr.getNumTrueDestOperands()) {
+        // if the argument if propagated to true branch
+        Block *currBlock = user->getBlock();
+        Block *userBlock = condBr.getTrueDest();
+        auto users = getCntUserIndirectly(userBlock->getArgument(argIndex - 2));
+        cntOps.insert(users.begin(), users.end());
+      } else if (argIndex >= 2 + condBr.getNumTrueDestOperands()) {
+        // if the argument if propagated to false branch
+        Block *currBlock = user->getBlock();
+        Block *userBlock = condBr.getFalseDest();
+        unsigned prefix = 2 + condBr.getNumTrueDestOperands();
+        auto users =
+            getCntUserIndirectly(userBlock->getArgument(argIndex - prefix));
+        cntOps.insert(users.begin(), users.end());
+      } else
+        cntOps.insert(user);
+      continue;
+    }
+
+    cntOps.insert(user);
+  }
+  return cntOps;
+}
+
+SmallVector<Operation *, 4> getCntDefOpIndirectly(Value val) {
+  SmallVector<Operation *, 4> cntOps;
+  if (!val.isa<BlockArgument>()) {
+    cntOps.push_back(val.getDefiningOp());
+    return cntOps;
+  }
+
+  // if the value is not block argument, return empty vector
+  Block *block = val.getParentBlock();
+  Value propVal;
+
+  int argInd = val.cast<BlockArgument>().getArgNumber();
+  for (auto pred : block->getPredecessors()) {
+    Operation *termOp = pred->getTerminator();
+    if (isa<LLVM::BrOp>(termOp) || isa<cf::BranchOp>(termOp)) {
+      // the corresponding block argument is the argInd'th operator
+      propVal = termOp->getOperand(argInd);
+      auto defOps = getCntDefOpIndirectly(propVal);
+      cntOps.append(defOps.begin(), defOps.end());
+    } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(termOp)) {
+      // The terminator would be beq, bne, blt, bge, etc, the propagated value
+      // is counted from 2nd operand.
+      if (block == condBr.getTrueDest())
+        propVal = condBr.getTrueOperand(argInd);
+      else if (block == condBr.getFalseDest()) {
+        propVal = condBr.getFalseOperand(argInd);
+      } else
+        continue;
+
+      auto defOps = getCntDefOpIndirectly(propVal);
+      cntOps.append(defOps.begin(), defOps.end());
+    }
+  }
+  return cntOps;
+}
+
+Operation *getCntUseOpIndirectly(OpOperand &useOpr) {
+  Operation *cntOp = useOpr.getOwner();
+  unsigned argIndex = useOpr.getOperandNumber();
+  // If the userOp is branchOp or conditionalOp, analyze which operation uses
+  // the block argument
+  if (isa<LLVM::BrOp>(cntOp) || isa<cf::BranchOp>(cntOp)) {
+    Block *userBlock = cntOp->getBlock()->getSuccessor(0);
+    auto users = userBlock->getArgument(argIndex).getUsers();
+    cntOp = *users.begin();
+  }
+
+  if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(cntOp)) {
+    if (argIndex >= 2 && argIndex < 2 + condBr.getNumTrueDestOperands()) {
+      // if the argument if propagated to true branch
+      Block *userBlock = condBr.getTrueDest();
+      auto users = userBlock->getArgument(argIndex - 2).getUsers();
+      cntOp = *users.begin();
+
+    } else if (argIndex >= 2 + condBr.getNumTrueDestOperands()) {
+      // if the argument if propagated to false branch
+      Block *userBlock = condBr.getFalseDest();
+      unsigned prefix = 2 + condBr.getNumTrueDestOperands();
+      auto users = userBlock->getArgument(argIndex - prefix).getUsers();
+      cntOp = *users.begin();
+    }
+  }
+  return cntOp;
+}
+} // namespace compigra
 
 /// Function to perform Lexicographical Breadth-First Search and obtain
 /// PEO
@@ -964,198 +1070,3 @@ bool compigra::kernelOverlap(std::vector<std::set<int>> bbTimeMap) {
     return false;
   return !bbTimeMap.back().empty();
 }
-
-/// Function to use the modulo schedule result to initialize existing results
-/// in the region and
-LogicalResult useModuloScheduleResult(const std::string mapResult, int &II,
-                                      const unsigned maxReg,
-                                      OpenEdgeKernelScheduler &scheduler,
-                                      Block *loopBlock, Region &r,
-                                      OpBuilder &builder) {
-  int opSize = loopBlock->getOperations().size();
-
-  // read the loop basic block modulo schedule result
-  std::map<int, Instruction> instructions;
-  std::map<int, std::set<int>> opTimeMap;
-  std::vector<std::set<int>> bbTimeMap = {{}};
-  if (failed(readMapFile(mapResult, maxReg,
-                         opSize + loopBlock->getNumArguments() - 1, II,
-                         opTimeMap, bbTimeMap, instructions)))
-    return failure();
-
-  // init block arguments to be SADD
-  if (failed(initBlockArgs(loopBlock, instructions, builder)))
-    return failure();
-
-  // update the operation size if the block argument is considered
-  opSize = loopBlock->getOperations().size();
-
-  // init modulo schedule result
-  if (kernelOverlap(bbTimeMap)) {
-    std::map<int, int> execTime = getLoopOpUnfoldExeTime(opTimeMap);
-    ModuloScheduleAdapter adapter(r, loopBlock, builder, II, execTime,
-                                  opTimeMap, bbTimeMap);
-    if (failed(adapter.adaptCFGWithLoopMS()))
-      return failure();
-
-    // hash map to store the total round of operation execution, where
-    // totalRound[ind] represents ind-th operation's in the loop has been
-    // executed totalRound[ind] times
-    std::vector<int> totalRound(opSize, 0);
-
-    int curPC = 0;
-
-    // auto preParts = adapter.enterDFGs;
-    // auto postParts = adapter.exitDFGs;
-
-    // std::vector<std::vector<int>> preOpIds;
-    // std::vector<int> bbStarts;
-    // for (size_t i = 0; i < preParts.size(); i++) {
-    //   bbStarts.push_back(curPC);
-    //   scheduler.assignSchedule(preParts[i], II, curPC, execTime,
-    //   instructions,
-    //                            totalRound);
-    //   curPC++;
-    //   preOpIds.push_back(totalRound);
-    // }
-
-    // for (int i = 0; i < preParts.size() - 1; i++) {
-    //   scheduler.assignSchedule(postParts[i], II, curPC, execTime,
-    //   instructions,
-    //                            preOpIds[preParts.size() - 2 - i],
-    //                            curPC - bbStarts[preParts.size() - 1 - i]);
-    //   curPC++;
-    // }
-
-  } else
-    scheduler.assignSchedule(loopBlock->getOperations(), instructions);
-  return success();
-}
-
-static Operation *getFirstOpInRegion(Region &r) {
-  for (auto &block : r.getBlocks()) {
-    for (auto &op : block.getOperations()) {
-      if (isa<LLVM::ConstantOp>(op))
-        continue;
-      return &op;
-    }
-  }
-  return nullptr;
-}
-
-void readScheduleResult(Region &r, OpenEdgeKernelScheduler &scheduler) {
-  std::string mapResult = "/home/yuxuan/Projects/24S/Compigra/build/sha4_0.sol";
-  std::ifstream file(mapResult);
-  if (!file.is_open()) {
-    llvm::errs() << "Unable to open " << mapResult << "\n";
-    return;
-  }
-  std::map<std::string, float> timeDict;
-  std::map<std::string, float> peDict;
-
-  std::string line;
-  while (std::getline(file, line)) {
-    if (line.find("time_") != std::string::npos) {
-      auto key = line.substr(5, line.find(" ") - 5);
-      auto value = std::stof(line.substr(line.find(" ") + 1));
-      timeDict[key] = value;
-    }
-
-    if (line.find("pe_") != std::string::npos) {
-      auto key = line.substr(3, line.find(" ") - 3);
-      auto value = std::stof(line.substr(line.find(" ") + 1));
-      peDict[key] = value;
-    }
-  }
-  // Init instruction based on the schedule result
-  for (auto [ind, block] : llvm::enumerate(r.getBlocks())) {
-    for (auto [idOp, op] : llvm::enumerate(block.getOperations())) {
-      if (isa<LLVM::ConstantOp>(op))
-        continue;
-      auto name = op.getName().getStringRef().str();
-      auto t = timeDict[std::to_string(ind) + "_" + std::to_string(idOp)];
-      auto pe = peDict[std::to_string(ind) + "_" + std::to_string(idOp)];
-      auto instruction = Instruction{name,
-                                     static_cast<int>(std::round(t)),
-                                     static_cast<int>(std::round(pe)),
-                                     -1,
-                                     "Unknown",
-                                     "Unknown"};
-      scheduler.knownRes[&op] = instruction;
-      llvm::errs() << op << " " << instruction.time << " " << instruction.pe
-                   << "\n";
-    }
-  }
-}
-
-namespace {
-struct OpenEdgeASMGenPass
-    : public compigra::impl::OpenEdgeASMGenBase<OpenEdgeASMGenPass> {
-
-  explicit OpenEdgeASMGenPass(StringRef funcName, StringRef mapResult,
-                              int nGrid) {}
-
-  void runOnOperation() override {
-    ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
-    OpBuilder builder(&getContext());
-    char maxReg = 3;
-    // initial interval
-    int II;
-
-    size_t pos = mapResult.find_last_of("/");
-    // Default output file directory
-    std::string outDir = mapResult.substr(0, pos + 1) + "out";
-
-    for (auto funcOp :
-         llvm::make_early_inc_range(modOp.getOps<cgra::FuncOp>())) {
-      if (funcOp.getName() != funcName)
-        continue;
-      Region &r = funcOp.getBody();
-      // init scheduler
-      auto grid = nGrid.getValue();
-      if (!nGrid.hasValue() || nGrid.getValue() <= 0)
-        grid = 4;
-
-      OpenEdgeKernelScheduler scheduler(r, maxReg, grid);
-
-      // assign the first operation to PC 0
-      if (mapResult.hasValue()) {
-        auto loopBlock = getLoopBlock(r);
-        if (failed(useModuloScheduleResult(mapResult, II, maxReg, scheduler,
-                                           loopBlock, r, builder)))
-          return signalPassFailure();
-      } else {
-        int startPC = 0;
-        // DEBUG: READ RESULT FROM FILE
-        readScheduleResult(r, scheduler);
-        scheduler.knownRes[getFirstOpInRegion(r)] =
-            Instruction{"init", startPC, 0, (int)maxReg, "Unknown", "Unknown"};
-      }
-
-      // init OpenEdgeASMGen
-      OpenEdgeASMGen asmGen(r, maxReg, grid);
-      if (failed(scheduler.createSchedulerAndSolve())) {
-        llvm::errs() << "Failed to create scheduler and solve\n";
-        return signalPassFailure();
-      }
-
-      // assign schedule results and produce assembly
-      asmGen.setSolution(scheduler.getSolution());
-      llvm::errs() << "Allocate Register...\n";
-      if (failed(asmGen.allocateRegisters(scheduler.knownRes))) {
-        llvm::errs() << "Failed to allocate registers\n";
-        return signalPassFailure();
-      }
-      asmGen.printKnownSchedule(true, 0, outDir);
-      llvm::errs() << funcOp << "\n";
-    }
-  }
-};
-} // namespace
-
-namespace compigra {
-std::unique_ptr<mlir::Pass>
-createOpenEdgeASMGen(StringRef funcName, StringRef mapResult, int nGrid) {
-  return std::make_unique<OpenEdgeASMGenPass>(funcName, mapResult, nGrid);
-}
-} // namespace compigra

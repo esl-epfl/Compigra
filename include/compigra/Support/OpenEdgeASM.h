@@ -13,11 +13,11 @@
 #ifndef OPEN_EDGE_ASM_H
 #define OPEN_EDGE_ASM_H
 
-#include "compigra/ASMGen/InterferenceGraphCreation.h"
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "compigra/Support/InterferenceGraphCreation.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include <unordered_set>
 #ifdef HAVE_GUROBI
@@ -161,10 +161,6 @@ private:
       {"SHL", "SLT"},   {"SHRSI", "SRA"}, {"SHRUI", "SLT"}, {"SHLI", "SLT"},
       {"AND", "LAND"},  {"ANDI", "LAND"}, {"BR", "JUMP"}};
 };
-
-std::unique_ptr<mlir::Pass> createOpenEdgeASMGen(StringRef funcName = "",
-                                                 StringRef mapResult = "",
-                                                 int nGrid = 4);
 } // end namespace compigra
 
 #endif // OPEN_EDGE_ASM_H

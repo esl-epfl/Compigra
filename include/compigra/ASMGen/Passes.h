@@ -15,15 +15,17 @@
 #define COMPIGRA_ASM_GEN_PASSES_H
 
 #include "compigra/ASMGen/ASMGenTempCGRA.h"
-#include "compigra/ASMGen/OpenEdgeASM.h"
+#include "compigra/ASMGen/FastASMGenTempCGRA.h"
 
 namespace compigra {
 
 #define GEN_PASS_REGISTRATION
 #include "compigra/ASMGen/Passes.h.inc"
 
-std::unique_ptr<mlir::Pass>
-createOpenEdgeASMGen(StringRef funcName, StringRef mapResult, int nGrid);
+std::unique_ptr<mlir::Pass> createFastASMGenTemporalCGRA(int nRow, int nCol,
+                                                         int mem,
+                                                         StringRef msOot,
+                                                         StringRef asmOutDir);
 std::unique_ptr<mlir::Pass> createASMGenTemporalCGRA(int nRow, int nCol,
                                                      int mem, StringRef msOot,
                                                      StringRef asmOutDir);

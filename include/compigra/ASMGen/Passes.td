@@ -19,16 +19,19 @@ include "mlir/Pass/PassBase.td"
 // Cgra passes
 //===----------------------------------------------------------------------===//
 
-def OpenEdgeASMGen : Pass<"gen-openedge-asm"> {
+def FastASMGenTemporalCGRA : Pass<"gen-openedge-asm-fast"> {
   let summary = "Generate open-edge assembly code";
-  let constructor = "compigra::createOpenEdgeASMGen()";
-  let dependentDialects = ["cgra::CgraDialect"];
+  let constructor = "compigra::createFastASMGenTemporalCGRA()";
+  let dependentDialects = ["cgra::CgraDialect", "cf::ControlFlowDialect"];
   let options = [
-    Option<"funcName", "func-name", "std::string", "",
-           "  Specify the name of the fucntion to convert. ">,
-    Option<"mapResult", "map-result", "std::string", "",
-           "  Specify the map result by the SAT-MapIt">,
-    Option<"nGrid", "grid", "int", "", "  Number of grid blocks">,
+    Option<"nRow", "row", "int", "", "  Number of PE in one row">,
+    Option<"nCol", "col", "int", "", "  Number of PE in one column">,
+    Option<"mem", "mem", "int", "",
+           "  Start address of the memory for the evicted value">,
+    Option<"msOpt", "ms-opt", "std::string", "",
+           "  Executable of modulo scheduler">,
+    Option<"asmOutDir", "asm-out", "std::string", "",
+           "  Specify the directory of the assembly file">,
   ];
 }
 

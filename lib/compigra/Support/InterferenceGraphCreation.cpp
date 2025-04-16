@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "compigra/ASMGen/InterferenceGraphCreation.h"
+#include "compigra/Support/InterferenceGraphCreation.h"
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/IR/Dominance.h"
