@@ -25,7 +25,6 @@
 #endif
 
 using namespace mlir;
-using namespace compigra;
 
 namespace compigra {
 #define GEN_PASS_DEF_OPENEDGEASMGEN
@@ -36,7 +35,7 @@ namespace compigra {
 ///  conducted under the pre-colored constraints of `solution`.
 LogicalResult
 allocateOutRegInPE(std::map<int, mlir::Operation *> opList,
-                   std::map<Operation *, ScheduleUnit> &solution,
+                   std::map<Operation *, compigra::ScheduleUnit> &solution,
                    unsigned maxReg,
                    std::map<int, std::unordered_set<int>> pcCtrlFlow);
 

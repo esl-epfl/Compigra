@@ -16,6 +16,8 @@
 
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
+#include "compigra/Scheduler/BasicBlockOpAssignment.h"
+#include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Support/LLVM.h"
@@ -24,15 +26,9 @@
 #include <unordered_set>
 
 using namespace mlir;
+
 namespace compigra {
 unsigned getOpId(Block::OpListType &opList, Operation *search);
-
-// Schedule unit is a pair of time and PE, and the register to store the result
-struct ScheduleUnit {
-  int time;
-  int pe;
-  int reg;
-};
 
 /// Data structure to map the operation id to the operation
 
@@ -128,9 +124,11 @@ public:
   assignScheduleResult(const std::map<int, Instruction> instructions,
                        int maxReg, int maxPE);
 
-  std::map<Operation *, ScheduleUnit> getSolutions() { return solution; }
+  std::map<Operation *, compigra::ScheduleUnit> getSolutions() {
+    return solution;
+  }
 
-  std::map<Operation *, ScheduleUnit> getPrologAndKernelSolutions();
+  std::map<Operation *, compigra::ScheduleUnit> getPrologAndKernelSolutions();
 
   std::vector<std::pair<Value, int>> getPrerequisites() {
     return prerequisites;
@@ -143,7 +141,7 @@ private:
   std::map<int, std::map<int, Operation *>> prologOps;
   std::map<Block *, std::map<int, std::map<int, Operation *>>> epilogOpsBB;
 
-  std::map<Operation *, ScheduleUnit> solution;
+  std::map<Operation *, compigra::ScheduleUnit> solution;
 
   std::vector<std::pair<Value, int>> prerequisites;
 

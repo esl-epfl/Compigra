@@ -16,6 +16,9 @@
 #include "compigra/Conversion/CfToCgraConversion.h"
 #include "compigra/Conversion/LLVMToCgraConversion.h"
 
+using namespace mlir;
+using namespace compigra;
+
 namespace compigra {
 
 #define GEN_PASS_REGISTRATION

@@ -17,13 +17,12 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraInterfaces.h"
 #include "compigra/CgraOps.h"
-// #include "compigra/Scheduler/TemporalCGRAScheduler.h"
+#include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Support/InterferenceGraphCreation.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include <unordered_set>
 
 using namespace mlir;
-using namespace compigra;
 
 namespace compigra {
 #define GEN_PASS_DEF_FASTASMGENTEMPORALCGRA

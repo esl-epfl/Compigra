@@ -15,38 +15,62 @@
 #define BASIC_BLOCK_OP_ASSIGNMENT_H
 
 #include "compigra/Scheduler/KernelSchedule.h"
+#include "compigra/Support/Utils.h"
 
 using namespace mlir;
 
 namespace compigra {
-struct ScheduleUnitBB {
-  int time;
-  int pe;
-};
-
-class BasicBlockOpAsisgnment {
-public:
-  BasicBlockOpAsisgnment(unsigned maxReg, unsigned nRow, unsigned nCol,
-                         Block *block, unsigned bbId)
-      : maxReg(maxReg), nRow(nRow), nCol(nCol), block(block), bbId(bbId),
-        builder(builder) {}
-
-  void searchCriticalPath();
-
-private:
-  unsigned maxReg;
+/// Describes the CGRA attributes through the number of rows, columns and the
+/// internal registers.
+struct CGRAAttribute {
   unsigned nRow;
   unsigned nCol;
-  // Interface for the the global schduler if the ILP model does not have
-  // solution
-  unsigned storeAddr;
-  Value spill = nullptr;
-  Operation *failUser = nullptr;
-  OpBuilder builder;
-
-  Block *block;
-  unsigned bbId;
+  unsigned maxReg;
 };
+
+enum ScheduleStrategy {
+  // The schedule strategy is used to determine the order of the operations
+  // inside a basic block.
+  // ASAP schedules operations as soon as possible(when all of its producers
+  // are scheduled).
+  // ALAP schedules them as late as possible(scheduled until its consumer
+  // require its result).
+  // DYNAMIC determines the operation scheduling order during the compilation
+  // time.
+  ASAP = 0,
+  ALAP = 1,
+  DYNAMIC = 2
+};
+
+// class BasicBlockOpAsisgnment {
+// public:
+//   BasicBlockOpAsisgnment(unsigned maxReg, unsigned nRow, unsigned nCol,
+//                          Block *block, unsigned bbId)
+//       : maxReg(maxReg), nRow(nRow), nCol(nCol), block(block), bbId(bbId),
+//         builder(builder) {}
+
+//   void searchCriticalPath();
+
+// private:
+//   unsigned maxReg;
+//   unsigned nRow;
+//   unsigned nCol;
+//   // Interface for the the global schduler if the ILP model does not have
+//   // solution
+//   unsigned storeAddr;
+//   Value spill = nullptr;
+//   Operation *failUser = nullptr;
+//   OpBuilder builder;
+
+//   Block *block;
+//   unsigned bbId;
+// };
+
+void mappingBBdataflowToCGRA(
+    Block *block, SetVector<Value> &liveIn, SetVector<Value> &liveOut,
+    std::map<Operation *, ScheduleUnit> &subSolution,
+    std::vector<std::pair<Value, ScheduleUnit>> &prerequisites,
+    CGRAAttribute &attr, ScheduleStrategy strategy = ScheduleStrategy::ASAP);
 } // namespace compigra
 
 #endif

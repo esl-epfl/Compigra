@@ -13,7 +13,7 @@
 #ifndef KERNEL_SCHEDULE_H
 #define KERNEL_SCHEDULE_H
 
-#include "compigra/Scheduler/ModuloScheduleAdapter.h"
+// #include "compigra/Scheduler/ModuloScheduleAdapter.h"
 #include "compigra/Transforms/SatMapItDATE2023InputGen/PrintSatMapItDAG.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 using namespace mlir;
@@ -25,6 +25,12 @@ using namespace mlir;
 /// CGRA base scheduler class, where T is the struct that define the placement
 /// of the operation.
 namespace compigra {
+// Schedule unit is a pair of time and PE, and the register to store the result
+struct ScheduleUnit {
+  int time;
+  int pe;
+  int reg;
+};
 
 /// Function to get the operation that is connected to the user operation via
 /// branch(br/cond_br). This function only returns the first operation that uses
