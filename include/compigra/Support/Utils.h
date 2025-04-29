@@ -40,6 +40,11 @@ void getAllPathsToBlockEnd(Operation *op,
 /// From the start of op's block to the earliest start execution time of op
 unsigned getEarliestStartTime(Operation *op);
 
+/// Get the shortest live length of a value
+unsigned getValueLiveLength(Value val,
+                            std::map<Block *, SetVector<Value>> &liveIns,
+                            std::map<Block *, SetVector<Value>> &liveOuts);
+
 /// The latest end time of op to the end of the block
 unsigned getLatestEndTime(Operation *op);
 

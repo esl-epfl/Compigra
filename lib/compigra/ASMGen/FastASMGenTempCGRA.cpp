@@ -111,8 +111,11 @@ void computeLiveValue(Region &region,
     SetVector<Value> def;
     SetVector<Value> use;
     // push all block arguments to use
-    for (auto arg : block.getArguments())
-      insertNonConst(arg, use);
+    for (auto arg : block.getArguments()) {
+      // the entry block argument is IN/OUT of the function
+      if (!block.isEntryBlock())
+        insertNonConst(arg, use);
+    }
 
     for (auto &op : block.getOperations()) {
       for (auto res : op.getResults())
@@ -169,6 +172,8 @@ void computeLiveValue(Region &region,
   }
 }
 
+void maxIndependentSubGraphs(Block *block, SetVector<Value> liveIn) {}
+
 namespace {
 struct FastASMGenTemporalCGRAPass
     : public compigra::impl::FastASMGenTemporalCGRABase<
@@ -192,14 +197,28 @@ struct FastASMGenTemporalCGRAPass
     printBlockLiveValue(region, liveIns, liveOuts);
     std::map<Operation *, ScheduleUnit> solution;
 
-    CGRAAttribute attr{(unsigned)nRow, (unsigned)nCol, 3};
+    GridAttribute attr{(unsigned)nRow, (unsigned)nCol, 3};
 
+    std::map<Block *, std::vector<ValuePlacement>> initEmbeddingGraphs;
+    std::map<Block *, std::vector<ValuePlacement>> finiEmbeddingGraphs;
+
+    int bbId = 0;
     for (auto &bb : region.getBlocks()) {
       // create the schedule for each block
       std::map<Operation *, ScheduleUnit> subSolution;
-      std::vector<std::pair<Value, ScheduleUnit>> prerequisites;
-      mappingBBdataflowToCGRA(&bb, liveIns[&bb], liveOuts[&bb], subSolution,
-                              prerequisites, attr);
+      auto initGraph =
+          initEmbeddingGraphs.find(&bb) != initEmbeddingGraphs.end()
+              ? initEmbeddingGraphs[&bb]
+              : std::vector<ValuePlacement>{};
+      auto finiGraph =
+          finiEmbeddingGraphs.find(&bb) != finiEmbeddingGraphs.end()
+              ? finiEmbeddingGraphs[&bb]
+              : std::vector<ValuePlacement>{};
+      mappingBBdataflowToCGRA(&bb, liveIns, liveOuts, subSolution, initGraph,
+                              finiGraph, attr);
+      // update the initGraph and finiGraph
+      initEmbeddingGraphs[&bb] = initGraph;
+      finiEmbeddingGraphs[&bb] = finiGraph;
       llvm::errs() << "==============================\n\n";
       // add the subSolution to the global solution
       for (auto [op, unit] : subSolution) {
@@ -211,6 +230,9 @@ struct FastASMGenTemporalCGRAPass
         }
         solution[op] = unit;
       }
+      // if (bbId == 1)
+      //   break;
+      bbId++;
     }
   };
 };

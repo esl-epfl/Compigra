@@ -261,6 +261,44 @@ SmallVector<Operation *, 8> getCriticalPath(Block *blk) {
   return criticalPath;
 }
 
+unsigned getValueLiveLength(Value val,
+                            std::map<Block *, SetVector<Value>> &liveIns,
+                            std::map<Block *, SetVector<Value>> &liveOuts) {
+  SmallVector<Block *, 8> blocks;
+  for (auto [block, _] : liveIns)
+    blocks.push_back(block);
+  // if val is phi related, ensure it produced the same attributes for all
+  // related values.
+  if (isa<BlockArgument>(val)) {
+    unsigned totalLength = 0;
+    for (auto block : blocks) {
+      if (liveIns[block].count(val) && liveOuts[block].count(val))
+        totalLength += getCriticalPath(block).size();
+      if (liveIns[block].count(val) && !liveOuts[block].count(val)) {
+        unsigned latestUse = 0;
+        for (auto user : val.getUsers())
+          if (user->getBlock() == block)
+            latestUse = std::max(latestUse, getEarliestStartTime(user));
+        totalLength += latestUse;
+      }
+    }
+
+    return totalLength;
+  }
+
+  unsigned maxHop = 0;
+  Operation *defOp = val.getDefiningOp();
+
+  for (auto user : defOp->getUsers()) {
+    // calculate the theoretical live path length
+    maxHop = std::max(maxHop, getShortestLiveHops(defOp, user));
+  }
+
+  // For all the values in relatedVals, their theoretical live path cannot
+  // exceed certain hops.
+  return maxHop;
+}
+
 unsigned getShortestLiveHops(Operation *srcOp, Operation *dstOp) {
   unsigned hops = UINT64_MAX;
   if (srcOp->getBlock() == dstOp->getBlock()) {

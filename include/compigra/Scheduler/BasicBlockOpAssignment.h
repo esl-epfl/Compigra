@@ -20,14 +20,6 @@
 using namespace mlir;
 
 namespace compigra {
-/// Describes the CGRA attributes through the number of rows, columns and the
-/// internal registers.
-struct CGRAAttribute {
-  unsigned nRow;
-  unsigned nCol;
-  unsigned maxReg;
-};
-
 enum ScheduleStrategy {
   // The schedule strategy is used to determine the order of the operations
   // inside a basic block.
@@ -40,6 +32,29 @@ enum ScheduleStrategy {
   ASAP = 0,
   ALAP = 1,
   DYNAMIC = 2
+};
+
+enum RegAttr { NK = -1, IN = 0, EX = 1, IE = 2 };
+
+/// Describes the CGRA attributes through the number of rows, columns and the
+/// internal registers.
+struct GridAttribute {
+  unsigned nRow;
+  unsigned nCol;
+  unsigned maxReg;
+};
+
+/// Describes the spatial placement of a value in the CGRA, which includes the
+/// pe and the register attribute.
+struct ValuePlacement {
+  Value val;
+  unsigned pe;
+  RegAttr regAttr;
+};
+
+struct PERegUse {
+  int inNum;
+  bool exAvail;
 };
 
 // class BasicBlockOpAsisgnment {
@@ -67,10 +82,12 @@ enum ScheduleStrategy {
 // };
 
 void mappingBBdataflowToCGRA(
-    Block *block, SetVector<Value> &liveIn, SetVector<Value> &liveOut,
+    Block *block, std::map<Block *, SetVector<Value>> &liveIns,
+    std::map<Block *, SetVector<Value>> &liveOuts,
     std::map<Operation *, ScheduleUnit> &subSolution,
-    std::vector<std::pair<Value, ScheduleUnit>> &prerequisites,
-    CGRAAttribute &attr, ScheduleStrategy strategy = ScheduleStrategy::ASAP);
+    std::vector<ValuePlacement> &initGraph,
+    std::vector<ValuePlacement> &finiGraph, GridAttribute &attr,
+    ScheduleStrategy strategy = ScheduleStrategy::ASAP);
 } // namespace compigra
 
 #endif
