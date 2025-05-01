@@ -18,7 +18,7 @@
 #include "compigra/Support/Utils.h"
 
 using namespace mlir;
-
+void logMessage(const std::string &message, bool overwrite = false);
 namespace compigra {
 enum ScheduleStrategy {
   // The schedule strategy is used to determine the order of the operations

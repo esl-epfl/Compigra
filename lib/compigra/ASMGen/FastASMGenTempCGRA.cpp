@@ -171,7 +171,6 @@ void computeLiveValue(Region &region,
     }
   }
 }
-
 void maxIndependentSubGraphs(Block *block, SetVector<Value> liveIn) {}
 
 namespace {
@@ -203,6 +202,9 @@ struct FastASMGenTemporalCGRAPass
     std::map<Block *, std::vector<ValuePlacement>> finiEmbeddingGraphs;
 
     int bbId = 0;
+
+    logMessage("BasicBlock op assignment\n", true);
+
     for (auto &bb : region.getBlocks()) {
       // create the schedule for each block
       std::map<Operation *, ScheduleUnit> subSolution;
@@ -219,7 +221,8 @@ struct FastASMGenTemporalCGRAPass
       // update the initGraph and finiGraph
       initEmbeddingGraphs[&bb] = initGraph;
       finiEmbeddingGraphs[&bb] = finiGraph;
-      llvm::errs() << "==============================\n\n";
+      logMessage("\nBBId: " + std::to_string(bbId) +
+                 "==============================\n");
       // add the subSolution to the global solution
       for (auto [op, unit] : subSolution) {
         if (solution.count(op)) {
@@ -230,7 +233,7 @@ struct FastASMGenTemporalCGRAPass
         }
         solution[op] = unit;
       }
-      // if (bbId == 1)
+      // if (bbId == 3)
       //   break;
       bbId++;
     }
