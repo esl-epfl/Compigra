@@ -1,4 +1,5 @@
 add_compigra_library(MLIRCompigraTransforms
+AffineExploitGemm.cpp
 CfFixIndexWidth.cpp
 CfMergeIfToSelect.cpp
 CfFuseLoopHeadBody.cpp

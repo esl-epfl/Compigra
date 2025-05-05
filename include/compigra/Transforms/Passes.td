@@ -14,6 +14,14 @@
 #define COMPIGRA_TRANSFORMS_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
+//===----------------------------------------------------------------------===//
+// Affine passes
+//===----------------------------------------------------------------------===//
+
+def AffineMaximizeGemm : Pass<"affine-maximize-gemm"> {
+  let summary = "Maximize the gemm size";
+  let constructor = "compigra::createAffineMaximizeGemm()";
+}
 
 //===----------------------------------------------------------------------===//
 // Cf passes
