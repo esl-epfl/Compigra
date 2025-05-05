@@ -831,11 +831,15 @@ int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
     llvm::raw_string_ostream rso(message);
     rso << *op << " ---> " << std::to_string(pe) << "\n";
     logMessage(rso.str());
-    RegAttr regAttr = RegAttr::IE;
     suc++;
-    updateResourceGraph(curGraph, op, pe, regAttr, tmpScheduledOps, liveOut);
+    // updateResourceGraph(curGraph, op, pe, regAttr, tmpScheduledOps, liveOut);
     tmpScheduledOps.insert(op);
     tmpResult[op] = {timeSlot, (int)pe, -1};
+  }
+  for (auto op : tmpScheduledOps) {
+    auto pe = tmpResult[op].pe;
+    RegAttr regAttr = RegAttr::IE;
+    updateResourceGraph(curGraph, op, pe, regAttr, tmpScheduledOps, liveOut);
   }
 
   // write tmpScheduleResult to scheduleResult
@@ -963,7 +967,7 @@ void compigra::mappingBBdataflowToCGRA(
       logMessage("\n");
     }
 
-    // erased from schedulingOps
+    // determine whether to transform the graph
     for (auto [op, res] : layerScheduleResult) {
       // remove it from the schedulingOps
       auto it = std::find(schedulingOps.begin(), schedulingOps.end(), op);
