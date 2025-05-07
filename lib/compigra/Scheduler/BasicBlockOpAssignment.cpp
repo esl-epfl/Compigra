@@ -880,6 +880,94 @@ shuffleSearchSpace(std::map<Operation *, SetVector<unsigned>> &searchSpace,
   return schedulingOps[shuffleOpIdx];
 }
 
+bool createRoutePath(Operation *failOp, std::vector<unsigned> &movs,
+                     std::vector<ValuePlacement> curGraph, GridAttribute &attr,
+                     unsigned threshold = 2) {
+  // get all the producers of the failOp
+  std::vector<ValuePlacement> producers;
+  for (auto opr : failOp->getOperands()) {
+    auto it = std::find_if(curGraph.begin(), curGraph.end(),
+                           [&](ValuePlacement p) { return p.val == opr; });
+    if (it != curGraph.end() &&
+        std::find_if(producers.begin(), producers.end(), [&](ValuePlacement p) {
+          return p.val == it->val;
+        }) == producers.end())
+      producers.push_back(*it);
+  }
+  // resize movs to the size of producers and initialize it to 0
+  movs.resize(producers.size());
+  std::fill(movs.begin(), movs.end(), 0);
+
+  // get the available PEs
+  SetVector<unsigned> avaiPEs;
+  for (auto i = 0; i < attr.nRow * attr.nCol; i++) {
+    auto occupied = std::find_if(
+        curGraph.begin(), curGraph.end(), [&](const ValuePlacement &place) {
+          return place.pe == i && place.regAttr == RegAttr::EX;
+        });
+    // if the pe is occupied but not by the producer, return false
+    if (occupied != curGraph.end()) {
+      for (auto prod : producers) {
+        if (prod.val != occupied->val && prod.pe == i &&
+            prod.regAttr == RegAttr::EX)
+          return false;
+      }
+    }
+    if (occupied == curGraph.end())
+      avaiPEs.insert(i);
+  }
+  // print the available PEs
+  std::string message;
+  llvm::raw_string_ostream rso(message);
+  rso << "Available PEs: ";
+  for (auto pe : avaiPEs)
+    message += std::to_string(pe) + " ";
+  message += "\n";
+  logMessage(rso.str());
+
+  // define map population function of step 1
+  auto populateRoutingPEs = [&](unsigned pe, SetVector<unsigned> &map) {
+    for (auto routingPE : getTorusRoutingPEs(pe, attr))
+      if (avaiPEs.count(routingPE) > 0)
+        map.insert(routingPE);
+  };
+
+  // initialize pop map for each producer
+  std::map<unsigned, SetVector<unsigned>> popMap;
+  // init popMap
+  for (auto [ind, prod] : llvm::enumerate(producers)) {
+    popMap[ind].insert(prod.pe);
+    auto regAttr = prod.regAttr;
+    if (regAttr == RegAttr::EX || regAttr == RegAttr::IE) {
+      populateRoutingPEs(prod.pe, popMap[ind]);
+    }
+  }
+
+  unsigned population = 0;
+  while (population < threshold) {
+    population++;
+    // check the intersection of the popMap
+    SetVector<unsigned> intersection;
+    for (auto [ind, prod] : llvm::enumerate(producers)) {
+      // populate the popMap
+      auto pe = prod.pe;
+      auto regAttr = prod.regAttr;
+      auto prevPop = popMap[ind];
+      for (auto routPE : prevPop)
+        populateRoutingPEs(routPE, popMap[ind]);
+      movs[ind] = population;
+
+      //  check whether the intersection exists
+      auto intersection = popMap[0];
+      for (size_t i = 1; i < producers.size(); ++i)
+        intersection = getInterSection<unsigned>(intersection, popMap[i]);
+      if (!intersection.empty())
+        return true;
+    }
+  }
+  return false;
+}
+
 void compigra::mappingBBdataflowToCGRA(
     Block *block, std::map<Block *, SetVector<Value>> &liveIns,
     std::map<Block *, SetVector<Value>> &liveOuts,
@@ -914,6 +1002,7 @@ void compigra::mappingBBdataflowToCGRA(
     logMessage("----height: " + std::to_string(height) +
                " SA: " + std::to_string(0) + "----\n");
 
+    // Initial placement
     int suc = placeOperations(height, schedulingOps, tmpScheduleResult,
                               tmpGraph, searchSpace, blockOut, finiGraph, attr);
     double sucCost =
@@ -922,6 +1011,7 @@ void compigra::mappingBBdataflowToCGRA(
         tmpScheduleResult, initGraph, schedulePriority, attr);
     double accessCost =
         getAccessCost(tmpGraph, tmpScheduleResult, scheduledOps, attr);
+    // get the total cost
     double currentCost = sucCost + affinityCost + accessCost;
     auto layerScheduleResult = tmpScheduleResult;
     auto graphScheduleAfter = tmpGraph;
@@ -931,6 +1021,7 @@ void compigra::mappingBBdataflowToCGRA(
                std::to_string(accessCost) + " = " +
                std::to_string(currentCost));
     double bestCost = currentCost;
+
     // simulated annealing to create a loop that get random
     // placement, record status, cost and determine the final placement
     int iterSA = 20;
@@ -939,6 +1030,7 @@ void compigra::mappingBBdataflowToCGRA(
       tmpGraph = graphScheduleBefore;
       logMessage("----height: " + std::to_string(height) +
                  " SA: " + std::to_string(iter + 1) + "----\n");
+      // TODO[@YW]: remove some operations to be scheduled
       auto shuffleOp =
           shuffleSearchSpace(searchSpace, tmpScheduleResult, schedulingOps);
       if (!shuffleOp) {
@@ -967,6 +1059,33 @@ void compigra::mappingBBdataflowToCGRA(
       logMessage("\n");
     }
 
+    SmallVector<Operation *, 4> graphTransformedOps;
+    for (auto op : schedulingOps) {
+      if (layerScheduleResult.count(op) == 0 &&
+          schedulePriority[op].second <= height)
+        graphTransformedOps.push_back(op);
+    }
+    if (!graphTransformedOps.empty()) {
+      std::string message;
+      llvm::raw_string_ostream rso(message);
+      for (auto op : graphTransformedOps) {
+        unsigned producerNum = op->getNumOperands();
+        std::vector<unsigned> movs;
+        // detect whether the operation is routable
+        bool routable = createRoutePath(op, movs, graphScheduleAfter, attr);
+        rso << "Warning: " << *op << " is routable? " << routable << "\n";
+        // print the movs
+        rso << "MOVES: [";
+        for (auto mov : movs)
+          rso << std::to_string(mov) + " ";
+        rso << "]\n";
+      }
+      logMessage(rso.str());
+
+      // TODO[@6th/May] manipulate the graph
+      return;
+    }
+
     // determine whether to transform the graph
     for (auto [op, res] : layerScheduleResult) {
       // remove it from the schedulingOps
@@ -984,27 +1103,17 @@ void compigra::mappingBBdataflowToCGRA(
     }
     graphScheduleBefore = graphScheduleAfter;
 
-    // scheduleGraph = tmpGraph;
     for (auto op : schedulingOps) {
-      // delay the scheduling if schedulePriority[op].second > height
-      if (schedulePriority[op].second > height) {
-        schedulePriority[op].first += 1;
-        SetVector<Operation *> delayedOps;
-        buildChildTree(op->getResult(0), delayedOps, block);
-        for (auto child : delayedOps) {
-          if (schedulePriority.count(child))
-            schedulePriority[child].first += 1;
-        }
-      } else {
-        std::string message;
-        llvm::raw_string_ostream rso(message);
-        rso << "ERROR: " << *op << " must be scheduled now\n";
-        logMessage(rso.str());
-        return;
+      // delay the scheduling
+      schedulePriority[op].first += 1;
+      SetVector<Operation *> delayedOps;
+      buildChildTree(op->getResult(0), delayedOps, block);
+      for (auto child : delayedOps) {
+        if (schedulePriority.count(child))
+          schedulePriority[child].first += 1;
       }
     }
     height++;
-    // TODO: what if ops in the same height are not scheduled?
   }
 
   // for (auto [op, priority] : schedulePriority) {
