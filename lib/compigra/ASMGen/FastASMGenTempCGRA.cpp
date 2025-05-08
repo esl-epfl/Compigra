@@ -173,6 +173,34 @@ void computeLiveValue(Region &region,
 }
 void maxIndependentSubGraphs(Block *block, SetVector<Value> liveIn) {}
 
+arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder) {
+  arith::ConstantOp zeroOp;
+  for (auto &op : region.getOps()) {
+    auto zeroCst = dyn_cast_or_null<arith::ConstantOp>(op);
+    if (!zeroCst)
+      continue;
+
+    if (auto intAttr = zeroCst.getValue().dyn_cast<IntegerAttr>()) {
+      if (intAttr.getValue().isZero()) {
+        zeroOp = zeroCst;
+        break;
+      }
+    } else if (auto floatAttr = zeroCst.getValue().dyn_cast<FloatAttr>()) {
+      if (floatAttr.getValue().isZero()) {
+        zeroOp = zeroCst;
+        break;
+      }
+    }
+  }
+
+  // if zeroOp is not found, create a new one
+  if (!zeroOp) {
+    zeroOp = builder.create<arith::ConstantOp>(
+        region.getLoc(), builder.getI32Type(), builder.getI32IntegerAttr(0));
+  }
+  return zeroOp;
+}
+
 namespace {
 struct FastASMGenTemporalCGRAPass
     : public compigra::impl::FastASMGenTemporalCGRABase<
@@ -184,6 +212,7 @@ struct FastASMGenTemporalCGRAPass
   void runOnOperation() override {
     ModuleOp modOp = dyn_cast<ModuleOp>(getOperation());
     auto funcOp = *modOp.getOps<func::FuncOp>().begin();
+    OpBuilder builder(funcOp.getContext());
     if (asmOutDir.empty())
       asmOutDir = "out";
     std::string outDir = asmOutDir;
@@ -194,45 +223,21 @@ struct FastASMGenTemporalCGRAPass
     std::map<Block *, SetVector<Value>> liveOuts;
     computeLiveValue(region, liveIns, liveOuts);
     printBlockLiveValue(region, liveIns, liveOuts);
-    std::map<Operation *, ScheduleUnit> solution;
-
-    GridAttribute attr{(unsigned)nRow, (unsigned)nCol, 3};
-
-    std::map<Block *, std::vector<ValuePlacement>> initEmbeddingGraphs;
-    std::map<Block *, std::vector<ValuePlacement>> finiEmbeddingGraphs;
 
     int bbId = 0;
 
     logMessage("BasicBlock op assignment\n", true);
 
     for (auto &bb : region.getBlocks()) {
-      // create the schedule for each block
-      std::map<Operation *, ScheduleUnit> subSolution;
-      auto initGraph =
-          initEmbeddingGraphs.find(&bb) != initEmbeddingGraphs.end()
-              ? initEmbeddingGraphs[&bb]
-              : std::vector<ValuePlacement>{};
-      auto finiGraph =
-          finiEmbeddingGraphs.find(&bb) != finiEmbeddingGraphs.end()
-              ? finiEmbeddingGraphs[&bb]
-              : std::vector<ValuePlacement>{};
-      mappingBBdataflowToCGRA(&bb, liveIns, liveOuts, subSolution, initGraph,
-                              finiGraph, attr);
-      // update the initGraph and finiGraph
-      initEmbeddingGraphs[&bb] = initGraph;
-      finiEmbeddingGraphs[&bb] = finiGraph;
+      BasicBlockOpAsisgnment bbOpAsisgnment(&bb, 3, nRow, nCol, builder);
+      auto zeroOp = getZeroConstant(region, builder);
+      bbOpAsisgnment.setUpZeroOp(zeroOp);
+
+      bbOpAsisgnment.mappingBBdataflowToCGRA(liveIns, liveOuts);
+
       logMessage("\nBBId: " + std::to_string(bbId) +
                  "==============================\n");
-      // add the subSolution to the global solution
-      for (auto [op, unit] : subSolution) {
-        if (solution.count(op)) {
-          llvm::errs() << "Error: Operation " << op
-                       << " is already in the "
-                          "solution\n";
-          return signalPassFailure();
-        }
-        solution[op] = unit;
-      }
+
       // if (bbId == 3)
       //   break;
       bbId++;

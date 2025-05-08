@@ -13,7 +13,6 @@
 
 #include "compigra/Scheduler/BasicBlockOpAssignment.h"
 #include "compigra/CgraOps.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include <fstream>
 #include <queue>
 
@@ -672,11 +671,10 @@ static int getInitialLiveInPlacement(
 /// It is noticed that graph[int,int] = <nullptr, nullptr> which indicates the
 /// PE is occupied by an operation does not produce any value at the time
 /// slot.
-static void initEmbeddingGraph(Block *blk,
-                               std::map<Block *, SetVector<Value>> liveIns,
-                               std::map<Block *, SetVector<Value>> liveOuts,
-                               std::vector<ValuePlacement> &initGraph,
-                               GridAttribute attr) {
+static void initEmbeddingGraphWithLiveIn(
+    Block *blk, std::map<Block *, SetVector<Value>> liveIns,
+    std::map<Block *, SetVector<Value>> liveOuts,
+    std::vector<ValuePlacement> &initGraph, GridAttribute attr) {
 
   auto liveIn = liveIns[blk];
   for (auto val : liveIn) {
@@ -762,7 +760,6 @@ SetVector<unsigned> searchOpPlacementSpace(
   if (placementSpace.empty()) {
     std::string message;
     llvm::raw_string_ostream rso(message);
-    rso << "SRC Error: No available placement space for the operation " << *op;
     logMessage(rso.str());
     return placementSpace;
   }
@@ -880,23 +877,55 @@ shuffleSearchSpace(std::map<Operation *, SetVector<unsigned>> &searchSpace,
   return schedulingOps[shuffleOpIdx];
 }
 
-bool createRoutePath(Operation *failOp, std::vector<unsigned> &movs,
+static void sortProducersByWeight(std::vector<ValuePlacement> &producers,
+                                  const std::vector<unsigned> &weight) {
+  std::vector<size_t> indices(producers.size());
+  // Initialize indices 0, 1, 2, ..., n-1
+  for (size_t i = 0; i < indices.size(); ++i)
+    indices[i] = i;
+
+  // Sort indices based on weight
+  std::sort(indices.begin(), indices.end(),
+            [&weight](size_t a, size_t b) { return weight[a] > weight[b]; });
+
+  // Apply the sorted indices to reorder producers
+  std::vector<ValuePlacement> sortedProducers;
+  sortedProducers.reserve(producers.size());
+  for (size_t i : indices)
+    sortedProducers.push_back(producers[i]);
+
+  producers = std::move(sortedProducers);
+}
+
+bool createRoutePath(Operation *failOp, std::vector<ValuePlacement> &producers,
+                     std::vector<unsigned> &movs,
                      std::vector<ValuePlacement> curGraph, GridAttribute &attr,
+                     SmallVector<mlir::Operation *, 4> otherFailureOps = {},
                      unsigned threshold = 2) {
   // get all the producers of the failOp
-  std::vector<ValuePlacement> producers;
   for (auto opr : failOp->getOperands()) {
-    auto it = std::find_if(curGraph.begin(), curGraph.end(),
-                           [&](ValuePlacement p) { return p.val == opr; });
-    if (it != curGraph.end() &&
+    auto prodPtr = std::find_if(curGraph.begin(), curGraph.end(),
+                                [&](ValuePlacement p) { return p.val == opr; });
+    bool notExist =
         std::find_if(producers.begin(), producers.end(), [&](ValuePlacement p) {
-          return p.val == it->val;
-        }) == producers.end())
-      producers.push_back(*it);
+          return p.val == prodPtr->val;
+        }) == producers.end();
+    if (prodPtr != curGraph.end() && notExist) {
+      producers.push_back(*prodPtr);
+      movs.push_back(0);
+    }
   }
-  // resize movs to the size of producers and initialize it to 0
-  movs.resize(producers.size());
-  std::fill(movs.begin(), movs.end(), 0);
+  // sort the producer with their usage by other failure operations
+  std::vector<unsigned> weight(producers.size(), 0);
+  for (auto [ind, prod] : llvm::enumerate(producers)) {
+    auto val = prod.val;
+    for (auto user : val.getUsers())
+      if (std::find(otherFailureOps.begin(), otherFailureOps.end(), user) !=
+          otherFailureOps.end())
+        weight[ind]++;
+  }
+  sortProducersByWeight(producers, weight);
+  // print producer and their weight
 
   // get the available PEs
   SetVector<unsigned> avaiPEs;
@@ -916,14 +945,6 @@ bool createRoutePath(Operation *failOp, std::vector<unsigned> &movs,
     if (occupied == curGraph.end())
       avaiPEs.insert(i);
   }
-  // print the available PEs
-  std::string message;
-  llvm::raw_string_ostream rso(message);
-  rso << "Available PEs: ";
-  for (auto pe : avaiPEs)
-    message += std::to_string(pe) + " ";
-  message += "\n";
-  logMessage(rso.str());
 
   // define map population function of step 1
   auto populateRoutingPEs = [&](unsigned pe, SetVector<unsigned> &map) {
@@ -968,32 +989,101 @@ bool createRoutePath(Operation *failOp, std::vector<unsigned> &movs,
   return false;
 }
 
-void compigra::mappingBBdataflowToCGRA(
-    Block *block, std::map<Block *, SetVector<Value>> &liveIns,
-    std::map<Block *, SetVector<Value>> &liveOuts,
-    std::map<Operation *, ScheduleUnit> &scheduleResult,
-    std::vector<ValuePlacement> &initGraph,
-    std::vector<ValuePlacement> &finiGraph, GridAttribute &attr,
-    ScheduleStrategy strategy) {
+void BasicBlockOpAsisgnment::routeOperation(
+    std::vector<ValuePlacement> producers, std::vector<unsigned> movs) {
+  for (size_t i = 0; i < producers.size(); ++i) {
+    auto producer = producers[i];
+    auto movNum = movs[i];
+    // check whether the mov operation exists
+    unsigned movStep = 0;
+    auto origVal = producer.val;
 
-  auto blockIn = liveIns[block];
-  auto blockOut = liveOuts[block];
+    while (std::find(spilledVals.begin(), spilledVals.end(), origVal) !=
+           spilledVals.end()) {
+      // if the producer.val is already spilled, find the next one
+      origVal = origVal.getDefiningOp()->getResult(0);
+      movStep++;
+    }
+
+    if (movStep >= movNum)
+      continue;
+    // if found producer.val in spilledVals, meaning the value is already
+    // spilled, then find the next one
+
+    // Route producer movNum times
+    for (unsigned j = movStep; j < movNum; ++j) {
+      if (isa<IntegerType>(origVal.getType())) {
+        if (isa<BlockArgument>(origVal))
+          builder.setInsertionPoint(&curBlock->getOperations().front());
+        else
+          builder.setInsertionPointAfter(origVal.getDefiningOp());
+
+        auto movOp = builder.create<arith::AddIOp>(origVal.getLoc(), origVal,
+                                                   zeroIntOp.getResult());
+        spilledVals.push_back(origVal);
+        origVal = movOp.getResult();
+      }
+    }
+  }
+}
+
+void BasicBlockOpAsisgnment::updateCDFG(Block *scheduleBB,
+                                        std::vector<ValuePlacement> initGraph,
+                                        std::vector<ValuePlacement> finiGraph) {
+  // update the initGraph and finiGraph
+  startEmbeddingGraph = initGraph;
+  finiEmbeddingGraph = finiGraph;
+}
+
+double BasicBlockOpAsisgnment::stepSA(
+    int height, SmallVector<Operation *, 4> &schedulingOps,
+    std::map<Operation *, ScheduleUnit> &tmpScheduleResult,
+    std::vector<ValuePlacement> &tmpGraph,
+    std::map<Operation *, SetVector<unsigned>> &existSpace,
+    SetVector<Value> liveOut, std::vector<ValuePlacement> &finiGraph,
+    GridAttribute attr, Operation *shuffleOp) {
+  // Initial placement
+  int suc = placeOperations(height, schedulingOps, tmpScheduleResult, tmpGraph,
+                            existSpace, liveOut, finiGraph, attr);
+  double sucCost =
+      getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
+  double affinityCost = getSpatialAffinityTotalCost(tmpScheduleResult, tmpGraph,
+                                                    schedulePriority, attr);
+  double accessCost =
+      getAccessCost(tmpGraph, tmpScheduleResult, scheduledOps, attr);
+  // get the total cost
+  double currentCost = sucCost + affinityCost + accessCost;
+
+  logMessage("cost: " + std::to_string(sucCost) + " + " +
+             std::to_string(affinityCost) + " + " + std::to_string(accessCost) +
+             " = " + std::to_string(currentCost));
+  return currentCost;
+}
+
+void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
+    std::map<Block *, SetVector<Value>> &liveIns,
+    std::map<Block *, SetVector<Value>> &liveOuts, ScheduleStrategy strategy) {
+
+  auto blockIn = liveIns[curBlock];
+  auto blockOut = liveOuts[curBlock];
+  // TODO[@May] create initGraph and finiGraph according to the connection
+  auto initGraph = startEmbeddingGraph;
+  auto finiGraph = finiEmbeddingGraph;
   // init all livein in initGraph
-  initEmbeddingGraph(block, liveIns, liveOuts, initGraph, attr);
+  initEmbeddingGraphWithLiveIn(curBlock, liveIns, liveOuts, initGraph, attr);
 
   // get the schedule priority of the operations in the block
-  std::map<Operation *, std::pair<int, int>> schedulePriority =
-      getSchedulePriority(block, blockIn, blockOut);
+  schedulePriority = getSchedulePriority(curBlock, blockIn, blockOut);
 
   int height = 1;
-  SetVector<Operation *> scheduledOps;
-  int scheduledOpSize = getNonCstOpSize(block);
+
+  int scheduledOpSize = getNonCstOpSize(curBlock);
   int maxTry = 0;
   auto graphScheduleBefore = initGraph;
   while (scheduledOps.size() < scheduledOpSize && maxTry < 100) {
     maxTry++;
-    auto schedulingOps =
-        getScheduleOps(block, height, schedulePriority, scheduledOps, strategy);
+    auto schedulingOps = getScheduleOps(curBlock, height, schedulePriority,
+                                        scheduledOps, strategy);
 
     int totalOpNum = schedulingOps.size();
     std::map<Operation *, ScheduleUnit> tmpScheduleResult;
@@ -1003,28 +1093,32 @@ void compigra::mappingBBdataflowToCGRA(
                " SA: " + std::to_string(0) + "----\n");
 
     // Initial placement
-    int suc = placeOperations(height, schedulingOps, tmpScheduleResult,
-                              tmpGraph, searchSpace, blockOut, finiGraph, attr);
-    double sucCost =
-        getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
-    double affinityCost = getSpatialAffinityTotalCost(
-        tmpScheduleResult, initGraph, schedulePriority, attr);
-    double accessCost =
-        getAccessCost(tmpGraph, tmpScheduleResult, scheduledOps, attr);
-    // get the total cost
-    double currentCost = sucCost + affinityCost + accessCost;
+    // int suc = placeOperations(height, schedulingOps, tmpScheduleResult,
+    //                           tmpGraph, searchSpace, blockOut, finiGraph,
+    //                           attr);
+    // double sucCost =
+    //     getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
+    // double affinityCost = getSpatialAffinityTotalCost(
+    //     tmpScheduleResult, initGraph, schedulePriority, attr);
+    // double accessCost =
+    //     getAccessCost(tmpGraph, tmpScheduleResult, scheduledOps, attr);
+    // // get the total cost
+    // double currentCost = sucCost + affinityCost + accessCost;
+    // logMessage("cost: " + std::to_string(sucCost) + " + " +
+    //            std::to_string(affinityCost) + " + " +
+    //            std::to_string(accessCost) + " = " +
+    //            std::to_string(currentCost));
+    double currentCost =
+        stepSA(height, schedulingOps, tmpScheduleResult, tmpGraph, searchSpace,
+               blockOut, finiGraph, attr);
     auto layerScheduleResult = tmpScheduleResult;
     auto graphScheduleAfter = tmpGraph;
 
-    logMessage("cost: " + std::to_string(sucCost) + " + " +
-               std::to_string(affinityCost) + " + " +
-               std::to_string(accessCost) + " = " +
-               std::to_string(currentCost));
     double bestCost = currentCost;
 
     // simulated annealing to create a loop that get random
     // placement, record status, cost and determine the final placement
-    int iterSA = 20;
+    int iterSA = 5;
     for (int iter = 0; iter < iterSA; iter++) {
       // get a random placement
       tmpGraph = graphScheduleBefore;
@@ -1037,19 +1131,22 @@ void compigra::mappingBBdataflowToCGRA(
         logMessage("No shuffleOp\n");
         break;
       }
-      int suc =
-          placeOperations(height, schedulingOps, tmpScheduleResult, tmpGraph,
-                          searchSpace, blockOut, finiGraph, attr, shuffleOp);
-      double sucCost =
-          getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
-      double affinityCost = getSpatialAffinityTotalCost(
-          tmpScheduleResult, initGraph, schedulePriority, attr);
-      currentCost = sucCost + affinityCost + accessCost;
+      double currentCost =
+          stepSA(height, schedulingOps, tmpScheduleResult, tmpGraph,
+                 searchSpace, blockOut, finiGraph, attr, shuffleOp);
+      // int suc =
+      //     placeOperations(height, schedulingOps, tmpScheduleResult, tmpGraph,
+      //                     searchSpace, blockOut, finiGraph, attr, shuffleOp);
+      // double sucCost =
+      //     getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
+      // double affinityCost = getSpatialAffinityTotalCost(
+      //     tmpScheduleResult, initGraph, schedulePriority, attr);
+      // currentCost = sucCost + affinityCost + accessCost;
 
-      logMessage("cost: " + std::to_string(sucCost) + " + " +
-                 std::to_string(affinityCost) + " + " +
-                 std::to_string(accessCost) + " = " +
-                 std::to_string(currentCost));
+      // logMessage("cost: " + std::to_string(sucCost) + " + " +
+      //            std::to_string(affinityCost) + " + " +
+      //            std::to_string(accessCost) + " = " +
+      //            std::to_string(currentCost));
       if (currentCost < bestCost) {
         bestCost = currentCost;
         graphScheduleAfter = tmpGraph;
@@ -1070,19 +1167,27 @@ void compigra::mappingBBdataflowToCGRA(
       llvm::raw_string_ostream rso(message);
       for (auto op : graphTransformedOps) {
         unsigned producerNum = op->getNumOperands();
+        std::vector<ValuePlacement> producers;
         std::vector<unsigned> movs;
         // detect whether the operation is routable
-        bool routable = createRoutePath(op, movs, graphScheduleAfter, attr);
+        bool routable =
+            createRoutePath(op, producers, movs, graphScheduleBefore, attr,
+                            graphTransformedOps);
         rso << "Warning: " << *op << " is routable? " << routable << "\n";
-        // print the movs
-        rso << "MOVES: [";
-        for (auto mov : movs)
-          rso << std::to_string(mov) + " ";
-        rso << "]\n";
+        if (routable) {
+          routeOperation(producers, movs);
+          // TODO[@8th/May] update the height priority
+
+          // print producers and their movs
+          for (size_t i = 0; i < producers.size(); ++i) {
+            auto producer = producers[i];
+            auto movNum = movs[i];
+            rso << "Producer: " << producer.val << " :" << movNum << "\n";
+          }
+        }
       }
       logMessage(rso.str());
 
-      // TODO[@6th/May] manipulate the graph
       return;
     }
 
@@ -1092,7 +1197,7 @@ void compigra::mappingBBdataflowToCGRA(
       auto it = std::find(schedulingOps.begin(), schedulingOps.end(), op);
       schedulingOps.erase(it);
       scheduledOps.insert(op);
-      scheduleResult[op] = res;
+      solution[op] = res;
 
       // log the final placement info
       std::string message;
@@ -1107,7 +1212,7 @@ void compigra::mappingBBdataflowToCGRA(
       // delay the scheduling
       schedulePriority[op].first += 1;
       SetVector<Operation *> delayedOps;
-      buildChildTree(op->getResult(0), delayedOps, block);
+      buildChildTree(op->getResult(0), delayedOps, curBlock);
       for (auto child : delayedOps) {
         if (schedulePriority.count(child))
           schedulePriority[child].first += 1;

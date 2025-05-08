@@ -16,6 +16,7 @@
 
 #include "compigra/Scheduler/KernelSchedule.h"
 #include "compigra/Support/Utils.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
 void logMessage(const std::string &message, bool overwrite = false);
@@ -57,37 +58,53 @@ struct PERegUse {
   bool exAvail;
 };
 
-// class BasicBlockOpAsisgnment {
-// public:
-//   BasicBlockOpAsisgnment(unsigned maxReg, unsigned nRow, unsigned nCol,
-//                          Block *block, unsigned bbId)
-//       : maxReg(maxReg), nRow(nRow), nCol(nCol), block(block), bbId(bbId),
-//         builder(builder) {}
+class BasicBlockOpAsisgnment {
+public:
+  BasicBlockOpAsisgnment(Block *block, unsigned maxReg, unsigned nRow,
+                         unsigned nCol, OpBuilder builder)
+      : builder(builder), curBlock(block) {
+    attr = {nRow, nCol, maxReg};
+  }
 
-//   void searchCriticalPath();
+private:
+  Block *curBlock;
+  GridAttribute attr;
+  OpBuilder builder;
+  arith::ConstantOp zeroIntOp;
 
-// private:
-//   unsigned maxReg;
-//   unsigned nRow;
-//   unsigned nCol;
-//   // Interface for the the global schduler if the ILP model does not have
-//   // solution
-//   unsigned storeAddr;
-//   Value spill = nullptr;
-//   Operation *failUser = nullptr;
-//   OpBuilder builder;
+  std::vector<ValuePlacement> startEmbeddingGraph;
+  std::vector<ValuePlacement> finiEmbeddingGraph;
 
-//   Block *block;
-//   unsigned bbId;
-// };
+  std::map<Operation *, std::pair<int, int>> schedulePriority;
+  std::map<Operation *, ScheduleUnit> solution;
+  SetVector<Operation *> scheduledOps;
 
-void mappingBBdataflowToCGRA(
-    Block *block, std::map<Block *, SetVector<Value>> &liveIns,
-    std::map<Block *, SetVector<Value>> &liveOuts,
-    std::map<Operation *, ScheduleUnit> &subSolution,
-    std::vector<ValuePlacement> &initGraph,
-    std::vector<ValuePlacement> &finiGraph, GridAttribute &attr,
-    ScheduleStrategy strategy = ScheduleStrategy::ASAP);
+  // The operations and their corresponding spill operations
+  std::vector<Value> spilledVals;
+
+  void updateCDFG(Block *scheduleBB, std::vector<ValuePlacement> initGraph,
+                  std::vector<ValuePlacement> finiGraph);
+
+  void routeOperation(std::vector<ValuePlacement> producers,
+                      std::vector<unsigned> movs);
+
+  double stepSA(int height, SmallVector<Operation *, 4> &schedulingOps,
+                std::map<Operation *, ScheduleUnit> &tmpScheduleResult,
+                std::vector<ValuePlacement> &tmpGraph,
+                std::map<Operation *, SetVector<unsigned>> &existSpace,
+                SetVector<Value> liveOut,
+                std::vector<ValuePlacement> &finiGraph, GridAttribute attr,
+                Operation *shuffleOp = nullptr);
+
+public:
+  void
+  mappingBBdataflowToCGRA(std::map<Block *, SetVector<Value>> &liveIns,
+                          std::map<Block *, SetVector<Value>> &liveOuts,
+                          ScheduleStrategy strategy = ScheduleStrategy::ASAP);
+
+  void setUpZeroOp(arith::ConstantOp zeroOp) { this->zeroIntOp = zeroOp; }
+};
+
 } // namespace compigra
 
 #endif
