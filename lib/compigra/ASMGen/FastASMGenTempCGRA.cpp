@@ -242,6 +242,7 @@ struct FastASMGenTemporalCGRAPass
       //   break;
       bbId++;
     }
+    llvm::errs() << funcOp << "\n";
   };
 };
 } // namespace

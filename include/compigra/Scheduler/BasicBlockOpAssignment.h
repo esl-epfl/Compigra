@@ -75,6 +75,9 @@ private:
   std::vector<ValuePlacement> startEmbeddingGraph;
   std::vector<ValuePlacement> finiEmbeddingGraph;
 
+  SetVector<Value> liveout;
+  SetVector<Value> livein;
+
   std::map<Operation *, std::pair<int, int>> schedulePriority;
   std::map<Operation *, ScheduleUnit> solution;
   SetVector<Operation *> scheduledOps;
@@ -82,11 +85,15 @@ private:
   // The operations and their corresponding spill operations
   std::vector<Value> spilledVals;
 
+  void updateSchedulePriority(std::map<Block *, SetVector<Value>> liveIns,
+                              std::map<Block *, SetVector<Value>> liveOuts);
+
   void updateCDFG(Block *scheduleBB, std::vector<ValuePlacement> initGraph,
                   std::vector<ValuePlacement> finiGraph);
 
-  void routeOperation(std::vector<ValuePlacement> producers,
-                      std::vector<unsigned> movs);
+  SmallVector<Operation *, 4>
+  routeOperation(std::vector<ValuePlacement> producers,
+                 std::vector<unsigned> movs);
 
   double stepSA(int height, SmallVector<Operation *, 4> &schedulingOps,
                 std::map<Operation *, ScheduleUnit> &tmpScheduleResult,
@@ -95,6 +102,24 @@ private:
                 SetVector<Value> liveOut,
                 std::vector<ValuePlacement> &finiGraph, GridAttribute attr,
                 Operation *shuffleOp = nullptr);
+
+  void setUpLiveness(std::map<Block *, SetVector<Value>> &liveIns,
+                     std::map<Block *, SetVector<Value>> &liveOuts) {
+    this->livein = liveIns[curBlock];
+    this->liveout = liveOuts[curBlock];
+  }
+
+  SetVector<unsigned>
+  searchOpPlacementSpace(Operation *op, std::vector<ValuePlacement> &curGraph,
+                         std::vector<ValuePlacement> &finiGraph,
+                         std::map<Operation *, ScheduleUnit> tmpResult);
+
+  int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
+                      std::map<Operation *, ScheduleUnit> &scheduleResult,
+                      std::vector<ValuePlacement> &curGraph,
+                      std::map<Operation *, SetVector<unsigned>> &space,
+                      std::vector<ValuePlacement> &finiGraph,
+                      Operation *shuffleOp = nullptr);
 
 public:
   void

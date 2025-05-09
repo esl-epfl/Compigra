@@ -72,12 +72,12 @@ static unsigned getNonCstOpSize(Block *block) {
 
 static SmallVector<Operation *, 4>
 getNextLayerOps(Block *block, SetVector<Value> &liveIn,
-                std::set<Operation *> &scheduledOps) {
+                std::set<Operation *> &visitedOps) {
   SmallVector<Operation *, 4> schedulingOps;
   auto termOp = block->getTerminator();
 
   for (auto &op : block->getOperations()) {
-    if (isa<arith::ConstantOp>(op) || scheduledOps.count(&op) ||
+    if (isa<arith::ConstantOp>(op) || visitedOps.count(&op) ||
         isTerminatorOp(&op)) {
       continue;
     }
@@ -90,8 +90,8 @@ getNextLayerOps(Block *block, SetVector<Value> &liveIn,
       bool isLiveIn =
           std::find(liveIn.begin(), liveIn.end(), operand) != liveIn.end();
       bool producedByScheduledOp =
-          std::find(scheduledOps.begin(), scheduledOps.end(),
-                    operand.getDefiningOp()) != scheduledOps.end();
+          std::find(visitedOps.begin(), visitedOps.end(),
+                    operand.getDefiningOp()) != visitedOps.end();
       bool isConstant = operand.getDefiningOp() &&
                         isa<arith::ConstantOp>(operand.getDefiningOp());
       if (!isLiveIn && !producedByScheduledOp && !isConstant) {
@@ -129,12 +129,12 @@ static bool isLiveExcept(Value val, Operation *user, SetVector<Value> liveOut,
 static SmallVector<Operation *, 4>
 getPreviousLayerOps(Block *block, SetVector<Value> &liveout,
                     std::set<Operation *> &ancestors) {
-  SmallVector<Operation *, 4> schedulingOps;
+  SmallVector<Operation *, 4> visitedOps;
 
   for (auto op : llvm::make_early_inc_range(ancestors)) {
     // swi op and terminator op can be scheduled at the last stage
     if (op->getResults().empty()) {
-      schedulingOps.push_back(op);
+      visitedOps.push_back(op);
       continue;
     }
 
@@ -152,10 +152,10 @@ getPreviousLayerOps(Block *block, SetVector<Value> &liveout,
       }
 
     if (canSchedule) {
-      schedulingOps.push_back(op);
+      visitedOps.push_back(op);
     }
   }
-  return schedulingOps;
+  return visitedOps;
 }
 
 /// Compute the schedule priority of the operations in the block. The earliest
@@ -168,23 +168,23 @@ getSchedulePriority(Block *block, SetVector<Value> &liveIn,
                     SetVector<Value> &liveOut) {
   std::map<Operation *, std::pair<int, int>> schedulePriority;
 
-  std::set<Operation *> scheduledOps;
+  std::set<Operation *> visitedOps;
   // the live-in height is zero
   int earliest = 1;
   // scheduledOp size = block->getOperations().size() - constantOp size - 1
-  int scheduledOpSize = getNonCstOpSize(block) - 1;
+  int totalOpSize = getNonCstOpSize(block) - 1;
 
-  while (scheduledOps.size() < scheduledOpSize) {
+  while (visitedOps.size() < totalOpSize) {
     // get all operations that its operands are in the liveIn set or belong to
     // the scheduledOps
     SmallVector<Operation *, 4> schedulingOps =
-        getNextLayerOps(block, liveIn, scheduledOps);
+        getNextLayerOps(block, liveIn, visitedOps);
 
     for (auto op : schedulingOps) {
       schedulePriority[op] = {earliest, INT_MAX};
-      scheduledOps.insert(op);
+      visitedOps.insert(op);
     }
-    if (scheduledOps.size() < scheduledOpSize)
+    if (visitedOps.size() < totalOpSize)
       earliest++;
   }
 
@@ -204,36 +204,29 @@ getSchedulePriority(Block *block, SetVector<Value> &liveIn,
   }
   latest += delayOneCC;
   schedulePriority[termOp] = {latest, latest};
-  scheduledOps.insert(termOp);
+  visitedOps.insert(termOp);
 
-  while (!scheduledOps.empty()) {
+  while (!visitedOps.empty()) {
     // get all operations that its operands are in the liveOut set or belong
     // to the scheduledOps
     SmallVector<Operation *, 4> schedulingOps =
-        getPreviousLayerOps(block, liveOut, scheduledOps);
+        getPreviousLayerOps(block, liveOut, visitedOps);
 
     for (auto op : schedulingOps) {
       schedulePriority[op].second = latest;
-      scheduledOps.erase(op);
+      visitedOps.erase(op);
     }
     latest--;
   }
-  // log schedulePriority
-  for (auto [op, range] : schedulePriority) {
-    std::string message;
-    llvm::raw_string_ostream rso(message);
-    rso << "SCHEDULE PRIORITY " << *op << ":[" << range.first << " "
-        << range.second << "]\n";
-    logMessage(rso.str());
-  }
+
   return schedulePriority;
 }
 
-static SmallVector<Operation *, 4>
-getScheduleOps(Block *block, int height,
-               std::map<Operation *, std::pair<int, int>> schedulePriority,
-               SetVector<Operation *> scheduledOps,
-               ScheduleStrategy strategy = ScheduleStrategy::ASAP) {
+static SmallVector<Operation *, 4> getScheduleOps(
+    Block *block, int height,
+    const std::map<Operation *, std::pair<int, int>> schedulePriority,
+    SetVector<Operation *> scheduledOps,
+    ScheduleStrategy strategy = ScheduleStrategy::ASAP) {
   SmallVector<Operation *, 4> schedulingOps;
   for (auto [op, priority] : schedulePriority) {
     if (scheduledOps.count(op))
@@ -241,10 +234,10 @@ getScheduleOps(Block *block, int height,
 
     // if the operation is in the scheduling height, add it to the scheduling
     // operations
-    if (strategy == ScheduleStrategy::ASAP && priority.first == height)
+    if (strategy == ScheduleStrategy::ASAP && priority.first <= height)
       schedulingOps.push_back(op);
 
-    if (strategy == ScheduleStrategy::ALAP && priority.second == height)
+    if (strategy == ScheduleStrategy::ALAP && priority.second >= height)
       schedulingOps.push_back(op);
 
     if (strategy == ScheduleStrategy::DYNAMIC && priority.first <= height &&
@@ -254,12 +247,13 @@ getScheduleOps(Block *block, int height,
   }
 
   // sort the scheduling operations according to the schedule priority
-  std::sort(
-      schedulingOps.begin(), schedulingOps.end(),
-      [&](Operation *op1, Operation *op2) {
-        return (schedulePriority[op1].first + schedulePriority[op1].second) <
-               (schedulePriority[op2].first + schedulePriority[op2].second);
-      });
+  std::sort(schedulingOps.begin(), schedulingOps.end(),
+            [&](Operation *op1, Operation *op2) {
+              return (schedulePriority.at(op1).first +
+                      schedulePriority.at(op1).second) <
+                     (schedulePriority.at(op2).first +
+                      schedulePriority.at(op2).second);
+            });
   return schedulingOps;
 }
 
@@ -426,28 +420,19 @@ static double getAccessCost(std::vector<ValuePlacement> curGraph,
     for (auto user : val.getUsers())
       if (scheduledOps.count(user) == 0 && scheduleResult.count(user) == 0)
         nonScheduledUsers.insert(user);
-
-    std::string message;
-    llvm::raw_string_ostream rso(message);
-    cost += (double)nonScheduledUsers.size() / (double)mobilityRange.size();
-    rso << "ACCESS [" << val << "]: " << nonScheduledUsers.size() << " "
-        << mobilityRange.size() << " : "
-        << (double)nonScheduledUsers.size() / (double)mobilityRange.size()
-        << "\n";
-    logMessage(rso.str());
   }
   return normRatio == 0 ? 0 : cost / normRatio;
 }
 
-static double
-getSuccessCost(std::map<Operation *, ScheduleUnit> scheduleResult,
-               std::map<Operation *, std::pair<int, int>> schedulePriority,
-               SmallVector<mlir::Operation *, 4> totalOps) {
+static double getSuccessCost(
+    std::map<Operation *, ScheduleUnit> scheduleResult,
+    const std::map<Operation *, std::pair<int, int>> schedulePriority,
+    SmallVector<mlir::Operation *, 4> totalOps) {
   double cost = 0;
   double normRatio = 0;
   for (auto op : totalOps) {
-    auto earliest = schedulePriority[op].first;
-    auto latest = schedulePriority[op].second;
+    auto earliest = schedulePriority.at(op).first;
+    auto latest = schedulePriority.at(op).second;
     double weight = earliest / latest;
     if (scheduleResult.count(op) != 0) {
       cost += weight;
@@ -532,10 +517,10 @@ getResourceGraph(std::vector<ValuePlacement> curGraph, GridAttribute &attr) {
   return freeReg;
 }
 
-static void updateResourceGraph(std::vector<ValuePlacement> &curGraph,
-                                Operation *op, unsigned pe, RegAttr reg,
-                                SetVector<Operation *> &scheduledOps,
-                                SetVector<Value> &liveout) {
+static void updateEmbeddingGraph(std::vector<ValuePlacement> &curGraph,
+                                 Operation *op, unsigned pe, RegAttr reg,
+                                 SetVector<Operation *> &scheduledOps,
+                                 SetVector<Value> &liveout) {
   // op takes place of pe, invalidate the Rout of the pe
   for (auto it = curGraph.begin(); it != curGraph.end();) {
     if (it->pe != pe) {
@@ -568,13 +553,14 @@ static void updateResourceGraph(std::vector<ValuePlacement> &curGraph,
 }
 
 static std::map<int, PERegUse> getAvailableResourceGraph(
-    std::vector<ValuePlacement> curGraph, GridAttribute &attr, Operation *op,
-    SetVector<Value> liveout, std::map<Operation *, ScheduleUnit> tmpResult) {
+    std::vector<ValuePlacement> curGraph, SetVector<Operation *> scheduledOps,
+    GridAttribute &attr, Operation *op, SetVector<Value> liveout,
+    std::map<Operation *, ScheduleUnit> tmpResult) {
   // get available slots
-  SetVector<Operation *> scheduledOps;
+  SetVector<Operation *> layerScheduledOps;
   std::vector<bool> used(attr.nRow * attr.nCol, false);
   for (auto [op, unit] : tmpResult) {
-    scheduledOps.insert(op);
+    layerScheduledOps.insert(op);
     used[unit.pe] = true;
   }
 
@@ -586,6 +572,11 @@ static std::map<int, PERegUse> getAvailableResourceGraph(
   for (auto place : curGraph) {
     auto pe = place.pe;
     auto reg = place.regAttr;
+    // if the place.val is not live, it does not occupy the resource
+    bool deadVal = !isLive(place.val, liveout, scheduledOps);
+    if (deadVal)
+      continue;
+
     // check whether
     // if regAttr is IN, remove the resource from the freeReg
     if (reg == RegAttr::IN || reg == RegAttr::IE)
@@ -593,10 +584,7 @@ static std::map<int, PERegUse> getAvailableResourceGraph(
     // if regAttr is EX, remove the resource from the freeReg
     if (reg == RegAttr::EX)
       freeReg[pe].exAvail &=
-          !isLiveExcept(place.val, op, liveout, scheduledOps);
-    // TODO[@1th/May] let the execute available of EX if necessary
-    // if (reg == RegAttr::IE)
-    //   freeReg[pe].exAvail = true;
+          !isLiveExcept(place.val, op, liveout, layerScheduledOps);
   }
   return freeReg;
 }
@@ -622,8 +610,8 @@ static void printResourceGraph(std::map<int, PERegUse> freeReg,
 
 static int getInitialLiveInPlacement(
     Value in, Block *block, std::vector<ValuePlacement> &initGraph,
-    std::map<Block *, SetVector<Value>> &liveIns,
-    std::map<Block *, SetVector<Value>> &liveOuts, GridAttribute &attr) {
+    const std::map<Block *, SetVector<Value>> liveIns,
+    const std::map<Block *, SetVector<Value>> liveOuts, GridAttribute &attr) {
   // if the value has more than 3 users, it should be external register
   int userNum = 0;
   for (auto user : in.getUsers())
@@ -706,18 +694,18 @@ ValuePlacement getSrcValuePlacement(Value src, Operation *op,
 }
 
 /// Get the valid placement space of the operation.
-SetVector<unsigned> searchOpPlacementSpace(
+SetVector<unsigned> BasicBlockOpAsisgnment::searchOpPlacementSpace(
     Operation *op, std::vector<ValuePlacement> &curGraph,
-    std::vector<ValuePlacement> &finiGraph, SetVector<Value> liveout,
-    std::map<Operation *, ScheduleUnit> tmpResult, GridAttribute &attr) {
+    std::vector<ValuePlacement> &finiGraph,
+    std::map<Operation *, ScheduleUnit> tmpResult) {
   int nRow = attr.nRow;
   int nCol = attr.nCol;
   SetVector<unsigned> placementSpace;
 
   // get the available hardware resources
-  auto regUse =
-      getAvailableResourceGraph(curGraph, attr, op, liveout, tmpResult);
-  // printResourceGraph(regUse, attr);
+  auto regUse = getAvailableResourceGraph(curGraph, scheduledOps, attr, op,
+                                          liveout, tmpResult);
+  printResourceGraph(regUse, attr);
 
   for (int i = 0; i < nRow * nCol; i++) {
     if (regUse[i].inNum > 0 && regUse[i].exAvail)
@@ -760,6 +748,7 @@ SetVector<unsigned> searchOpPlacementSpace(
   if (placementSpace.empty()) {
     std::string message;
     llvm::raw_string_ostream rso(message);
+    rso << "Empty PLACEMENT SPACE: " << *op << "\n";
     logMessage(rso.str());
     return placementSpace;
   }
@@ -786,13 +775,12 @@ SetVector<unsigned> searchOpPlacementSpace(
   return placementSpace;
 }
 
-int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
-                    std::map<Operation *, ScheduleUnit> &scheduleResult,
-                    std::vector<ValuePlacement> &curGraph,
-                    std::map<Operation *, SetVector<unsigned>> &space,
-                    SetVector<Value> liveOut,
-                    std::vector<ValuePlacement> &finiGraph, GridAttribute attr,
-                    Operation *shuffleOp = nullptr) {
+int BasicBlockOpAsisgnment::placeOperations(
+    int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
+    std::map<Operation *, ScheduleUnit> &scheduleResult,
+    std::vector<ValuePlacement> &curGraph,
+    std::map<Operation *, SetVector<unsigned>> &space,
+    std::vector<ValuePlacement> &finiGraph, Operation *shuffleOp) {
 
   unsigned suc = 0;
   logMessage("timeSlot: " + std::to_string(timeSlot) + " " +
@@ -814,8 +802,8 @@ int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
       }
     } else {
       // search new placement space
-      auto placementSpace = searchOpPlacementSpace(op, curGraph, finiGraph,
-                                                   liveOut, tmpResult, attr);
+      auto placementSpace =
+          searchOpPlacementSpace(op, curGraph, finiGraph, tmpResult);
       // randomly choose a placement space
       if (placementSpace.empty())
         continue;
@@ -829,14 +817,15 @@ int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
     rso << *op << " ---> " << std::to_string(pe) << "\n";
     logMessage(rso.str());
     suc++;
-    // updateResourceGraph(curGraph, op, pe, regAttr, tmpScheduledOps, liveOut);
+    // updateEmbeddingGraph(curGraph, op, pe, regAttr, tmpScheduledOps,
+    // liveOut);
     tmpScheduledOps.insert(op);
     tmpResult[op] = {timeSlot, (int)pe, -1};
   }
   for (auto op : tmpScheduledOps) {
     auto pe = tmpResult[op].pe;
     RegAttr regAttr = RegAttr::IE;
-    updateResourceGraph(curGraph, op, pe, regAttr, tmpScheduledOps, liveOut);
+    updateEmbeddingGraph(curGraph, op, pe, regAttr, tmpScheduledOps, liveout);
   }
 
   // write tmpScheduleResult to scheduleResult
@@ -989,8 +978,10 @@ bool createRoutePath(Operation *failOp, std::vector<ValuePlacement> &producers,
   return false;
 }
 
-void BasicBlockOpAsisgnment::routeOperation(
-    std::vector<ValuePlacement> producers, std::vector<unsigned> movs) {
+SmallVector<Operation *, 4>
+BasicBlockOpAsisgnment::routeOperation(std::vector<ValuePlacement> producers,
+                                       std::vector<unsigned> movs) {
+  SmallVector<Operation *, 4> routeOps;
   for (size_t i = 0; i < producers.size(); ++i) {
     auto producer = producers[i];
     auto movNum = movs[i];
@@ -1011,20 +1002,90 @@ void BasicBlockOpAsisgnment::routeOperation(
     // spilled, then find the next one
 
     // Route producer movNum times
+    auto routeVal = origVal;
+    Operation *finalRouteOp = nullptr;
     for (unsigned j = movStep; j < movNum; ++j) {
-      if (isa<IntegerType>(origVal.getType())) {
-        if (isa<BlockArgument>(origVal))
+      if (isa<IntegerType>(routeVal.getType())) {
+        if (isa<BlockArgument>(routeVal))
           builder.setInsertionPoint(&curBlock->getOperations().front());
         else
-          builder.setInsertionPointAfter(origVal.getDefiningOp());
+          builder.setInsertionPointAfter(routeVal.getDefiningOp());
 
-        auto movOp = builder.create<arith::AddIOp>(origVal.getLoc(), origVal,
+        auto movOp = builder.create<arith::AddIOp>(routeVal.getLoc(), routeVal,
                                                    zeroIntOp.getResult());
-        spilledVals.push_back(origVal);
-        origVal = movOp.getResult();
+        finalRouteOp = movOp;
+
+        spilledVals.push_back(routeVal);
+        routeOps.push_back(movOp);
+        routeVal = movOp.getResult();
       }
     }
+    // replace the use of origVal with the finalRouteOp if the use does not
+    // belongs to scheduledOps
+    origVal.replaceUsesWithIf(finalRouteOp->getResult(0), [&](OpOperand &use) {
+      auto user = use.getOwner();
+      return user->getBlock() == curBlock && scheduledOps.count(user) == 0 &&
+             user != finalRouteOp;
+    });
   }
+  return routeOps;
+}
+
+Value getRootVal(Operation *op, std::vector<Value> spilledVals,
+                 unsigned &step) {
+  // op = add srcOp, zero, get SrcOp value until the value is not in spilledVals
+  // first check whether op match the pattern;
+
+  auto isRouteOp = [&](Operation *op) {
+    if (isa<arith::AddIOp>(op)) {
+      auto addOp = dyn_cast<arith::AddIOp>(op);
+      // operand(0) should be in spilledVals
+      if (std::find(spilledVals.begin(), spilledVals.end(),
+                    addOp.getOperand(0)) == spilledVals.end())
+        return false;
+      // operand(1) should be a constant 0
+      return addOp.getOperand(1).getDefiningOp() &&
+             isa<arith::ConstantOp>(addOp.getOperand(1).getDefiningOp());
+    }
+    return false;
+  };
+
+  auto curOp = op;
+  while (isRouteOp(curOp)) {
+    step++;
+    curOp = curOp->getOperand(0).getDefiningOp();
+    if (curOp == nullptr)
+      break;
+  }
+  return curOp->getResult(0);
+}
+
+void BasicBlockOpAsisgnment::updateSchedulePriority(
+    std::map<Block *, SetVector<Value>> liveIns,
+    std::map<Block *, SetVector<Value>> liveOuts) {
+  auto newSchedulePriority =
+      getSchedulePriority(curBlock, liveIns[curBlock], liveIns[curBlock]);
+
+  // update schedulePriority
+  for (auto [op, priority] : newSchedulePriority) {
+    if (schedulePriority.count(op) == 0) {
+      schedulePriority[op] = priority;
+      continue;
+    }
+    schedulePriority[op].first =
+        std::max(schedulePriority[op].first, priority.first);
+    schedulePriority[op].second =
+        std::max(schedulePriority[op].second, priority.second);
+  }
+
+  // print the schedulePriority
+  std::string message;
+  llvm::raw_string_ostream rso(message);
+  rso << "SCHEDULE PRIORITY: ";
+  for (auto [op, priority] : schedulePriority) {
+    rso << *op << " " << priority.first << " " << priority.second << "\n";
+  }
+  logMessage(rso.str());
 }
 
 void BasicBlockOpAsisgnment::updateCDFG(Block *scheduleBB,
@@ -1044,7 +1105,7 @@ double BasicBlockOpAsisgnment::stepSA(
     GridAttribute attr, Operation *shuffleOp) {
   // Initial placement
   int suc = placeOperations(height, schedulingOps, tmpScheduleResult, tmpGraph,
-                            existSpace, liveOut, finiGraph, attr);
+                            existSpace, finiGraph);
   double sucCost =
       getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
   double affinityCost = getSpatialAffinityTotalCost(tmpScheduleResult, tmpGraph,
@@ -1066,6 +1127,8 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
 
   auto blockIn = liveIns[curBlock];
   auto blockOut = liveOuts[curBlock];
+  setUpLiveness(liveIns, liveOuts);
+
   // TODO[@May] create initGraph and finiGraph according to the connection
   auto initGraph = startEmbeddingGraph;
   auto finiGraph = finiEmbeddingGraph;
@@ -1077,15 +1140,14 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
 
   int height = 1;
 
-  int scheduledOpSize = getNonCstOpSize(curBlock);
+  int totalOpNum = getNonCstOpSize(curBlock);
   int maxTry = 0;
   auto graphScheduleBefore = initGraph;
-  while (scheduledOps.size() < scheduledOpSize && maxTry < 100) {
+  while (scheduledOps.size() < totalOpNum && maxTry < 100) {
     maxTry++;
     auto schedulingOps = getScheduleOps(curBlock, height, schedulePriority,
                                         scheduledOps, strategy);
 
-    int totalOpNum = schedulingOps.size();
     std::map<Operation *, ScheduleUnit> tmpScheduleResult;
     std::map<Operation *, SetVector<unsigned>> searchSpace;
     auto tmpGraph = graphScheduleBefore;
@@ -1093,21 +1155,6 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
                " SA: " + std::to_string(0) + "----\n");
 
     // Initial placement
-    // int suc = placeOperations(height, schedulingOps, tmpScheduleResult,
-    //                           tmpGraph, searchSpace, blockOut, finiGraph,
-    //                           attr);
-    // double sucCost =
-    //     getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
-    // double affinityCost = getSpatialAffinityTotalCost(
-    //     tmpScheduleResult, initGraph, schedulePriority, attr);
-    // double accessCost =
-    //     getAccessCost(tmpGraph, tmpScheduleResult, scheduledOps, attr);
-    // // get the total cost
-    // double currentCost = sucCost + affinityCost + accessCost;
-    // logMessage("cost: " + std::to_string(sucCost) + " + " +
-    //            std::to_string(affinityCost) + " + " +
-    //            std::to_string(accessCost) + " = " +
-    //            std::to_string(currentCost));
     double currentCost =
         stepSA(height, schedulingOps, tmpScheduleResult, tmpGraph, searchSpace,
                blockOut, finiGraph, attr);
@@ -1134,19 +1181,6 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
       double currentCost =
           stepSA(height, schedulingOps, tmpScheduleResult, tmpGraph,
                  searchSpace, blockOut, finiGraph, attr, shuffleOp);
-      // int suc =
-      //     placeOperations(height, schedulingOps, tmpScheduleResult, tmpGraph,
-      //                     searchSpace, blockOut, finiGraph, attr, shuffleOp);
-      // double sucCost =
-      //     getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
-      // double affinityCost = getSpatialAffinityTotalCost(
-      //     tmpScheduleResult, initGraph, schedulePriority, attr);
-      // currentCost = sucCost + affinityCost + accessCost;
-
-      // logMessage("cost: " + std::to_string(sucCost) + " + " +
-      //            std::to_string(affinityCost) + " + " +
-      //            std::to_string(accessCost) + " = " +
-      //            std::to_string(currentCost));
       if (currentCost < bestCost) {
         bestCost = currentCost;
         graphScheduleAfter = tmpGraph;
@@ -1156,6 +1190,7 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
       logMessage("\n");
     }
 
+    // post simulated annealing, check whether graph transformation is needed
     SmallVector<Operation *, 4> graphTransformedOps;
     for (auto op : schedulingOps) {
       if (layerScheduleResult.count(op) == 0 &&
@@ -1175,23 +1210,26 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
                             graphTransformedOps);
         rso << "Warning: " << *op << " is routable? " << routable << "\n";
         if (routable) {
-          routeOperation(producers, movs);
+          auto newRouteOps = routeOperation(producers, movs);
           // TODO[@8th/May] update the height priority
-
-          // print producers and their movs
+          updateSchedulePriority(liveIns, liveOuts);
+          // schedulePriority = getSchedulePriority(curBlock, blockIn,
+          // blockOut); print producers and their movs
           for (size_t i = 0; i < producers.size(); ++i) {
             auto producer = producers[i];
             auto movNum = movs[i];
             rso << "Producer: " << producer.val << " :" << movNum << "\n";
           }
+          totalOpNum += newRouteOps.size();
         }
       }
       logMessage(rso.str());
 
-      return;
+      // re-schedule
+      continue;
     }
 
-    // determine whether to transform the graph
+    // prepare scheduling for the next layer
     for (auto [op, res] : layerScheduleResult) {
       // remove it from the schedulingOps
       auto it = std::find(schedulingOps.begin(), schedulingOps.end(), op);
@@ -1220,9 +1258,4 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
     }
     height++;
   }
-
-  // for (auto [op, priority] : schedulePriority) {
-  //   llvm::errs() << "Schedule priority: " << *op << " [" << priority.first
-  //                << ", " << priority.second << "]\n";
-  // }
 }
