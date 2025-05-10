@@ -71,6 +71,7 @@ private:
   GridAttribute attr;
   OpBuilder builder;
   arith::ConstantOp zeroIntOp;
+  arith::ConstantOp zeroFloatOp;
 
   std::vector<ValuePlacement> startEmbeddingGraph;
   std::vector<ValuePlacement> finiEmbeddingGraph;
@@ -127,7 +128,10 @@ public:
                           std::map<Block *, SetVector<Value>> &liveOuts,
                           ScheduleStrategy strategy = ScheduleStrategy::ASAP);
 
-  void setUpZeroOp(arith::ConstantOp zeroOp) { this->zeroIntOp = zeroOp; }
+  void setUpZeroOp(arith::ConstantOp zeroIntOp, arith::ConstantOp zeroFloatOp) {
+    this->zeroIntOp = zeroIntOp;
+    this->zeroFloatOp = zeroFloatOp;
+  }
 };
 
 } // namespace compigra

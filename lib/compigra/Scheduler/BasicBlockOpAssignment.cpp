@@ -904,6 +904,7 @@ bool createRoutePath(Operation *failOp, std::vector<ValuePlacement> &producers,
       movs.push_back(0);
     }
   }
+
   // sort the producer with their usage by other failure operations
   std::vector<unsigned> weight(producers.size(), 0);
   for (auto [ind, prod] : llvm::enumerate(producers)) {
@@ -983,6 +984,8 @@ BasicBlockOpAsisgnment::routeOperation(std::vector<ValuePlacement> producers,
                                        std::vector<unsigned> movs) {
   SmallVector<Operation *, 4> routeOps;
   for (size_t i = 0; i < producers.size(); ++i) {
+    std::string message;
+    llvm::raw_string_ostream rso(message);
     auto producer = producers[i];
     auto movNum = movs[i];
     // check whether the mov operation exists
@@ -1005,20 +1008,22 @@ BasicBlockOpAsisgnment::routeOperation(std::vector<ValuePlacement> producers,
     auto routeVal = origVal;
     Operation *finalRouteOp = nullptr;
     for (unsigned j = movStep; j < movNum; ++j) {
+      if (isa<BlockArgument>(routeVal))
+        builder.setInsertionPoint(&curBlock->getOperations().front());
+      else
+        builder.setInsertionPointAfter(routeVal.getDefiningOp());
+      Operation *movOp;
       if (isa<IntegerType>(routeVal.getType())) {
-        if (isa<BlockArgument>(routeVal))
-          builder.setInsertionPoint(&curBlock->getOperations().front());
-        else
-          builder.setInsertionPointAfter(routeVal.getDefiningOp());
-
-        auto movOp = builder.create<arith::AddIOp>(routeVal.getLoc(), routeVal,
-                                                   zeroIntOp.getResult());
-        finalRouteOp = movOp;
-
-        spilledVals.push_back(routeVal);
-        routeOps.push_back(movOp);
-        routeVal = movOp.getResult();
+        movOp = builder.create<arith::AddIOp>(routeVal.getLoc(), routeVal,
+                                              zeroIntOp.getResult());
+      } else if (isa<FloatType>(routeVal.getType())) {
+        movOp = builder.create<arith::AddFOp>(routeVal.getLoc(), routeVal,
+                                              zeroFloatOp.getResult());
       }
+      finalRouteOp = movOp;
+      spilledVals.push_back(routeVal);
+      routeOps.push_back(movOp);
+      routeVal = movOp->getResult(0);
     }
     // replace the use of origVal with the finalRouteOp if the use does not
     // belongs to scheduledOps

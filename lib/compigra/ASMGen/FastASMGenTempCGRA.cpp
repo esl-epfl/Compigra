@@ -173,7 +173,8 @@ void computeLiveValue(Region &region,
 }
 void maxIndependentSubGraphs(Block *block, SetVector<Value> liveIn) {}
 
-arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder) {
+arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder,
+                                  bool isFloat = false) {
   arith::ConstantOp zeroOp;
   for (auto &op : region.getOps()) {
     auto zeroCst = dyn_cast_or_null<arith::ConstantOp>(op);
@@ -181,12 +182,12 @@ arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder) {
       continue;
 
     if (auto intAttr = zeroCst.getValue().dyn_cast<IntegerAttr>()) {
-      if (intAttr.getValue().isZero()) {
+      if (!isFloat && intAttr.getValue().isZero()) {
         zeroOp = zeroCst;
         break;
       }
     } else if (auto floatAttr = zeroCst.getValue().dyn_cast<FloatAttr>()) {
-      if (floatAttr.getValue().isZero()) {
+      if (isFloat && floatAttr.getValue().isZero()) {
         zeroOp = zeroCst;
         break;
       }
@@ -194,9 +195,12 @@ arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder) {
   }
 
   // if zeroOp is not found, create a new one
-  if (!zeroOp) {
+  if (!zeroOp && !isFloat) {
     zeroOp = builder.create<arith::ConstantOp>(
         region.getLoc(), builder.getI32Type(), builder.getI32IntegerAttr(0));
+  } else if (!zeroOp && isFloat) {
+    zeroOp = builder.create<arith::ConstantOp>(
+        region.getLoc(), builder.getF32Type(), builder.getF32FloatAttr(0.0));
   }
   return zeroOp;
 }
@@ -230,8 +234,9 @@ struct FastASMGenTemporalCGRAPass
 
     for (auto &bb : region.getBlocks()) {
       BasicBlockOpAsisgnment bbOpAsisgnment(&bb, 3, nRow, nCol, builder);
-      auto zeroOp = getZeroConstant(region, builder);
-      bbOpAsisgnment.setUpZeroOp(zeroOp);
+      auto zeroIntOp = getZeroConstant(region, builder);
+      auto zeroFloatOp = getZeroConstant(region, builder, true);
+      bbOpAsisgnment.setUpZeroOp(zeroIntOp, zeroFloatOp);
 
       bbOpAsisgnment.mappingBBdataflowToCGRA(liveIns, liveOuts);
 
