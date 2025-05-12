@@ -37,6 +37,8 @@ enum ScheduleStrategy {
 
 enum RegAttr { NK = -1, IN = 0, EX = 1, IE = 2 };
 
+using placeunit = std::pair<unsigned, RegAttr>;
+
 /// Describes the CGRA attributes through the number of rows, columns and the
 /// internal registers.
 struct GridAttribute {
@@ -86,20 +88,28 @@ private:
   // The operations and their corresponding spill operations
   std::vector<Value> spilledVals;
 
-  void updateSchedulePriority(std::map<Block *, SetVector<Value>> liveIns,
+  void updateSchedulePriority(int timeSlot,
+                              std::map<Block *, SetVector<Value>> liveIns,
                               std::map<Block *, SetVector<Value>> liveOuts);
 
   void updateCDFG(Block *scheduleBB, std::vector<ValuePlacement> initGraph,
                   std::vector<ValuePlacement> finiGraph);
 
+  bool createRoutePath(Operation *failOp,
+                       std::vector<ValuePlacement> &producers,
+                       std::vector<unsigned> &movs,
+                       std::vector<ValuePlacement> curGraph,
+                       SmallVector<mlir::Operation *, 4> otherFailureOps = {},
+                       unsigned threshold = 2);
+
   SmallVector<Operation *, 4>
   routeOperation(std::vector<ValuePlacement> producers,
-                 std::vector<unsigned> movs);
+                 std::vector<unsigned> movs, Operation *failedOp);
 
   double stepSA(int height, SmallVector<Operation *, 4> &schedulingOps,
                 std::map<Operation *, ScheduleUnit> &tmpScheduleResult,
                 std::vector<ValuePlacement> &tmpGraph,
-                std::map<Operation *, SetVector<unsigned>> &existSpace,
+                std::map<Operation *, std::vector<placeunit>> &existSpace,
                 SetVector<Value> liveOut,
                 std::vector<ValuePlacement> &finiGraph, GridAttribute attr,
                 Operation *shuffleOp = nullptr);
@@ -110,15 +120,15 @@ private:
     this->liveout = liveOuts[curBlock];
   }
 
-  SetVector<unsigned>
-  searchOpPlacementSpace(Operation *op, std::vector<ValuePlacement> &curGraph,
-                         std::vector<ValuePlacement> &finiGraph,
-                         std::map<Operation *, ScheduleUnit> tmpResult);
+  std::vector<placeunit> searchOpPlacementSpace(
+      Operation *op, std::vector<ValuePlacement> &curGraph,
+      std::vector<ValuePlacement> &finiGraph,
+      std::map<Operation *, std::pair<unsigned, RegAttr>> tmpResult);
 
   int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,
                       std::map<Operation *, ScheduleUnit> &scheduleResult,
                       std::vector<ValuePlacement> &curGraph,
-                      std::map<Operation *, SetVector<unsigned>> &space,
+                      std::map<Operation *, std::vector<placeunit>> &space,
                       std::vector<ValuePlacement> &finiGraph,
                       Operation *shuffleOp = nullptr);
 
