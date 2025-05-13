@@ -420,6 +420,9 @@ static double getAccessCost(std::vector<ValuePlacement> curGraph,
     for (auto user : val.getUsers())
       if (scheduledOps.count(user) == 0 && scheduleResult.count(user) == 0)
         nonScheduledUsers.insert(user);
+
+    cost += nonScheduledUsers.size() /
+            (double)std::max((size_t)1, mobilityRange.size());
   }
   return normRatio == 0 ? 0 : cost / normRatio;
 }
@@ -865,7 +868,6 @@ int BasicBlockOpAsisgnment::placeOperations(
       assignPE = *(placementSpace.begin() + rand() % placementSpace.size());
     }
 
-    // TODO[@12th/May]: determine the register attribute
     suc++;
     tmpScheduledOps.insert(op);
     tmpResult[op] = assignPE;
@@ -1015,8 +1017,17 @@ bool BasicBlockOpAsisgnment::createRoutePath(
   auto intersection = popMap[0];
   for (size_t i = 1; i < producers.size(); ++i)
     intersection = getInterSection<unsigned>(intersection, popMap[i]);
-  if (!intersection.empty())
+  if (!intersection.empty()) {
+    // check whether movs[ind] are all 0, if yes, meaning that there are
+    // available spots to accomandate the consumers, but is less than the total
+    // number of placed operations. Let movs[0]++ for routing
+    for (size_t i = 1; i < producers.size(); ++i) {
+      if (movs[i] > 0)
+        return true;
+    }
+    movs[0]++;
     return true;
+  }
 
   int population = 0;
   while (population < threshold) {
@@ -1157,7 +1168,7 @@ double BasicBlockOpAsisgnment::stepSA(
 
   logMessage("cost: " + std::to_string(sucCost) + " + " +
              std::to_string(affinityCost) + " + " + std::to_string(accessCost) +
-             " = " + std::to_string(currentCost));
+             " = " + std::to_string(currentCost) + "\n");
   return currentCost;
 }
 
@@ -1183,7 +1194,7 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
   int totalOpNum = getNonCstOpSize(curBlock);
   int maxTry = 0;
   auto graphScheduleBefore = initGraph;
-  while (scheduledOps.size() < totalOpNum && maxTry < 100) {
+  while (scheduledOps.size() < totalOpNum && maxTry < 15) {
     maxTry++;
     auto schedulingOps = getScheduleOps(curBlock, height, schedulePriority,
                                         scheduledOps, strategy);
@@ -1214,6 +1225,8 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
       if (!shuffleOp) {
         break;
       }
+      logMessage("----SA step: " + std::to_string(iter) + "----\n");
+
       double currentCost =
           stepSA(height, schedulingOps, tmpScheduleResult, tmpGraph,
                  searchSpace, blockOut, finiGraph, attr, shuffleOp);
@@ -1222,6 +1235,8 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
         graphScheduleAfter = tmpGraph;
         layerScheduleResult = tmpScheduleResult;
       }
+      if (bestCost == 0)
+        break;
     }
     logMessage("Best cost: " + std::to_string(bestCost) + "\n");
 
@@ -1263,7 +1278,6 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
       // re-schedule
       continue;
     }
-    logMessage("register result\n");
 
     // prepare scheduling for the next layer
     for (auto [op, res] : layerScheduleResult) {
