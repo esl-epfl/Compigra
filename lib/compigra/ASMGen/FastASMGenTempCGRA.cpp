@@ -282,6 +282,134 @@ Value resolvePropagatedValue(
   return NULL;
 };
 
+void updateLiveGraph(std::vector<ValuePlacement> &graph,
+                     ValuePlacement prequisite) {
+  auto it = std::find_if(graph.begin(), graph.end(), [&](ValuePlacement p) {
+    return p.val == prequisite.val;
+  });
+  if (it != graph.end()) {
+    it->pe = prequisite.pe;
+    it->regAttr = prequisite.regAttr;
+  } else {
+    graph.push_back(prequisite);
+  }
+};
+
+void updatePredecessorPlacement(
+    ValuePlacement valPlace, Block *curBlk,
+    std::map<Block *, SetVector<Value>> &liveIns,
+    std::map<Block *, SetVector<Value>> &liveOuts,
+    std::map<Block *, std::vector<ValuePlacement>> &bbInitGraphs,
+    std::map<Block *, std::vector<ValuePlacement>> &bbFiniGraphs) {
+
+  auto val = valPlace.val;
+  DenseSet<Block *> visited;
+  visited.insert(curBlk);
+  // recursively propagate the value to the successors
+  for (auto *pred : curBlk->getPredecessors()) {
+    if (pred == curBlk)
+      continue;
+
+    visited.insert(pred);
+    Value propVal = resolveInjectedValue(val, curBlk, pred, liveOuts);
+    updateLiveGraph(bbFiniGraphs[pred],
+                    {propVal, valPlace.pe, valPlace.regAttr});
+
+    std::vector<std::pair<Block *, Value>> stack;
+    if (liveIns[pred].count(propVal)) {
+      // update the initGraph
+      updateLiveGraph(bbInitGraphs[pred],
+                      {propVal, valPlace.pe, valPlace.regAttr});
+      stack.emplace_back(pred, propVal);
+    }
+
+    // init an visited set to avoid infinite loop
+    while (!stack.empty()) {
+      auto [cur, curVal] = stack.back();
+      stack.pop_back();
+      visited.insert(cur);
+
+      for (auto *prevPred : cur->getPredecessors()) {
+        if (prevPred == cur)
+          continue;
+
+        Value nextPropVal =
+            resolveInjectedValue(curVal, cur, prevPred, liveOuts);
+        updateLiveGraph(bbFiniGraphs[prevPred],
+                        {nextPropVal, valPlace.pe, valPlace.regAttr});
+
+        if (liveIns[prevPred].count(nextPropVal)) {
+          // update the initGraph
+          updateLiveGraph(bbInitGraphs[prevPred],
+                          {nextPropVal, valPlace.pe, valPlace.regAttr});
+          if (!visited.count(prevPred))
+            stack.emplace_back(prevPred, nextPropVal);
+        }
+      }
+    }
+  }
+}
+
+void updateSuccessorPlacement(
+    ValuePlacement valPlace, Block *curBlk,
+    std::map<Block *, SetVector<Value>> &liveIns,
+    std::map<Block *, SetVector<Value>> &liveOuts,
+    std::map<Block *, std::vector<ValuePlacement>> &bbInitGraphs,
+    std::map<Block *, std::vector<ValuePlacement>> &bbFiniGraphs) {
+  auto val = valPlace.val;
+  DenseSet<Block *> visited;
+  visited.insert(curBlk);
+
+  for (auto *suc : curBlk->getSuccessors()) {
+    if (suc == curBlk)
+      continue;
+    visited.insert(suc);
+    Value propVal = resolvePropagatedValue(val, curBlk, suc, liveIns);
+    if (propVal == NULL)
+      continue;
+    if (propVal != val)
+      updatePredecessorPlacement({propVal, valPlace.pe, valPlace.regAttr}, suc,
+                                 liveIns, liveOuts, bbInitGraphs, bbFiniGraphs);
+
+    updateLiveGraph(bbInitGraphs[suc],
+                    {propVal, valPlace.pe, valPlace.regAttr});
+
+    std::vector<std::pair<Block *, Value>> stack;
+    if (liveOuts[suc].count(propVal)) {
+      // update the finiGraph
+      updateLiveGraph(bbFiniGraphs[suc],
+                      {propVal, valPlace.pe, valPlace.regAttr});
+      stack.emplace_back(suc, propVal);
+    }
+
+    while (!stack.empty()) {
+      auto [cur, curVal] = stack.back();
+      stack.pop_back();
+      visited.insert(cur);
+
+      for (auto *nextSuc : cur->getSuccessors()) {
+        if (nextSuc == cur)
+          continue;
+
+        Value nextPropVal =
+            resolvePropagatedValue(curVal, curBlk, nextSuc, liveIns);
+        if (nextPropVal == NULL)
+          continue;
+
+        updateLiveGraph(bbInitGraphs[nextSuc],
+                        {nextPropVal, valPlace.pe, valPlace.regAttr});
+
+        if (liveOuts[nextSuc].count(nextPropVal)) {
+          updateLiveGraph(bbFiniGraphs[nextSuc],
+                          {nextPropVal, valPlace.pe, valPlace.regAttr});
+          if (!visited.count(nextSuc))
+            stack.emplace_back(nextSuc, nextPropVal);
+        }
+      }
+    }
+  }
+}
+
 // Update the global value placement if the initGraph and finiGraph of the
 // updateBlk changed. All the other placement of other blocks are changed to
 // maintain consistency of the liveness graph.
@@ -321,19 +449,6 @@ void updateGlobalValPlacement(
                  << static_cast<int>(val.regAttr) << "\n";
   }
 
-  auto updateLiveGraph = [](std::vector<ValuePlacement> &graph,
-                            ValuePlacement prequisite) {
-    auto it = std::find_if(graph.begin(), graph.end(), [&](ValuePlacement p) {
-      return p.val == prequisite.val;
-    });
-    if (it != graph.end()) {
-      it->pe = prequisite.pe;
-      it->regAttr = prequisite.regAttr;
-    } else {
-      graph.push_back(prequisite);
-    }
-  };
-
   // update the global value placement with the updated initGraph
   for (auto valPlace : initGraph) {
     auto val = valPlace.val;
@@ -342,52 +457,10 @@ void updateGlobalValPlacement(
     // find the corresponding value if it is live in other bb's initGraph or
     // finiGraph
     auto curBlk = updateBlk;
-    DenseSet<Block *> visited;
-    visited.insert(curBlk);
-    // recursively propagate the value to the successors
-    for (auto *pred : curBlk->getPredecessors()) {
-      if (pred == curBlk)
-        continue;
-
-      visited.insert(pred);
-      Value propVal = resolveInjectedValue(val, curBlk, pred, liveOuts);
-      updateLiveGraph(bbFiniGraphs[pred],
-                      {propVal, valPlace.pe, valPlace.regAttr});
-
-      std::vector<std::pair<Block *, Value>> stack;
-      if (liveIns[pred].count(propVal)) {
-        // update the initGraph
-        updateLiveGraph(bbInitGraphs[pred],
-                        {propVal, valPlace.pe, valPlace.regAttr});
-        stack.emplace_back(pred, propVal);
-      }
-
-      // init an visited set to avoid infinite loop
-      while (!stack.empty()) {
-        auto [cur, curVal] = stack.back();
-        stack.pop_back();
-        visited.insert(cur);
-
-        for (auto *prevPred : cur->getPredecessors()) {
-          if (prevPred == cur)
-            continue;
-
-          Value nextPropVal =
-              resolveInjectedValue(curVal, cur, prevPred, liveOuts);
-          updateLiveGraph(bbFiniGraphs[prevPred],
-                          {nextPropVal, valPlace.pe, valPlace.regAttr});
-
-          if (liveIns[prevPred].count(nextPropVal)) {
-            // update the initGraph
-            updateLiveGraph(bbInitGraphs[prevPred],
-                            {nextPropVal, valPlace.pe, valPlace.regAttr});
-            if (!visited.count(prevPred))
-              stack.emplace_back(prevPred, nextPropVal);
-          }
-        }
-      }
-    }
+    updatePredecessorPlacement(valPlace, updateBlk, liveIns, liveOuts,
+                               bbInitGraphs, bbFiniGraphs);
   }
+
   llvm::errs() << "update initGraph done\n\n";
   // update the global value placement with the updated finiGraph
   for (auto valPlace : finiGraph) {
@@ -397,55 +470,8 @@ void updateGlobalValPlacement(
     // find the corresponding value if it is live in other bb's initGraph or
     // finiGraph
     auto curBlk = updateBlk;
-
-    DenseSet<Block *> visited;
-    visited.insert(curBlk);
-
-    for (auto *suc : curBlk->getSuccessors()) {
-      if (suc == curBlk)
-        continue;
-      visited.insert(suc);
-      Value propVal = resolvePropagatedValue(val, curBlk, suc, liveIns);
-      if (propVal == NULL)
-        continue;
-
-      updateLiveGraph(bbInitGraphs[suc],
-                      {propVal, valPlace.pe, valPlace.regAttr});
-
-      std::vector<std::pair<Block *, Value>> stack;
-      if (liveOuts[suc].count(propVal)) {
-        // update the finiGraph
-        updateLiveGraph(bbFiniGraphs[suc],
-                        {propVal, valPlace.pe, valPlace.regAttr});
-        stack.emplace_back(suc, propVal);
-      }
-
-      while (!stack.empty()) {
-        auto [cur, curVal] = stack.back();
-        stack.pop_back();
-        visited.insert(cur);
-
-        for (auto *nextSuc : cur->getSuccessors()) {
-          if (nextSuc == cur)
-            continue;
-
-          Value nextPropVal =
-              resolvePropagatedValue(curVal, curBlk, nextSuc, liveIns);
-          if (nextPropVal == NULL)
-            continue;
-
-          updateLiveGraph(bbInitGraphs[nextSuc],
-                          {nextPropVal, valPlace.pe, valPlace.regAttr});
-
-          if (liveOuts[nextSuc].count(nextPropVal)) {
-            updateLiveGraph(bbFiniGraphs[nextSuc],
-                            {nextPropVal, valPlace.pe, valPlace.regAttr});
-            if (!visited.count(nextSuc))
-              stack.emplace_back(nextSuc, nextPropVal);
-          }
-        }
-      }
-    }
+    updateSuccessorPlacement(valPlace, updateBlk, liveIns, liveOuts,
+                             bbInitGraphs, bbFiniGraphs);
   }
   llvm::errs() << "update finiGraph done\n";
   // finish update
@@ -512,8 +538,8 @@ struct FastASMGenTemporalCGRAPass
       logMessage("\nBBId: " + std::to_string(bbId) +
                  "==============================\n");
 
-      if (bbId == 5)
-        break;
+      // if (bbId == 5)
+      //   break;
       bbId++;
     }
     llvm::errs() << funcOp << "\n";

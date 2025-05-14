@@ -448,35 +448,25 @@ static double getSuccessCost(
 static double getSpatialAffinityTotalCost(
     std::map<Operation *, ScheduleUnit> scheduleResult,
     std::vector<ValuePlacement> initGraph,
-    std::map<Operation *, std::pair<int, int>> heightMap, GridAttribute grid) {
+    std::map<Operation *, std::pair<int, int>> heightMap, GridAttribute grid,
+    SetVector<Value> liveOut, SetVector<Operation *> scheduledOps) {
   double cost = 0;
   int count = 0;
   for (auto op : scheduleResult) {
     if (op.first->getNumResults() == 0)
       continue;
     // check the affinity cost with livein values
-    for (auto place : initGraph)
+    for (auto place : initGraph) {
+      if (place.val == op.first->getResult(0) ||
+          !isLive(place.val, liveOut, scheduledOps))
+        continue;
+
       cost += getSpatialAffinityCost(place.val, {0, (int)place.pe, -1},
                                      op.first->getResult(0), op.second,
                                      heightMap, grid, op.first->getBlock());
+    }
     count++;
   }
-
-  // for (auto op1 = scheduleResult.begin();
-  //      op1 != std::prev(scheduleResult.end()); op1++) {
-  //   // if op does not have a result, skip it
-  //   if (op1->first->getNumResults() == 0)
-  //     continue;
-  //   for (auto op2 = std::next(op1); op2 != scheduleResult.end(); op2++) {
-  //     if (op2->first->getNumResults() == 0)
-  //       continue;
-  //     cost += getSpatialAffinityCost(op1->first->getResult(0), op1->second,
-  //                                    op2->first->getResult(0), op2->second,
-  //                                    heightMap, grid,
-  //                                    op1->first->getBlock());
-  //     count++;
-  //   }
-  // }
 
   return count == 0 ? 0 : cost / count;
 }
@@ -1159,8 +1149,9 @@ double BasicBlockOpAsisgnment::stepSA(
                             existSpace, finiGraph, shuffleOp);
   double sucCost =
       getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
-  double affinityCost = getSpatialAffinityTotalCost(tmpScheduleResult, tmpGraph,
-                                                    schedulePriority, attr);
+  double affinityCost =
+      getSpatialAffinityTotalCost(tmpScheduleResult, tmpGraph, schedulePriority,
+                                  attr, liveOut, scheduledOps);
   double accessCost =
       getAccessCost(tmpGraph, tmpScheduleResult, scheduledOps, attr);
   // get the total cost
