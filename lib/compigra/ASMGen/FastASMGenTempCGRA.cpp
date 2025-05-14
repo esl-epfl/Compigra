@@ -100,6 +100,21 @@ void printBlockLiveValue(Region &region,
   }
 }
 
+void printLiveGraph(std::map<Block *, std::vector<ValuePlacement>> graph) {
+  std::string message;
+  llvm::raw_string_ostream rso(message);
+  for (auto [blk, graph] : graph) {
+    rso << "------------------\n";
+    rso << *blk->getTerminator() << "\n";
+    for (auto val : graph) {
+      rso << val.val << " [" << val.pe << " " << static_cast<int>(val.regAttr)
+          << "]\n";
+    }
+    rso << "------------------\n";
+  }
+  logMessage(rso.str());
+}
+
 void computeLiveValue(Region &region,
                       std::map<Block *, SetVector<Value>> &liveIns,
                       std::map<Block *, SetVector<Value>> &liveOuts) {
@@ -205,6 +220,237 @@ arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder,
   return zeroOp;
 }
 
+static Value getArgumentOperand(Operation *termOp, unsigned argInd) {
+  if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(termOp)) {
+    return branchOp.getOperand(argInd);
+  } else if (auto branchOp =
+                 dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
+    return branchOp.getOperand(argInd + 2);
+  }
+  return nullptr;
+}
+
+Value resolveInjectedValue(
+    Value val, Block *curBlk, Block *prevBlk,
+    const std::map<Block *, SetVector<Value>> &liveOuts) {
+  if (liveOuts.at(prevBlk).count(val))
+    return val;
+  for (auto arg : curBlk->getArguments()) {
+    if (arg == val)
+      return getArgumentOperand(prevBlk->getTerminator(), arg.getArgNumber());
+  }
+  llvm::errs() << "Error: cannot resolve injected value " << val << " in "
+               << *prevBlk->getTerminator() << "\n";
+};
+
+Value resolvePropagatedValue(
+    Value val, Block *curBlk, Block *sucBlk,
+    const std::map<Block *, SetVector<Value>> &liveIns) {
+  if (liveIns.at(sucBlk).count(val))
+    return val;
+
+  BlockArgument arg;
+  auto termOp = curBlk->getTerminator();
+  for (auto &use : val.getUses()) {
+    auto user = use.getOwner();
+    if (user != termOp)
+      continue;
+
+    auto argInd = use.getOperandNumber();
+    if (auto br = dyn_cast<cf::BranchOp>(use.getOwner())) {
+      arg = sucBlk->getArgument(argInd);
+      break;
+    }
+
+    if (auto cbr = dyn_cast<cgra::ConditionalBranchOp>(use.getOwner())) {
+      if (sucBlk == cbr.getTrueDest()) {
+        if (argInd >= 2 && argInd < 2 + cbr.getNumTrueDestOperands()) {
+          arg = sucBlk->getArgument(argInd - 2);
+          break;
+        }
+      } else if (sucBlk == cbr.getFalseDest()) {
+        if (argInd >= 2 + cbr.getNumTrueDestOperands()) {
+          arg = sucBlk->getArgument(argInd - cbr.getNumTrueDestOperands() - 2);
+          break;
+        }
+      }
+    }
+  }
+
+  if (liveIns.at(sucBlk).count(arg))
+    return arg;
+  return NULL;
+};
+
+// Update the global value placement if the initGraph and finiGraph of the
+// updateBlk changed. All the other placement of other blocks are changed to
+// maintain consistency of the liveness graph.
+void updateGlobalValPlacement(
+    Block *updateBlk, Region &region,
+    std::map<Block *, SetVector<Value>> &liveIns,
+    std::map<Block *, SetVector<Value>> &liveOuts,
+    std::map<Block *, std::vector<ValuePlacement>> &bbInitGraphs,
+    std::map<Block *, std::vector<ValuePlacement>> &bbFiniGraphs) {
+  // update liveness graph if graph transformation is performed
+  computeLiveValue(region, liveIns, liveOuts);
+
+  auto &initGraph = bbInitGraphs[updateBlk];
+  auto &finiGraph = bbFiniGraphs[updateBlk];
+
+  // only value that are live in the graph
+  auto removeDeadValue = [](std::vector<ValuePlacement> &graph,
+                            SetVector<Value> &liveSet) {
+    graph.erase(std::remove_if(graph.begin(), graph.end(),
+                               [&liveSet](const ValuePlacement &val) {
+                                 return liveSet.count(val.val) == 0;
+                               }),
+                graph.end());
+  };
+
+  removeDeadValue(initGraph, liveIns[updateBlk]);
+  removeDeadValue(finiGraph, liveOuts[updateBlk]);
+
+  llvm::errs() << "InitGraph: \n";
+  for (auto val : initGraph) {
+    llvm::errs() << val.val << " " << val.pe << " "
+                 << static_cast<int>(val.regAttr) << "\n";
+  }
+  llvm::errs() << "FiniGraph: \n";
+  for (auto val : finiGraph) {
+    llvm::errs() << val.val << " " << val.pe << " "
+                 << static_cast<int>(val.regAttr) << "\n";
+  }
+
+  auto updateLiveGraph = [](std::vector<ValuePlacement> &graph,
+                            ValuePlacement prequisite) {
+    auto it = std::find_if(graph.begin(), graph.end(), [&](ValuePlacement p) {
+      return p.val == prequisite.val;
+    });
+    if (it != graph.end()) {
+      it->pe = prequisite.pe;
+      it->regAttr = prequisite.regAttr;
+    } else {
+      graph.push_back(prequisite);
+    }
+  };
+
+  // update the global value placement with the updated initGraph
+  for (auto valPlace : initGraph) {
+    auto val = valPlace.val;
+    auto pe = valPlace.pe;
+    auto regAttr = valPlace.regAttr;
+    // find the corresponding value if it is live in other bb's initGraph or
+    // finiGraph
+    auto curBlk = updateBlk;
+    DenseSet<Block *> visited;
+    visited.insert(curBlk);
+    // recursively propagate the value to the successors
+    for (auto *pred : curBlk->getPredecessors()) {
+      if (pred == curBlk)
+        continue;
+
+      visited.insert(pred);
+      Value propVal = resolveInjectedValue(val, curBlk, pred, liveOuts);
+      updateLiveGraph(bbFiniGraphs[pred],
+                      {propVal, valPlace.pe, valPlace.regAttr});
+
+      std::vector<std::pair<Block *, Value>> stack;
+      if (liveIns[pred].count(propVal)) {
+        // update the initGraph
+        updateLiveGraph(bbInitGraphs[pred],
+                        {propVal, valPlace.pe, valPlace.regAttr});
+        stack.emplace_back(pred, propVal);
+      }
+
+      // init an visited set to avoid infinite loop
+      while (!stack.empty()) {
+        auto [cur, curVal] = stack.back();
+        stack.pop_back();
+        visited.insert(cur);
+
+        for (auto *prevPred : cur->getPredecessors()) {
+          if (prevPred == cur)
+            continue;
+
+          Value nextPropVal =
+              resolveInjectedValue(curVal, cur, prevPred, liveOuts);
+          updateLiveGraph(bbFiniGraphs[prevPred],
+                          {nextPropVal, valPlace.pe, valPlace.regAttr});
+
+          if (liveIns[prevPred].count(nextPropVal)) {
+            // update the initGraph
+            updateLiveGraph(bbInitGraphs[prevPred],
+                            {nextPropVal, valPlace.pe, valPlace.regAttr});
+            if (!visited.count(prevPred))
+              stack.emplace_back(prevPred, nextPropVal);
+          }
+        }
+      }
+    }
+  }
+  llvm::errs() << "update initGraph done\n\n";
+  // update the global value placement with the updated finiGraph
+  for (auto valPlace : finiGraph) {
+    auto val = valPlace.val;
+    auto pe = valPlace.pe;
+    auto regAttr = valPlace.regAttr;
+    // find the corresponding value if it is live in other bb's initGraph or
+    // finiGraph
+    auto curBlk = updateBlk;
+
+    DenseSet<Block *> visited;
+    visited.insert(curBlk);
+
+    for (auto *suc : curBlk->getSuccessors()) {
+      if (suc == curBlk)
+        continue;
+      visited.insert(suc);
+      Value propVal = resolvePropagatedValue(val, curBlk, suc, liveIns);
+      if (propVal == NULL)
+        continue;
+
+      updateLiveGraph(bbInitGraphs[suc],
+                      {propVal, valPlace.pe, valPlace.regAttr});
+
+      std::vector<std::pair<Block *, Value>> stack;
+      if (liveOuts[suc].count(propVal)) {
+        // update the finiGraph
+        updateLiveGraph(bbFiniGraphs[suc],
+                        {propVal, valPlace.pe, valPlace.regAttr});
+        stack.emplace_back(suc, propVal);
+      }
+
+      while (!stack.empty()) {
+        auto [cur, curVal] = stack.back();
+        stack.pop_back();
+        visited.insert(cur);
+
+        for (auto *nextSuc : cur->getSuccessors()) {
+          if (nextSuc == cur)
+            continue;
+
+          Value nextPropVal =
+              resolvePropagatedValue(curVal, curBlk, nextSuc, liveIns);
+          if (nextPropVal == NULL)
+            continue;
+
+          updateLiveGraph(bbInitGraphs[nextSuc],
+                          {nextPropVal, valPlace.pe, valPlace.regAttr});
+
+          if (liveOuts[nextSuc].count(nextPropVal)) {
+            updateLiveGraph(bbFiniGraphs[nextSuc],
+                            {nextPropVal, valPlace.pe, valPlace.regAttr});
+            if (!visited.count(nextSuc))
+              stack.emplace_back(nextSuc, nextPropVal);
+          }
+        }
+      }
+    }
+  }
+  llvm::errs() << "update finiGraph done\n";
+  // finish update
+}
+
 namespace {
 struct FastASMGenTemporalCGRAPass
     : public compigra::impl::FastASMGenTemporalCGRABase<
@@ -225,6 +471,10 @@ struct FastASMGenTemporalCGRAPass
 
     std::map<Block *, SetVector<Value>> liveIns;
     std::map<Block *, SetVector<Value>> liveOuts;
+
+    std::map<Block *, std::vector<ValuePlacement>> bbInitGraphs;
+    std::map<Block *, std::vector<ValuePlacement>> bbFiniGraphs;
+
     computeLiveValue(region, liveIns, liveOuts);
     printBlockLiveValue(region, liveIns, liveOuts);
 
@@ -233,18 +483,37 @@ struct FastASMGenTemporalCGRAPass
     logMessage("BasicBlock op assignment\n", true);
 
     for (auto &bb : region.getBlocks()) {
+      // Init operation assginer
       BasicBlockOpAsisgnment bbOpAsisgnment(&bb, 3, nRow, nCol, builder);
       auto zeroIntOp = getZeroConstant(region, builder);
       auto zeroFloatOp = getZeroConstant(region, builder, true);
       bbOpAsisgnment.setUpZeroOp(zeroIntOp, zeroFloatOp);
 
-      bbOpAsisgnment.mappingBBdataflowToCGRA(liveIns, liveOuts);
+      // set up liveness prerequisite
+      bbOpAsisgnment.setPrerequisiteToStartGraph(bbInitGraphs[&bb]);
+      bbOpAsisgnment.setPrerequisiteToFinishGraph(bbFiniGraphs[&bb]);
+      if (failed(bbOpAsisgnment.mappingBBdataflowToCGRA(liveIns, liveOuts)))
+        return signalPassFailure();
+      // print the initGraph and finiGraph of the block
+      auto initGraph = bbOpAsisgnment.getStartEmbeddingGraph();
+      auto finiGraph = bbOpAsisgnment.getFiniEmbeddingGraph();
+
+      bbInitGraphs[&bb] = initGraph;
+      bbFiniGraphs[&bb] = finiGraph;
+      llvm::errs() << "\nBBId: " + std::to_string(bbId) +
+                          "==============================\n";
+      updateGlobalValPlacement(&bb, region, liveIns, liveOuts, bbInitGraphs,
+                               bbFiniGraphs);
+      logMessage("InitGraph: ");
+      printLiveGraph(bbInitGraphs);
+      logMessage("FiniGraph:");
+      printLiveGraph(bbFiniGraphs);
 
       logMessage("\nBBId: " + std::to_string(bbId) +
                  "==============================\n");
 
-      // if (bbId == 3)
-      //   break;
+      if (bbId == 5)
+        break;
       bbId++;
     }
     llvm::errs() << funcOp << "\n";

@@ -20,6 +20,7 @@
 
 using namespace mlir;
 void logMessage(const std::string &message, bool overwrite = false);
+
 namespace compigra {
 enum ScheduleStrategy {
   // The schedule strategy is used to determine the order of the operations
@@ -133,7 +134,22 @@ private:
                       Operation *shuffleOp = nullptr);
 
 public:
-  void
+  void setPrerequisiteToStartGraph(std::vector<ValuePlacement> initGraph) {
+    this->startEmbeddingGraph = initGraph;
+  }
+
+  void setPrerequisiteToFinishGraph(std::vector<ValuePlacement> finiGraph) {
+    this->finiEmbeddingGraph = finiGraph;
+  }
+
+  std::vector<ValuePlacement> getStartEmbeddingGraph() {
+    return startEmbeddingGraph;
+  }
+  std::vector<ValuePlacement> getFiniEmbeddingGraph() {
+    return finiEmbeddingGraph;
+  }
+
+  LogicalResult
   mappingBBdataflowToCGRA(std::map<Block *, SetVector<Value>> &liveIns,
                           std::map<Block *, SetVector<Value>> &liveOuts,
                           ScheduleStrategy strategy = ScheduleStrategy::ASAP);

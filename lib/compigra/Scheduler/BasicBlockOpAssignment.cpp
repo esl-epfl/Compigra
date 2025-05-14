@@ -1172,7 +1172,7 @@ double BasicBlockOpAsisgnment::stepSA(
   return currentCost;
 }
 
-void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
+LogicalResult BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
     std::map<Block *, SetVector<Value>> &liveIns,
     std::map<Block *, SetVector<Value>> &liveOuts, ScheduleStrategy strategy) {
 
@@ -1270,7 +1270,7 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
         } else {
           logMessage(rso.str());
           // TODO[@May]: split the graph via DFG
-          return;
+          return failure();
         }
       }
       logMessage(rso.str());
@@ -1295,6 +1295,7 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
       logMessage(rso.str());
     }
     graphScheduleBefore = graphScheduleAfter;
+    finiGraph = graphScheduleAfter;
 
     for (auto op : schedulingOps) {
       // delay the scheduling
@@ -1308,4 +1309,10 @@ void BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
     }
     height++;
   }
+
+  if (scheduledOps.size() < totalOpNum)
+    return failure();
+
+  updateCDFG(curBlock, initGraph, finiGraph);
+  return success();
 }
