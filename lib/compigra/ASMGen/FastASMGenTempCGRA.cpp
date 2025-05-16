@@ -308,8 +308,8 @@ void updatePredecessorPlacement(
   visited.insert(curBlk);
   // recursively propagate the value to the successors
   for (auto *pred : curBlk->getPredecessors()) {
-    if (pred == curBlk)
-      continue;
+    // if (pred == curBlk)
+    //   continue;
 
     visited.insert(pred);
     Value propVal = resolveInjectedValue(val, curBlk, pred, liveOuts);
@@ -331,8 +331,8 @@ void updatePredecessorPlacement(
       visited.insert(cur);
 
       for (auto *prevPred : cur->getPredecessors()) {
-        if (prevPred == cur)
-          continue;
+        // if (prevPred == cur)
+        //   continue;
 
         Value nextPropVal =
             resolveInjectedValue(curVal, cur, prevPred, liveOuts);
@@ -560,8 +560,9 @@ struct FastASMGenTemporalCGRAPass
       // set up liveness prerequisite
       bbOpAssignment.setPrerequisiteToStartGraph(bbInitGraphs[&bb]);
       bbOpAssignment.setPrerequisiteToFinishGraph(bbFiniGraphs[&bb]);
-      if (failed(bbOpAssignment.mappingBBdataflowToCGRA(liveIns, liveOuts)))
+      if (failed(bbOpAssignment.mappingBBdataflowToCGRA(liveIns, liveOuts))) {
         return signalPassFailure();
+      }
 
       auto soluBB = bbOpAssignment.getSolution();
       // write soluBB into rawSolution

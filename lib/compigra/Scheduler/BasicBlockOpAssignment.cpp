@@ -397,7 +397,8 @@ static std::vector<unsigned> getTorusRoutingPEs(unsigned pe,
 static double getAccessCost(Block *curBlk, std::vector<ValuePlacement> curGraph,
                             std::map<Operation *, ScheduleUnit> scheduleResult,
                             SetVector<Operation *> scheduledOps,
-                            SetVector<Value> liveOut, GridAttribute &attr) {
+                            SetVector<Value> liveOut, GridAttribute &attr,
+                            int height = 0) {
   double cost = 0;
   double normRatio = 0;
   for (auto valPlace : curGraph) {
@@ -405,8 +406,10 @@ static double getAccessCost(Block *curBlk, std::vector<ValuePlacement> curGraph,
     auto val = valPlace.val;
     auto pe = valPlace.pe;
     auto regAttr = valPlace.regAttr;
+    if (val.getDefiningOp() && scheduledOps.count(val.getDefiningOp()))
+      continue;
 
-    auto occupied = [&](std::vector<ValuePlacement> curGraph, unsigned pe) {
+    auto isOccupied = [&](std::vector<ValuePlacement> curGraph, unsigned pe) {
       // if find any curGraph that is occupied by the PE, return true
       return llvm::any_of(curGraph, [&](const ValuePlacement &place) {
         return place.pe == pe &&
@@ -419,10 +422,10 @@ static double getAccessCost(Block *curBlk, std::vector<ValuePlacement> curGraph,
     std::vector<unsigned> mobilityRange;
     if (regAttr == RegAttr::EX || regAttr == RegAttr::IE) {
       for (auto routingPE : getTorusRoutingPEs(pe, attr))
-        if (!occupied(curGraph, routingPE))
+        if (!isOccupied(curGraph, routingPE))
           mobilityRange.push_back(routingPE);
     } else if (regAttr == RegAttr::IN) {
-      if (!occupied(curGraph, pe))
+      if (!isOccupied(curGraph, pe))
         mobilityRange.push_back(pe);
     }
 
@@ -438,11 +441,6 @@ static double getAccessCost(Block *curBlk, std::vector<ValuePlacement> curGraph,
 
     cost +=
         nonScheduledUsers.size() / std::max(0.01, (double)mobilityRange.size());
-
-    // std::string message;
-    // llvm::raw_string_ostream rso(message);
-    // rso << "Access cost for " << val << ": " << pe;
-    // logMessage(rso.str(), false);
   }
   return normRatio == 0 ? 0 : cost / normRatio;
 }
@@ -1005,15 +1003,24 @@ bool BasicBlockOpAsisgnment::createRoutePath(
   for (auto i = 0; i < attr.nRow * attr.nCol; i++) {
     auto occupied = std::find_if(
         curGraph.begin(), curGraph.end(), [&](const ValuePlacement &place) {
-          return place.pe == i && place.regAttr == RegAttr::EX;
+          return place.pe == i &&
+                 (place.regAttr == RegAttr::EX ||
+                  (liveout.count(place.val) && (place.regAttr == RegAttr::IE)));
         });
     // if the pe is occupied but not by the producer, return false
     if (occupied != curGraph.end()) {
+      llvm::errs() << "Occupied PE: " << occupied->val << " at " << occupied->pe
+                   << "\n";
+      //  if occupied->val does not belongs to the producer, return false
+      bool belongsToProducer = false;
       for (auto prod : producers) {
-        if (prod.val != occupied->val && prod.pe == i &&
-            prod.regAttr == RegAttr::EX)
-          return false;
+        if (prod.val == occupied->val) {
+          belongsToProducer = true;
+          break;
+        }
       }
+      if (!belongsToProducer)
+        return false;
     }
     if (occupied == curGraph.end())
       avaiPEs.insert(i);
@@ -1090,6 +1097,7 @@ BasicBlockOpAsisgnment::routeOperation(std::vector<ValuePlacement> producers,
                                        std::vector<unsigned> movs,
                                        Operation *failedOp) {
   SmallVector<Operation *, 4> routeOps;
+  llvm::errs() << "failed op: " << *failedOp << "\n";
   for (size_t i = 0; i < producers.size(); ++i) {
     auto producer = producers[i];
     auto movNum = movs[i];
@@ -1199,7 +1207,7 @@ double BasicBlockOpAsisgnment::stepSA(
       getSpatialAffinityTotalCost(tmpScheduleResult, tmpGraph, schedulePriority,
                                   attr, liveOut, scheduledOps);
   double accessCost = getAccessCost(curBlock, tmpGraph, tmpScheduleResult,
-                                    scheduledOps, liveOut, attr);
+                                    scheduledOps, liveOut, attr, height);
   // get the total cost
   double currentCost = sucCost + affinityCost + accessCost;
 
@@ -1295,7 +1303,6 @@ LogicalResult BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
         // detect whether the operation is routable
         bool routable = createRoutePath(
             op, producers, movs, graphScheduleBefore, graphTransformedOps);
-        llvm::errs() << "createRoutePath done\n";
         if (routable) {
           auto newRouteOps = routeOperation(producers, movs, op);
           updateSchedulePriority(height, liveIns, liveOuts);
@@ -1339,6 +1346,8 @@ LogicalResult BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
       // delay the scheduling
       schedulePriority[op].first += 1;
       SetVector<Operation *> delayedOps;
+      if (op->getNumResults() == 0)
+        continue;
       buildChildTree(op->getResult(0), delayedOps, curBlock);
       for (auto child : delayedOps) {
         if (schedulePriority.count(child))
