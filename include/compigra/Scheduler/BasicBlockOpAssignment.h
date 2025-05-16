@@ -158,6 +158,8 @@ public:
     this->zeroIntOp = zeroIntOp;
     this->zeroFloatOp = zeroFloatOp;
   }
+
+  std::map<Operation *, ScheduleUnit> getSolution() { return solution; }
 };
 
 } // namespace compigra

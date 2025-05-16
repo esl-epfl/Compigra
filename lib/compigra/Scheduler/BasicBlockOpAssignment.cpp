@@ -865,14 +865,15 @@ int BasicBlockOpAsisgnment::placeOperations(
       auto opSpace = space[op];
 
       if (op == shuffleOp) {
+        if (opSpace.empty())
+          continue;
         opSpace.erase(
             std::remove_if(opSpace.begin(), opSpace.end(),
                            [&](const std::pair<unsigned, RegAttr> &p) {
                              return p.first == scheduleResult[op].pe;
                            }),
             opSpace.end());
-        if (opSpace.empty())
-          continue;
+
         assignPE = *(opSpace.begin() + rand() % opSpace.size());
       } else {
         assignPE = (scheduleResult[op].reg == attr.maxReg)
@@ -929,8 +930,10 @@ shuffleSearchSpace(std::map<Operation *, std::vector<placeunit>> &searchSpace,
 
   // 1/3 possible to empty the searchSpace of shuffleOp to avoid scheduling it
   // at this time step
-  if (rand() % 3 == 0)
+  if (rand() % 3 == 0) {
     searchSpace[schedulingOps[shuffleOpIdx]].clear();
+    scheduleResult.erase(schedulingOps[shuffleOpIdx]);
+  }
 
   // keep all elements before the shuffleOpIdx in the searchSpace, and remove
   // others

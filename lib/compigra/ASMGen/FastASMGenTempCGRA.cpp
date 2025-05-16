@@ -15,6 +15,7 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
 #include "compigra/Scheduler/BasicBlockOpAssignment.h"
+#include "compigra/Support/OpenEdgeASM.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include <fstream>
@@ -477,6 +478,46 @@ void updateGlobalValPlacement(
   // finish update
 }
 
+void calculateTemporalSpatialSchedule(
+    Region &region,
+    std::map<mlir::Operation *, compigra::ScheduleUnit> &solution,
+    const std::string fileName) {
+  unsigned kernelTime = 0;
+  for (auto &block : region.getBlocks()) {
+    int alignStartTime = kernelTime;
+    int endTime = kernelTime;
+    auto bbStart = 1;
+    auto gap = kernelTime - bbStart;
+    // blockStartT[&block] = alignStartTime;
+    for (auto &op : block.getOperations()) {
+      if (solution.find(&op) == solution.end())
+        continue;
+
+      auto &su = solution[&op];
+      su.time += gap;
+      endTime = std::max(endTime, su.time);
+    }
+    // blockEndT[&block] = endTime + 1;
+    kernelTime = endTime + 1;
+  }
+
+  std::ofstream csvFile(fileName);
+  for (auto [bbInd, bb] : llvm::enumerate(region.getBlocks())) {
+    for (auto &op : bb.getOperations()) {
+      if (solution.find(&op) == solution.end())
+        continue;
+      std::string str;
+      llvm::raw_string_ostream rso(str);
+      rso << op;
+      auto su = solution[&op];
+      csvFile << rso.str() << "&" << su.time << "&" << su.pe << "&" << bbInd
+              << "\r\n";
+    }
+  }
+  csvFile.close();
+  llvm::errs() << "Temporal spatial schedule is saved to " << fileName << "\n";
+}
+
 namespace {
 struct FastASMGenTemporalCGRAPass
     : public compigra::impl::FastASMGenTemporalCGRABase<
@@ -507,22 +548,30 @@ struct FastASMGenTemporalCGRAPass
     int bbId = 0;
 
     logMessage("BasicBlock op assignment\n", true);
+    std::map<mlir::Operation *, compigra::ScheduleUnit> rawSolution;
 
     for (auto &bb : region.getBlocks()) {
       // Init operation assginer
-      BasicBlockOpAsisgnment bbOpAsisgnment(&bb, 3, nRow, nCol, builder);
+      BasicBlockOpAsisgnment bbOpAssignment(&bb, 3, nRow, nCol, builder);
       auto zeroIntOp = getZeroConstant(region, builder);
       auto zeroFloatOp = getZeroConstant(region, builder, true);
-      bbOpAsisgnment.setUpZeroOp(zeroIntOp, zeroFloatOp);
+      bbOpAssignment.setUpZeroOp(zeroIntOp, zeroFloatOp);
 
       // set up liveness prerequisite
-      bbOpAsisgnment.setPrerequisiteToStartGraph(bbInitGraphs[&bb]);
-      bbOpAsisgnment.setPrerequisiteToFinishGraph(bbFiniGraphs[&bb]);
-      if (failed(bbOpAsisgnment.mappingBBdataflowToCGRA(liveIns, liveOuts)))
+      bbOpAssignment.setPrerequisiteToStartGraph(bbInitGraphs[&bb]);
+      bbOpAssignment.setPrerequisiteToFinishGraph(bbFiniGraphs[&bb]);
+      if (failed(bbOpAssignment.mappingBBdataflowToCGRA(liveIns, liveOuts)))
         return signalPassFailure();
+
+      auto soluBB = bbOpAssignment.getSolution();
+      // write soluBB into rawSolution
+      for (auto [op, unit] : soluBB) {
+        rawSolution[op] = unit;
+      }
+
       // print the initGraph and finiGraph of the block
-      auto initGraph = bbOpAsisgnment.getStartEmbeddingGraph();
-      auto finiGraph = bbOpAsisgnment.getFiniEmbeddingGraph();
+      auto initGraph = bbOpAssignment.getStartEmbeddingGraph();
+      auto finiGraph = bbOpAssignment.getFiniEmbeddingGraph();
 
       bbInitGraphs[&bb] = initGraph;
       bbFiniGraphs[&bb] = finiGraph;
@@ -542,7 +591,18 @@ struct FastASMGenTemporalCGRAPass
       //   break;
       bbId++;
     }
-    llvm::errs() << funcOp << "\n";
+
+    // organize the rawSolution to a final solution
+    calculateTemporalSpatialSchedule(region, rawSolution,
+                                     "space_temporal_assignment.csv");
+    // perform register allocation
+    OpenEdgeASMGen asmGen(region, 3, nRow);
+    asmGen.setSolution(rawSolution);
+    if (failed(asmGen.allocateRegisters())) {
+      llvm::errs() << "Failed to allocate registers\n";
+      // return signalPassFailure();
+    }
+    asmGen.printKnownSchedule(true, 0, outDir);
   };
 };
 } // namespace
