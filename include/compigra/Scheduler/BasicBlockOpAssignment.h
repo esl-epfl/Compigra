@@ -38,7 +38,7 @@ enum ScheduleStrategy {
 
 enum RegAttr { NK = -1, IN = 0, EX = 1, IE = 2 };
 
-using placeunit = std::pair<unsigned, RegAttr>;
+using placeunit = std::pair<int, RegAttr>;
 
 /// Describes the CGRA attributes through the number of rows, columns and the
 /// internal registers.
@@ -123,7 +123,7 @@ private:
 
   std::vector<placeunit> searchOpPlacementSpace(
       Operation *op, std::vector<ValuePlacement> &curGraph,
-      std::vector<ValuePlacement> &finiGraph,
+      const std::vector<ValuePlacement> &finiGraph,
       std::map<Operation *, std::pair<unsigned, RegAttr>> tmpResult);
 
   int placeOperations(int timeSlot, SmallVector<Operation *, 4> &schedulingOps,

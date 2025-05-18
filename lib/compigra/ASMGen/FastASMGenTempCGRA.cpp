@@ -221,12 +221,18 @@ arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder,
   return zeroOp;
 }
 
-static Value getArgumentOperand(Operation *termOp, unsigned argInd) {
+static Value getArgumentOperand(Operation *termOp, Block *sucBlk,
+                                unsigned argInd) {
   if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(termOp)) {
     return branchOp.getOperand(argInd);
   } else if (auto branchOp =
                  dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
-    return branchOp.getOperand(argInd + 2);
+    if (sucBlk == branchOp.getTrueDest()) {
+      return branchOp.getOperand(argInd + 2);
+    } else if (sucBlk == branchOp.getFalseDest()) {
+      return branchOp.getOperand(argInd + 2 +
+                                 branchOp.getNumTrueDestOperands());
+    }
   }
   return nullptr;
 }
@@ -238,7 +244,8 @@ Value resolveInjectedValue(
     return val;
   for (auto arg : curBlk->getArguments()) {
     if (arg == val)
-      return getArgumentOperand(prevBlk->getTerminator(), arg.getArgNumber());
+      return getArgumentOperand(prevBlk->getTerminator(), curBlk,
+                                arg.getArgNumber());
   }
   llvm::errs() << "Error: cannot resolve injected value " << val << " in "
                << *prevBlk->getTerminator() << "\n";
@@ -462,7 +469,6 @@ void updateGlobalValPlacement(
                                bbInitGraphs, bbFiniGraphs);
   }
 
-  llvm::errs() << "update initGraph done\n\n";
   // update the global value placement with the updated finiGraph
   for (auto valPlace : finiGraph) {
     auto val = valPlace.val;
@@ -474,7 +480,7 @@ void updateGlobalValPlacement(
     updateSuccessorPlacement(valPlace, updateBlk, liveIns, liveOuts,
                              bbInitGraphs, bbFiniGraphs);
   }
-  llvm::errs() << "update finiGraph done\n";
+
   // finish update
 }
 
@@ -551,6 +557,9 @@ struct FastASMGenTemporalCGRAPass
     std::map<mlir::Operation *, compigra::ScheduleUnit> rawSolution;
 
     for (auto &bb : region.getBlocks()) {
+      llvm::errs() << "\n";
+      logMessage("\nBBId: " + std::to_string(bbId) +
+                 "==============================\n");
       // Init operation assginer
       BasicBlockOpAsisgnment bbOpAssignment(&bb, 3, nRow, nCol, builder);
       auto zeroIntOp = getZeroConstant(region, builder);
@@ -576,7 +585,7 @@ struct FastASMGenTemporalCGRAPass
 
       bbInitGraphs[&bb] = initGraph;
       bbFiniGraphs[&bb] = finiGraph;
-      llvm::errs() << "\nBBId: " + std::to_string(bbId) +
+      llvm::errs() << "BBId: " + std::to_string(bbId) +
                           "==============================\n";
       updateGlobalValPlacement(&bb, region, liveIns, liveOuts, bbInitGraphs,
                                bbFiniGraphs);
@@ -585,10 +594,7 @@ struct FastASMGenTemporalCGRAPass
       logMessage("FiniGraph:");
       printLiveGraph(bbFiniGraphs);
 
-      logMessage("\nBBId: " + std::to_string(bbId) +
-                 "==============================\n");
-
-      // if (bbId == 5)
+      // if (bbId == 2)
       //   break;
       bbId++;
     }
