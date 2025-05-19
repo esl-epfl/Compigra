@@ -19,6 +19,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <fstream>
 #include <set>
@@ -27,7 +28,7 @@
 #include "gurobi_c++.h"
 #endif
 
-// #include <iomanip>
+#define DEBUG_TYPE "REGISTER_ALLOCATION"
 
 using namespace mlir;
 using namespace compigra;
@@ -270,8 +271,6 @@ void getLimitationUseWithPhiNode(
       if (graph.colorMap.find(defNode) != graph.colorMap.end()) {
         color = graph.colorMap[defNode];
         isPreColored = true;
-        llvm::errs() << "DEF NODE: " << defNode << " set color "
-                     << std::to_string(color) << "\n";
         break;
       }
 
@@ -290,12 +289,8 @@ void getLimitationUseWithPhiNode(
     // rewrite all value in limitedUse
     for (auto v : defNodes) {
       graph.colorMap[v] = color;
-      llvm::errs() << v << ": " << std::to_string(color) << "\n";
       // limitedUse[v] = color;
     }
-
-    llvm::errs() << "PHI NODE: " << node << " set color "
-                 << std::to_string(color) << "\n";
     graph.colorMap[node] = color;
   }
   // return limitedUse;
@@ -310,18 +305,16 @@ LogicalResult compigra::allocateOutRegInPE(
   auto graph = createInterferenceGraph(opList, opMap, pcCtrlFlow);
   // print opMap
   for (auto [ind, pair] : opMap) {
-    llvm::errs() << ind << ": ";
+    LLVM_DEBUG(llvm::dbgs() << ind << ": ");
     if (pair.first)
-      llvm::errs() << *pair.first << " ";
+      LLVM_DEBUG(llvm::dbgs() << *pair.first << " ");
     else if (pair.second)
-      llvm::errs() << pair.second << " ";
-    llvm::errs() << "\n";
+      LLVM_DEBUG(llvm::dbgs() << pair.second << " ");
+    LLVM_DEBUG(llvm::dbgs() << "\n");
   }
-  llvm::errs() << opList.size() << " " << opMap.size() << "\n";
 
   // print opMap and interference graph
-  llvm::errs() << "--------------Interference Graph-----------------\n";
-  graph.printGraph();
+  // graph.printGraph();
 
   // allocate register using graph coloring
   auto peo = lexBFS(graph.adjList);
@@ -331,14 +324,11 @@ LogicalResult compigra::allocateOutRegInPE(
   // the register allocation for block arguments (phi node) must be limited to
   // the same register.
   std::vector<int> phiList;
-  llvm::errs() << "PEO: [";
   for (auto v : peo) {
     Value val = opMap[v].second;
-    llvm::errs() << " " << v;
     // first mark phi node as limited use
     if (isa<BlockArgument>(val)) {
       phiList.push_back(v);
-      llvm::errs() << "(" << val << ")";
       continue;
     }
 
@@ -346,11 +336,7 @@ LogicalResult compigra::allocateOutRegInPE(
 
     if (solution[defOp].reg >= 0)
       graph.colorMap[v] = solution[defOp].reg;
-
-    if (graph.colorMap.find(v) != graph.colorMap.end())
-      llvm::errs() << "{" << std::to_string(graph.colorMap[v]) << "}";
   }
-  llvm::errs() << "]\n";
 
   // Color the vertices in the order of PEO
   for (auto v : peo) {
@@ -365,25 +351,17 @@ LogicalResult compigra::allocateOutRegInPE(
 
     if (solution[defOp].reg >= 0) {
       graph.colorMap[v] = solution[defOp].reg;
-      llvm::errs() << v << ": " << std::to_string(graph.colorMap[v]) << "\n";
+      LLVM_DEBUG(llvm::dbgs()
+                 << v << ": " << std::to_string(graph.colorMap[v]) << "\n");
       continue;
     }
 
     if (graph.colorMap.find(v) != graph.colorMap.end()) {
-      llvm::errs() << v << ": " << std::to_string(graph.colorMap[v]) << "\n";
+      LLVM_DEBUG(llvm::dbgs()
+                 << v << ": " << std::to_string(graph.colorMap[v]) << "\n");
       solution[defOp].reg = graph.colorMap[v];
       continue;
     }
-
-    // allocate register according to the limited use of the phi node
-    // if (limitedUse.find(v) != limitedUse.end()) {
-    //   graph.colorMap[v] = limitedUse[v];
-    //   llvm::errs() << v << "(phi): "
-    //                << "ALLOCATE R" << std::to_string(limitedUse[v]) << " TO "
-    //                << val << "\n";
-    //   solution[defOp].reg = limitedUse[v];
-    //   continue;
-    // }
 
     std::unordered_set<int> usedColors;
     // allocate register using the interference graph
@@ -392,26 +370,15 @@ LogicalResult compigra::allocateOutRegInPE(
         usedColors.insert(graph.colorMap[u]);
     }
 
-    // char color = 0;
-    // while (usedColors.find(color) != usedColors.end()) {
-    //   color++;
-    //   if (color >= maxReg) {
-    //     llvm::errs() << "FAILED ALLOCATE REGISTER\n";
-
-    //     // maxReg is Rout. In principle, the register should not be
-    //     // assigned to Rout if it is used internally.
-    //     return failure();
-    //   }
-    // }
     char color = allocatePhysicalRegOnIG(graph.adjList[v], graph.colorMap,
                                          usedColors, maxReg);
     if (color >= maxReg) {
-      llvm::errs() << "FAILED ALLOCATE REGISTER for " << v << "\n";
+      LLVM_DEBUG(llvm::dbgs() << "FAILED ALLOCATE REGISTER for " << v << "\n");
       return failure();
     }
     graph.colorMap[v] = color;
-    llvm::errs() << v << ": ALLOCATE R" << std::to_string(color) << " TO "
-                 << val << "\n";
+    LLVM_DEBUG(llvm::dbgs() << v << ": ALLOCATE R" << std::to_string(color)
+                            << " TO " << val << "\n");
     solution[defOp].reg = color;
   }
   return success();
@@ -469,16 +436,9 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
   }
 
   auto pcCtrlFlow = getPcCtrlFlow();
-  // print pcCtrlFlow
-  // for (auto [time, suc] : pcCtrlFlow) {
-  //   llvm::errs() << "Time: " << time << " ->{ ";
-  //   for (auto s : suc)
-  //     llvm::errs() << s << ", ";
-  //   llvm::errs() << "}\n";
-  // }
 
   for (size_t pe = 0; pe < nRow * nCol; ++pe) {
-    llvm::errs() << "\nPE = " << pe << "\n";
+    LLVM_DEBUG(llvm::dbgs() << "\nPE = " << pe << "\n");
     auto ops = getOperationsAtPE(pe);
     // Allocate registers if it can be inferred from the known result.
     for (auto [time, op] : ops) {
@@ -550,22 +510,16 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
       // bool internalBBU
       if (allUserOutside || placeExternal) {
         solution[op].reg = maxReg;
-        llvm::errs() << *op << " -> " << maxReg << " [" << allUserOutside << " "
-                     << placeExternal << "]\n";
       }
     }
-    llvm::errs() << "PE " << pe << " reference done\n";
     // allocate register for the operations in the PE
     if (failed(allocateOutRegInPE(ops, solution, maxReg, pcCtrlFlow))) {
-      llvm::errs() << "Failed to allocate register for PE " << pe << "\n";
       return failure();
     }
-    llvm::errs() << "PE " << pe << " register allocation done\n";
   }
 
   for (auto [op, sol] : solution) {
     if (op->getNumResults() > 0 && sol.reg == -1) {
-      llvm::errs() << "Failed" << *op << " " << sol.pe << "\n";
       return failure();
     }
     instSolution[op].name = op->getName().getStringRef().str();
@@ -573,8 +527,6 @@ LogicalResult OpenEdgeASMGen::allocateRegisters(
     instSolution[op].time = sol.time;
     instSolution[op].Rout = sol.reg;
   }
-
-  llvm::errs() << "Register allocation done\n";
 
   // write register allocation results to instructions
   if (failed(convertToInstructionMap()))
@@ -671,7 +623,7 @@ static std::string getOperandSrcReg(int peA, int peB, int srcReg, int nRow,
   if (((peA + nCol) % (nRow * nCol)) == peB)
     return "RCB";
 
-  llvm::errs() << "ERROR: " << peA << " " << peB << "\n";
+  LLVM_DEBUG(llvm::dbgs() << "ERROR: " << peA << " " << peB << "\n");
   return "ERROR";
 }
 
@@ -934,7 +886,7 @@ void OpenEdgeASMGen::printKnownSchedule(bool GridLIke, int startPC,
 
   std::ofstream file(outDir);
   if (!file.is_open()) {
-    llvm::errs() << "Unable to open " << outDir << "\n";
+    LLVM_DEBUG(llvm::dbgs() << "Unable to open " << outDir << "\n");
     return;
   }
 

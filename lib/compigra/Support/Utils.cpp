@@ -261,9 +261,9 @@ SmallVector<Operation *, 8> getCriticalPath(Block *blk) {
   return criticalPath;
 }
 
-unsigned getValueLiveLength(Value val,
-                            std::map<Block *, SetVector<Value>> &liveIns,
-                            std::map<Block *, SetVector<Value>> &liveOuts) {
+unsigned
+getValueLiveLength(Value val, const std::map<Block *, SetVector<Value>> liveIns,
+                   const std::map<Block *, SetVector<Value>> liveOuts) {
   SmallVector<Block *, 8> blocks;
   for (auto [block, _] : liveIns)
     blocks.push_back(block);
@@ -272,9 +272,9 @@ unsigned getValueLiveLength(Value val,
   if (isa<BlockArgument>(val)) {
     unsigned totalLength = 0;
     for (auto block : blocks) {
-      if (liveIns[block].count(val) && liveOuts[block].count(val))
+      if (liveIns.at(block).count(val) && liveOuts.at(block).count(val))
         totalLength += getCriticalPath(block).size();
-      if (liveIns[block].count(val) && !liveOuts[block].count(val)) {
+      if (liveIns.at(block).count(val) && !liveOuts.at(block).count(val)) {
         unsigned latestUse = 0;
         for (auto user : val.getUsers())
           if (user->getBlock() == block)
