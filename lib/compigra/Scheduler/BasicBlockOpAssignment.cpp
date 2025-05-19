@@ -937,13 +937,6 @@ shuffleSearchSpace(std::map<Operation *, std::vector<placeunit>> &searchSpace,
     return nullptr;
   unsigned shuffleOpIdx = shuffleIds[rand() % shuffleIds.size()];
 
-  // 1/3 possible to empty the searchSpace of shuffleOp to avoid scheduling it
-  // at this time step
-  // if (rand() % 2 == 0) {
-  //   searchSpace[schedulingOps[shuffleOpIdx]].clear();
-  //   scheduleResult.erase(schedulingOps[shuffleOpIdx]);
-  // }
-
   // keep all elements before the shuffleOpIdx in the searchSpace, and remove
   // others
   for (auto ind = shuffleOpIdx + 1; ind < schedulingOps.size(); ind++) {
@@ -1365,15 +1358,19 @@ LogicalResult BasicBlockOpAsisgnment::mappingBBdataflowToCGRA(
     for (auto op : schedulingOps) {
       // delay the scheduling
       schedulePriority[op].first += 1;
-      SetVector<Operation *> delayedOps;
-      if (op->getNumResults() == 0)
-        continue;
-      buildChildTree(op->getResult(0), delayedOps, curBlock);
-      for (auto child : delayedOps) {
-        if (schedulePriority.count(child))
-          schedulePriority[child].first += 1;
-      }
+      std::string message;
+      llvm::raw_string_ostream rso(message);
+      rso << "DELAY SCHEDULE: " << *op << "\n";
+      // SetVector<Operation *> delayedOps;
+      // if (op->getNumResults() == 0)
+      //   continue;
+      // buildChildTree(op->getResult(0), delayedOps, curBlock);
+      // for (auto child : delayedOps) {
+      //   if (schedulePriority.count(child))
+      //     schedulePriority[child].first += 1;
+      // }
     }
+    updateSchedulePriority(height, liveIns, liveOuts);
     height++;
   }
 
