@@ -352,9 +352,13 @@ static double getSpatialAffinityCost(
     auto childHeight =
         heightMap.count(child) ? heightMap.at(child).first : maxHeight + 1;
     auto val1Height =
-        val1.getDefiningOp() ? heightMap.at(val1.getDefiningOp()).first : 0;
+        (val1.getDefiningOp() && heightMap.count(val1.getDefiningOp()))
+            ? heightMap.at(val1.getDefiningOp()).first
+            : 0;
     auto val2Height =
-        val2.getDefiningOp() ? heightMap.at(val2.getDefiningOp()).first : 0;
+        (val1.getDefiningOp() && heightMap.count(val1.getDefiningOp()))
+            ? heightMap.at(val2.getDefiningOp()).first
+            : 0;
 
     int depth1 = childHeight - val1Height;
     int depth2 = childHeight - val2Height;
@@ -362,14 +366,6 @@ static double getSpatialAffinityCost(
 
     affinity += std::pow(2, -depth);
   }
-
-  // if (!children.empty()) {
-  //   llvm::errs() << "AFF [" << val1 << " && " << val2 << "]:";
-  //   llvm::errs() << "  "
-  //                << affinity * getDistance(pe1, pe2, grid.nRow, grid.nCol) /
-  //                       maxRouting
-  //                << "\n";
-  // }
 
   return affinity * getDistance(pe1, pe2, grid.nRow, grid.nCol) / maxRouting;
 }
@@ -1221,8 +1217,10 @@ double BasicBlockOpAsisgnment::stepSA(
   double affinityCost =
       getSpatialAffinityTotalCost(tmpScheduleResult, tmpGraph, schedulePriority,
                                   attr, liveOut, scheduledOps);
+  logMessage("affinityCost: " + std::to_string(affinityCost) + "\n");
   double accessCost = getAccessCost(curBlock, tmpGraph, tmpScheduleResult,
                                     scheduledOps, liveOut, attr, height);
+  logMessage("accessCost: " + std::to_string(accessCost) + "\n");
   // get the total cost
   double currentCost = sucCost + affinityCost + accessCost;
 
