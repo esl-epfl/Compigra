@@ -128,7 +128,7 @@ def FuncOp : Cgra_Op<"func", [
   let hasCustomAssemblyFormat = 1;
 }
 
-def BlasGemmOp : Cgra_Op<"gemm_blas", [Pure, MemoryEffectsOpInterface]> {
+def BlasGemmOp : Cgra_Op<"gemm_blas", [Pure, MemoryEffectsOpInterface,IsolatedFromAbove]> {
   let summary = "specialized gemm kernel for assembly generation";
   let description = [{
     The gemm_blas operation represents pre -

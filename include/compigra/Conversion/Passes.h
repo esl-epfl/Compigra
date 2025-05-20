@@ -15,6 +15,7 @@
 
 #include "compigra/Conversion/CfToCgraConversion.h"
 #include "compigra/Conversion/LLVMToCgraConversion.h"
+#include "compigra/Conversion/SCFToCFConversion.h"
 
 using namespace mlir;
 using namespace compigra;
@@ -24,6 +25,7 @@ namespace compigra {
 #define GEN_PASS_REGISTRATION
 #include "compigra/Conversion/Passes.h.inc"
 
+std::unique_ptr<mlir::Pass> createSCFToControlFlowPass();
 std::unique_ptr<mlir::Pass> createLLVMToCgraConversion(StringRef funcName,
                                                        StringRef memAlloc);
 std::unique_ptr<mlir::Pass> createCfToCgraConversion();

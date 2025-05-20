@@ -16,7 +16,20 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
-// LLVM passes
+// SCF to ControFlow passes
+//===----------------------------------------------------------------------===//
+
+def SCFToControlFlow : Pass<"convert-scf-to-cf"> {
+  let summary =
+      "Convert SCF dialect to ControlFlow dialect, replacing structured"
+      " control flow with a CFG";
+  let constructor = "compigra::createSCFToControlFlowPass()";
+  let dependentDialects =
+      ["cgra::CgraDialect", "cf::ControlFlowDialect", "scf::SCFDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// LLVM to CGRA passes
 //===----------------------------------------------------------------------===//
 
 def LLVMToCgraConversion : Pass<"convert-llvm-to-cgra"> {
@@ -40,10 +53,8 @@ def CfToCgraConversion : Pass<"convert-cf-to-cgra"> {
   let summary = "Convert CF to CGRA dialect";
   let constructor = "compigra::createCfToCgraConversion()";
   let dependentDialects = ["cgra::CgraDialect"];
-  let options = [
-    ListOption<"startAddr", "start-addr", "int", 
-               "    Specify the start address of the parameters">
-  ];
+  let options = [ListOption<"startAddr", "start-addr", "int",
+                            "    Specify the start address of the parameters">];
 }
 
 #endif // COMPIGRA_PASSES_TD
