@@ -16,6 +16,7 @@
 #include "compigra/CgraDialect.h"
 #include "compigra/CgraOps.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -31,6 +32,10 @@ int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
 
   mlir::registerCSEPass();
+  // Register affine passes correctly
+  // mlir::affine::registerAffinePasses();
+  mlir::registerConvertAffineToStandardPass();
+
   compigra::registerAllPasses();
   compigra::registerAllDialects(registry);
 

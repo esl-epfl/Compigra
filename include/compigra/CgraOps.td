@@ -128,7 +128,7 @@ def FuncOp : Cgra_Op<"func", [
   let hasCustomAssemblyFormat = 1;
 }
 
-def BlasGemmOp : Cgra_Op<"gemm_blas", [Pure]> {
+def BlasGemmOp : Cgra_Op<"gemm_blas", [Pure, MemoryEffectsOpInterface]> {
   let summary = "specialized gemm kernel for assembly generation";
   let description = [{
     The gemm_blas operation represents pre -
@@ -143,10 +143,9 @@ def BlasGemmOp : Cgra_Op<"gemm_blas", [Pure]> {
                    : $innerBound, AnyTypeOf<[Index, AnyInteger]>
                    : $middleBound, AnyTypeOf<[Index, AnyInteger]>
                    : $outerBound,
-                   MemRefOf<[I32]>:$matIn1,
-                   MemRefOf<[I32]>:$matIn2,
-                   MemRefOf<[I32]>:$matOut
-  );
+                   AnyRankedOrUnrankedMemRef:$matIn1,
+                       AnyRankedOrUnrankedMemRef:$matIn2,
+                       AnyRankedOrUnrankedMemRef:$matOut);
 
   let hasCustomAssemblyFormat = 1;
 

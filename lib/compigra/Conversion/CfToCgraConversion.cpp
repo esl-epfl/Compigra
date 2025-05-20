@@ -44,7 +44,8 @@ static Block *getCgraBranchDstBlock(Block *block) {
 static LogicalResult removeUnusedOps(func::FuncOp funcOp) {
   SmallVector<Operation *> eraseOps;
   for (auto &op : funcOp.getOps()) {
-    if (op.getBlock()->getTerminator() == &op || isa<cgra::SwiOp>(op))
+    if (op.getBlock()->getTerminator() == &op || isa<cgra::SwiOp>(op) ||
+        isa<cgra::BlasGemmOp>(op))
       continue;
 
     if (op.use_empty()) {
