@@ -21,6 +21,7 @@ include "mlir/Pass/PassBase.td"
 def AffineMaximizeGemm : Pass<"affine-maximize-gemm"> {
   let summary = "Maximize the gemm size";
   let constructor = "compigra::createAffineMaximizeGemm()";
+  let dependentDialects = ["cgra::CgraDialect"];
 }
 
 //===----------------------------------------------------------------------===//

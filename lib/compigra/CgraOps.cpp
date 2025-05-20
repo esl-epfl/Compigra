@@ -295,6 +295,86 @@ ParseResult MergeOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
+ParseResult BlasGemmOp::parse(mlir::OpAsmParser &parser,
+                              mlir::OperationState &result) {
+
+  OpAsmParser::UnresolvedOperand idx1, idx2, idx3;
+  OpAsmParser::UnresolvedOperand mem1, mem2, mem3;
+
+  Type idx1Type, idx2Type, idx3Type;
+  Type mem1Type, mem2Type, mem3Type;
+
+  // Parse structure: [ %idx1 : type , %idx2 : type , %idx3 : type , %mem1 :
+  // type , %mem2 : type , %mem3 : type ]
+  if (parser.parseLSquare() || parser.parseOperand(idx1) ||
+      parser.parseColonType(idx1Type) || parser.parseComma() ||
+      parser.parseOperand(idx2) || parser.parseColonType(idx2Type) ||
+      parser.parseComma() || parser.parseOperand(idx3) ||
+      parser.parseColonType(idx3Type) || parser.parseComma() ||
+      parser.parseOperand(mem1) || parser.parseColonType(mem1Type) ||
+      parser.parseComma() || parser.parseOperand(mem2) ||
+      parser.parseColonType(mem2Type) || parser.parseComma() ||
+      parser.parseOperand(mem3) || parser.parseColonType(mem3Type) ||
+      parser.parseRSquare()) {
+    return failure();
+  }
+
+  // Parse optional attribute dict
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  // Resolve operands
+  if (parser.resolveOperand(idx1, idx1Type, result.operands) ||
+      parser.resolveOperand(idx2, idx2Type, result.operands) ||
+      parser.resolveOperand(idx3, idx3Type, result.operands) ||
+      parser.resolveOperand(mem1, mem1Type, result.operands) ||
+      parser.resolveOperand(mem2, mem2Type, result.operands) ||
+      parser.resolveOperand(mem3, mem3Type, result.operands)) {
+    return failure();
+  }
+
+  return success();
+}
+
+void BlasGemmOp::print(mlir::OpAsmPrinter &printer) {
+  printer << " [" << getInnerBound() << " : " << getInnerBound().getType()
+          << ", " << getMiddleBound() << " : " << getMiddleBound().getType()
+          << ", " << getOuterBound() << " : " << getOuterBound().getType()
+          << ", " << getMatIn1() << " : " << getMatIn1().getType() << ", "
+          << getMatIn2() << " : " << getMatIn2().getType() << ", "
+          << getMatOut() << " : " << getMatOut().getType() << "]";
+
+  printer.printOptionalAttrDict((*this)->getAttrs());
+}
+
+LogicalResult cgra::BlasGemmOp::verify() {
+  // Check index types
+  auto isInteger = [](mlir::Type type) {
+    return type.isa<mlir::IndexType>() || type.isa<mlir::IntegerType>();
+  };
+
+  if (!isInteger(getInnerBound().getType()))
+    return emitOpError("expected idx1 to be index or integer type");
+  if (!isInteger(getMiddleBound().getType()))
+    return emitOpError("expected idx2 to be index or integer type");
+  if (!isInteger(getOuterBound().getType()))
+    return emitOpError("expected idx3 to be index or integer type");
+
+  // Check memref types and element type
+  // for (mlir::Value mem : {getMem1(), getMem2(), getMem3()}) {
+  //   auto memType = mem.getType().dyn_cast<mlir::MemRefType>();
+  //   if (!memType)
+  //     continue;
+  //   // return emitOpError() << "expected memref type for operand " << mem;
+
+  //   if (!memType.getElementType().isInteger(32))
+  //     return emitOpError() << "expected memref element type to be i32, got "
+  //                          << memType.getElementType();
+  // }
+
+  return mlir::success();
+}
+
 void MergeOp::print(OpAsmPrinter &p) { sostPrint(p, false); }
 
 LogicalResult MergeOp::verify() {
