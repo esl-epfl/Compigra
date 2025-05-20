@@ -128,6 +128,45 @@ def FuncOp : Cgra_Op<"func", [
   let hasCustomAssemblyFormat = 1;
 }
 
+def BlasGemmOp : Cgra_Op<"gemm_blas", [
+  Pure
+  // SameOperandsAndResultType,
+  // DeclareOpInterfaceMethods<ExecutableOpInterface>,
+  // DeclareOpInterfaceMethods<GeneralOpInterface>,
+]> {
+  let summary = "specialized gemm kernel for assembly generation";
+  let description = [{
+    The gemm_blas operation represents pre -
+    compiled assembly code would be generated with the input.
+
+    Example:
+      ``` gemm_blas(% inner_bound, % middle_bound, % outer_bound, % in_mat1,
+                     % in_mat2, % out_mat)      ```
+  }];
+  let arguments = (ins 
+    Index:$idx1, 
+    Index:$idx2, 
+    Index:$idx3, 
+    MemRefOf<[I32]>:$mem1, 
+    MemRefOf<[I32]>:$mem2, 
+    MemRefOf<[I32]>:$mem3
+);
+
+let builders = [
+  OpBuilder<(ins 
+    "::mlir::Value":$idx1, 
+    "::mlir::Value":$idx2, 
+    "::mlir::Value":$idx3, 
+    "::mlir::Value":$mem1, 
+    "::mlir::Value":$mem2, 
+    "::mlir::Value":$mem3
+  )>
+];
+
+
+  // let hasVerifier = 1;
+}
+
 def MergeOp : Cgra_Op<"merge", [
   Pure, MergeLikeOpInterface, SOSTInterface, SameOperandsAndResultType
 ]> {
