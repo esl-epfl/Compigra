@@ -573,13 +573,8 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
     Operation *baseOp = nullptr;
     if (startAddr.empty()) {
       llvm::errs() << "Base address: " << memAlloc[i] << "\n";
-      if (i < globalArgs.size())
-        baseOp = builder.create<cgra::LwdOp>(
-            funcOp.getLoc(), builder.getI32Type(), globalArgs[i]->getResult(0));
-      else
-        baseOp = builder.create<cgra::LwdOp>(
-            funcOp.getLoc(), builder.getI32Type(),
-            funcOp.getArgument(i - globalArgs.size()));
+      baseOp =
+          builder.create<cgra::LwdOp>(funcOp.getLoc(), builder.getI32Type());
       llvm::errs() << *baseOp << "\n";
     } else {
       baseOp = builder.create<arith::ConstantIntOp>(

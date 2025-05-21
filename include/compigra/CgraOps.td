@@ -389,12 +389,11 @@ def LwdOp : Cgra_Op<"lwd", [Pure]> {
       ```
   }];
 
-  let arguments = (ins AnyType : $addressOperand);
   let results = (outs AnyType : $dataResult);
 
   let hasCustomAssemblyFormat = 1;
  let assemblyFormat = [{
-  $addressOperand `:` type($addressOperand) `->` type($dataResult) `,` attr-dict
+   `->` type($dataResult) `,` attr-dict
 }];
 
 }
