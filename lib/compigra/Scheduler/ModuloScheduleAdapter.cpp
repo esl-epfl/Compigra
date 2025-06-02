@@ -642,19 +642,49 @@ void replaceSuccessor(Block *blk, Block *oldBlk, Block *newBlk) {
   }
 }
 
-void addPropagateValue(Operation *sucTermOp, Value propVal, Block *targetBB) {
-  if (auto br = dyn_cast<cf::BranchOp>(sucTermOp)) {
+void addPropagateValue(Operation *curTerm, Value propVal, Block *targetBB) {
+  if (auto br = dyn_cast<cf::BranchOp>(curTerm)) {
     if (br.getSuccessor() == targetBB) {
       SmallVector<Value, 4> newOperands(br.getOperands().begin(),
                                         br.getOperands().end());
       newOperands.push_back(propVal);
       br.getOperation()->setOperands(newOperands);
     }
-  } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(sucTermOp)) {
+  } else if (auto condBr = dyn_cast<cgra::ConditionalBranchOp>(curTerm)) {
     if (condBr.getTrueDest() == targetBB)
       condBr.getTrueDestOperandsMutable().append(propVal);
     else if (condBr.getFalseDest() == targetBB)
       condBr.getFalseDestOperandsMutable().append(propVal);
+  }
+}
+
+void initProduceVarViaBBArg(Block *templateBlock, Block *finiBlock) {
+  // first check whether operation in templateBlock are used outside the loop,
+  // if yes, use blockArguments to propagate the values
+  for (auto &op : templateBlock->getOperations()) {
+    if (op.getNumResults() == 0)
+      continue;
+    auto res = op.getResult(0);
+    // if res.use are outside templateBlock
+    SmallVector<Operation *> usersOutside;
+    for (auto *user : res.getUsers()) {
+      if (user->getBlock() != templateBlock) {
+        usersOutside.push_back(user);
+      }
+    }
+
+    if (usersOutside.empty())
+      continue;
+
+    // add the block argument to finiBlock
+    auto arg = finiBlock->addArgument(res.getType(), res.getLoc());
+    res.replaceUsesWithIf(arg, [&](OpOperand &use) {
+      // if the use is in the templateBlock, do not replace
+      return use.getOwner()->getBlock() != templateBlock;
+    });
+
+    // add res to the operators of its terminator
+    addPropagateValue(templateBlock->getTerminator(), res, finiBlock);
   }
 }
 
@@ -663,6 +693,8 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   Block *curBlk;
   Block *loopCond = nullptr;
   Block *loopQuit = finiBlock;
+
+  initProduceVarViaBBArg(templateBlock, finiBlock);
 
   startBlock = builder.createBlock(templateBlock);
   curBlk = startBlock;
@@ -674,9 +706,9 @@ LogicalResult ModuloScheduleAdapter::adaptCFGWithLoopMS() {
   for (auto arg : templateBlock->getArguments())
     startBlock->addArgument(arg.getType(), arg.getLoc());
   std::vector<std::pair<int, int>> emptySet;
-  // startBlock = startBlk;
   newBlocks.push_back(startBlock);
-  initOperationsInBB(startBlock, 0, timeSlotsOfBBs[0], emptySet);
+  if (failed(initOperationsInBB(startBlock, 0, timeSlotsOfBBs[0], emptySet)))
+    return failure();
 
   std::vector<std::pair<int, int>> propOpsToEpilog;
   std::vector<std::pair<int, int>> propOpsToProlog;
