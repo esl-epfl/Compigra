@@ -570,8 +570,16 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
   builder.setInsertionPointToStart(&funcOp.getBlocks().front());
   // print the memory allocation
   for (unsigned i = 0; i < memAlloc.size(); i++) {
-    auto baseOp = builder.create<arith::ConstantIntOp>(
-        funcOp.getLoc(), memAlloc[i], builder.getI32Type());
+    Operation *baseOp = nullptr;
+    if (startAddr.empty()) {
+      llvm::errs() << "Base address: " << memAlloc[i] << "\n";
+      baseOp =
+          builder.create<cgra::LwdOp>(funcOp.getLoc(), builder.getI32Type());
+      llvm::errs() << *baseOp << "\n";
+    } else {
+      baseOp = builder.create<arith::ConstantIntOp>(
+          funcOp.getLoc(), memAlloc[i], builder.getI32Type());
+    }
     std::string prefix = i < globalArgs.size() ? "global" : "arg";
     unsigned argInd = i < globalArgs.size() ? i : i - globalArgs.size();
 

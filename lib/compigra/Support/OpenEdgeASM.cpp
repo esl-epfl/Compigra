@@ -791,6 +791,11 @@ std::string OpenEdgeASMGen::printInstructionToISA(Operation *op,
     }
   }
 
+  if (isa<cgra::LwdOp>(op)) {
+    auto baseAddr = op->getAttrOfType<StringAttr>("BaseAddr").getValue();
+    addition = " " + baseAddr.str();
+  }
+
   return opName + ROUT + opA + opB + addition;
 }
 

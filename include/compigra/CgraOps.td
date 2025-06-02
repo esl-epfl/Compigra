@@ -128,7 +128,8 @@ def FuncOp : Cgra_Op<"func", [
   let hasCustomAssemblyFormat = 1;
 }
 
-def BlasGemmOp : Cgra_Op<"gemm_blas", [Pure, MemoryEffectsOpInterface,IsolatedFromAbove]> {
+def BlasGemmOp : Cgra_Op<"gemm_blas",
+                         [Pure, MemoryEffectsOpInterface, IsolatedFromAbove]> {
   let summary = "specialized gemm kernel for assembly generation";
   let description = [{
     The gemm_blas operation represents pre -
@@ -374,6 +375,27 @@ def BsfaOp : Cgra_Op<"bsfa", [
   let results = (outs AnyType : $dataResult);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+}
+
+def LwdOp : Cgra_Op<"lwd", [Pure]> {
+  let summary = "load argument address";
+  let description = [{
+    The lwd operations represents a direct load operation of the cgra,
+    where it loads the address of the argument operand.
+
+    Example:
+      ``` mlir % 1 = lwd %
+    Operand: i32
+      ```
+  }];
+
+  let results = (outs AnyType : $dataResult);
+
+  let hasCustomAssemblyFormat = 1;
+ let assemblyFormat = [{
+   `->` type($dataResult) `,` attr-dict
+}];
+
 }
 
 def LwiOp : Cgra_Op<"lwi", [Pure]> {
