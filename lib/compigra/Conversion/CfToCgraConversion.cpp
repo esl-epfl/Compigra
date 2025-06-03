@@ -533,23 +533,34 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
   std::vector<int> memAlloc;
   std::vector<std::vector<int>> memRefDims;
 
-  unsigned lastPtr = 128;
+  unsigned lastPtr = 0;
   if (!startAddr.empty()) {
     lastPtr = startAddr[0];
   }
-  std::map<int, memref::GlobalOp> globalArgs;
-  // assign memory for global arguments
-  for (auto [ind, arg] : llvm::enumerate(modOp.getOps<memref::GlobalOp>())) {
-    globalArgs[ind] = arg;
-    assignMemoryToArg(arg.getType(), lastPtr, memAlloc, memRefDims);
-  }
 
   // assign memory for function arguments
+  unsigned directLoadArgNum = 0;
   for (auto [ind, arg] : llvm::enumerate(funcOp.getArguments())) {
-    if (!arg.getType().isa<MemRefType>())
+    if (!arg.getType().isa<MemRefType>() &&
+        arg.getType() != builder.getI32Type())
       return failure();
-    auto memrefType = arg.getType().cast<MemRefType>();
+
     memRefDims.push_back(std::vector<int>());
+    if (arg.getType() == builder.getI32Type()) {
+      directLoadArgNum++;
+      // insert lwd operation for the integer argument
+      builder.setInsertionPointToStart(&funcOp.getBlocks().front());
+      auto lwdOp =
+          builder.create<cgra::LwdOp>(funcOp.getLoc(), builder.getI32Type());
+      lwdOp->setAttr("Value",
+                     builder.getStringAttr("arg" + std::to_string(ind)));
+      constAddr.push_back(lwdOp);
+      // replace the argument with the lwd operation result
+      arg.replaceAllUsesWith(lwdOp.getResult());
+      continue;
+    }
+
+    auto memrefType = arg.getType().cast<MemRefType>();
 
     if (memrefType.getDimSize(0) > 0) {
       // Allocate memory based on the default size
@@ -566,22 +577,30 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
     }
   }
 
+  auto allocateMemArgNum = memAlloc.size();
+  llvm::errs() << allocateMemArgNum << "\n";
+  std::map<int, memref::GlobalOp> globalArgs;
+  // assign memory for global arguments
+  for (auto [ind, arg] : llvm::enumerate(modOp.getOps<memref::GlobalOp>())) {
+    globalArgs[ind] = arg;
+    assignMemoryToArg(arg.getType(), lastPtr, memAlloc, memRefDims);
+  }
+
   // insert constant operation to initialize the offset and base address
   builder.setInsertionPointToStart(&funcOp.getBlocks().front());
   // print the memory allocation
   for (unsigned i = 0; i < memAlloc.size(); i++) {
     Operation *baseOp = nullptr;
     if (startAddr.empty()) {
-      llvm::errs() << "Base address: " << memAlloc[i] << "\n";
       baseOp =
           builder.create<cgra::LwdOp>(funcOp.getLoc(), builder.getI32Type());
-      llvm::errs() << *baseOp << "\n";
     } else {
       baseOp = builder.create<arith::ConstantIntOp>(
           funcOp.getLoc(), memAlloc[i], builder.getI32Type());
     }
-    std::string prefix = i < globalArgs.size() ? "global" : "arg";
-    unsigned argInd = i < globalArgs.size() ? i : i - globalArgs.size();
+    std::string prefix = i < allocateMemArgNum ? "arg" : "global";
+    unsigned argInd =
+        i < allocateMemArgNum ? i + directLoadArgNum : i - allocateMemArgNum;
 
     baseOp->setAttr("BaseAddr",
                     builder.getStringAttr(prefix + std::to_string(argInd)));
@@ -597,8 +616,8 @@ allocateMemory(ModuleOp &modOp, SmallVector<Operation *> &constAddr,
       dimOps.push_back(dimOp);
     }
     offValMap[baseOp] = dimOps;
-    if (i < globalArgs.size()) {
-      globalConstAddrs[globalArgs[i].getName()] = baseOp;
+    if (i >= allocateMemArgNum) {
+      globalConstAddrs[globalArgs[i - allocateMemArgNum].getName()] = baseOp;
     } else {
       constAddr.push_back(baseOp);
     }
@@ -639,8 +658,9 @@ void CfToCgraConversionPass::runOnOperation() {
   DenseMap<Operation *, SmallVector<Operation *>> offValMap;
   if (failed(allocateMemory(modOp, constAddrs, globalConstAddrs, offValMap,
                             builder, startAddr)))
-    signalPassFailure();
+    return signalPassFailure();
 
+  llvm::errs() << "Memory allocation done\n";
   ConversionTarget target(getContext());
 
   target.addIllegalOp<arith::CmpIOp>();
