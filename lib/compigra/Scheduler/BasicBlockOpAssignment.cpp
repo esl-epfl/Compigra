@@ -184,7 +184,7 @@ static std::map<Operation *, std::pair<int, int>> getSchedulePriority(
 
     if (schedulingOps.empty()) {
       // print non scheduled ops
-      llvm::errs() << "Non scheduled ops: \n";
+      llvm::errs() << earliest << " Non scheduled ops: \n";
       for (auto &op : block->getOperations()) {
         if (visitedOps.count(&op) == 0)
           llvm::errs() << op << "\n";
@@ -413,7 +413,8 @@ static double getAccessCost(Block *curBlk, std::vector<ValuePlacement> curGraph,
       // if find any curGraph that is occupied by the PE, return true
       return llvm::any_of(curGraph, [&](const ValuePlacement &place) {
         return place.pe == pe &&
-               ((liveOut.count(place.val) && (place.regAttr == RegAttr::IE)));
+               ((place.regAttr == RegAttr::EX) ||
+                (liveOut.count(place.val) && (place.regAttr != RegAttr::IN)));
       });
     };
 
@@ -452,7 +453,7 @@ static double getSuccessCost(
   for (auto op : totalOps) {
     auto earliest = schedulePriority.at(op).first;
     auto latest = schedulePriority.at(op).second;
-    double weight = (double)earliest / (double)latest;
+    double weight = std::pow(2, earliest - latest);
     if (scheduleResult.count(op) != 0) {
       cost += weight;
     }
@@ -1136,7 +1137,7 @@ BasicBlockOpAsisgnment::routeOperation(std::vector<ValuePlacement> producers,
     auto routeVal = origVal;
     Operation *finalRouteOp = nullptr;
     for (unsigned j = movStep; j < movNum; ++j) {
-      if (isa<BlockArgument>(routeVal))
+      if (isa<BlockArgument>(routeVal) || routeVal.getParentBlock() != curBlock)
         builder.setInsertionPoint(&curBlock->getOperations().front());
       else
         builder.setInsertionPointAfter(routeVal.getDefiningOp());
