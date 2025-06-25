@@ -26,6 +26,9 @@ namespace compigra {
 /// block argument
 bool isPhiRelatedValue(Value val);
 
+/// Determine whether the operation is a route operation
+bool isRouteOp(Operation *op);
+
 /// Given a value(block argument or the source operand of the block argument),
 /// get all the related values (all source operands and the block arguments)
 void getAllPhiRelatedValues(Value val, SetVector<Value> &relatedVals);

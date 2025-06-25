@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "compigra/Support/Utils.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include <stack>
 #include <unordered_set>
 
@@ -28,6 +29,26 @@ bool isPhiRelatedValue(Value val) {
     if (isa<cgra::ConditionalBranchOp>(use.getOwner()) &&
         use.getOperandNumber() > 1)
       return true;
+  }
+  return false;
+}
+
+bool isRouteOp(Operation *op) {
+  // if the op is addi or addf, and the second operand is a constant 0
+  if (isa<arith::AddIOp>(op) || isa<arith::AddFOp>(op)) {
+    auto secondOperand = op->getOperand(1);
+    if (auto cstOp =
+            dyn_cast<arith::ConstantOp>(secondOperand.getDefiningOp())) {
+      if (auto intAttr = cstOp.getValue().dyn_cast<IntegerAttr>()) {
+        if (intAttr.getInt() == 0)
+          return true;
+      }
+      // if the second operand is a constant float 0
+      if (auto floatAttr = cstOp.getValue().dyn_cast<FloatAttr>()) {
+        if (floatAttr.getValue().isZero())
+          return true;
+      }
+    }
   }
   return false;
 }

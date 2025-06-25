@@ -113,7 +113,7 @@ private:
                 std::map<Operation *, std::vector<placeunit>> &existSpace,
                 SetVector<Value> liveOut,
                 std::vector<ValuePlacement> &finiGraph, GridAttribute attr,
-                Operation *shuffleOp = nullptr);
+                int shuffleOpIdx = -1);
 
   void setUpLiveness(std::map<Block *, SetVector<Value>> &liveIns,
                      std::map<Block *, SetVector<Value>> &liveOuts) {
@@ -131,7 +131,7 @@ private:
                       std::vector<ValuePlacement> &curGraph,
                       std::map<Operation *, std::vector<placeunit>> &space,
                       std::vector<ValuePlacement> &finiGraph,
-                      Operation *shuffleOp = nullptr);
+                      int shuffleOpIdx = -1);
 
 public:
   void setPrerequisiteToStartGraph(std::vector<ValuePlacement> initGraph) {
