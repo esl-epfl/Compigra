@@ -61,9 +61,9 @@ struct PERegUse {
   bool exAvail;
 };
 
-class BasicBlockOpAsisgnment {
+class BasicBlockOpAssignment {
 public:
-  BasicBlockOpAsisgnment(Block *block, unsigned maxReg, unsigned nRow,
+  BasicBlockOpAssignment(Block *block, unsigned maxReg, unsigned nRow,
                          unsigned nCol, OpBuilder builder)
       : builder(builder), curBlock(block) {
     attr = {nRow, nCol, maxReg};
@@ -89,6 +89,12 @@ private:
   // The operations and their corresponding spill operations
   std::vector<Value> spilledVals;
 
+  void
+  initEmbeddingGraphWithLiveIn(std::map<Block *, SetVector<Value>> liveIns,
+                               std::map<Block *, SetVector<Value>> liveOuts,
+                               std::vector<ValuePlacement> &initGraph,
+                               OpBuilder &builder, GridAttribute attr);
+
   void updateSchedulePriority(int timeSlot,
                               std::map<Block *, SetVector<Value>> liveIns,
                               std::map<Block *, SetVector<Value>> liveOuts);
@@ -100,6 +106,7 @@ private:
                        std::vector<ValuePlacement> &producers,
                        std::vector<unsigned> &movs,
                        std::vector<ValuePlacement> curGraph,
+                       std::vector<ValuePlacement> finiGraph,
                        SmallVector<mlir::Operation *, 4> otherFailureOps = {},
                        unsigned threshold = 2);
 

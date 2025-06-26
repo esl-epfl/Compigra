@@ -560,8 +560,11 @@ struct FastASMGenTemporalCGRAPass
       llvm::errs() << "\n";
       logMessage("\nBBId: " + std::to_string(bbId) +
                  "==============================\n");
+
+      llvm::errs() << "BBId: " + std::to_string(bbId) +
+                          "==============================\n";
       // Init operation assginer
-      BasicBlockOpAsisgnment bbOpAssignment(&bb, 3, nRow, nCol, builder);
+      BasicBlockOpAssignment bbOpAssignment(&bb, 3, nRow, nCol, builder);
       auto zeroIntOp = getZeroConstant(region, builder);
       auto zeroFloatOp = getZeroConstant(region, builder, true);
       bbOpAssignment.setUpZeroOp(zeroIntOp, zeroFloatOp);
@@ -570,6 +573,52 @@ struct FastASMGenTemporalCGRAPass
       bbOpAssignment.setPrerequisiteToStartGraph(bbInitGraphs[&bb]);
       bbOpAssignment.setPrerequisiteToFinishGraph(bbFiniGraphs[&bb]);
       if (failed(bbOpAssignment.mappingBBdataflowToCGRA(liveIns, liveOuts))) {
+        // DEBUG, print the liveIn and liveOut and their placement
+        llvm::errs() << "Failed to map BB dataflow to CGRA\n";
+        llvm::errs() << "LiveIn: ";
+        for (auto val : liveIns[&bb]) {
+          if (val.isa<BlockArgument>()) {
+            for (auto [ind, bb] : llvm::enumerate(region.getBlocks()))
+              if (&bb == val.getParentBlock()) {
+                llvm::errs() << ind << " ";
+                break;
+              }
+          }
+          llvm::errs() << val << ": ";
+          if (bbInitGraphs[&bb].empty()) {
+            llvm::errs() << "No placement\n";
+          } else {
+            for (auto valPlace : bbInitGraphs[&bb]) {
+              if (valPlace.val == val) {
+                llvm::errs() << "[" << valPlace.pe << " "
+                             << static_cast<int>(valPlace.regAttr) << "]\n";
+              }
+            }
+          }
+        }
+        llvm::errs() << "LiveOut: ";
+        for (auto val : liveOuts[&bb]) {
+          if (val.isa<BlockArgument>()) {
+            for (auto [ind, bb] : llvm::enumerate(region.getBlocks()))
+              if (&bb == val.getParentBlock()) {
+                llvm::errs() << ind << " ";
+                break;
+              }
+          }
+          llvm::errs() << val << ": ";
+          if (bbFiniGraphs[&bb].empty()) {
+            llvm::errs() << "No placement\n";
+          } else {
+            for (auto valPlace : bbFiniGraphs[&bb]) {
+              if (valPlace.val == val) {
+                llvm::errs() << "[" << valPlace.pe << " "
+                             << static_cast<int>(valPlace.regAttr) << "]\n";
+              }
+            }
+          }
+        }
+
+        return;
         return signalPassFailure();
       }
 
@@ -585,8 +634,6 @@ struct FastASMGenTemporalCGRAPass
 
       bbInitGraphs[&bb] = initGraph;
       bbFiniGraphs[&bb] = finiGraph;
-      llvm::errs() << "BBId: " + std::to_string(bbId) +
-                          "==============================\n";
       updateGlobalValPlacement(&bb, region, liveIns, liveOuts, bbInitGraphs,
                                bbFiniGraphs);
       logMessage("InitGraph: ");
