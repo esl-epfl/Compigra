@@ -37,8 +37,8 @@ bool isRouteOp(Operation *op) {
   // if the op is addi or addf, and the second operand is a constant 0
   if (isa<arith::AddIOp>(op) || isa<arith::AddFOp>(op)) {
     auto secondOperand = op->getOperand(1);
-    if (auto cstOp =
-            dyn_cast<arith::ConstantOp>(secondOperand.getDefiningOp())) {
+    if (auto cstOp = dyn_cast_or_null<arith::ConstantOp>(
+            secondOperand.getDefiningOp())) {
       if (auto intAttr = cstOp.getValue().dyn_cast<IntegerAttr>()) {
         if (intAttr.getInt() == 0)
           return true;

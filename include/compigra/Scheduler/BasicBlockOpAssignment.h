@@ -95,6 +95,9 @@ private:
                                std::vector<ValuePlacement> &initGraph,
                                OpBuilder &builder, GridAttribute attr);
 
+  Operation *createAtomicMovOp(Value val, bool replaceCurBlkUse,
+                               bool customLoc);
+
   void updateSchedulePriority(int timeSlot,
                               std::map<Block *, SetVector<Value>> liveIns,
                               std::map<Block *, SetVector<Value>> liveOuts);
