@@ -36,6 +36,11 @@ bool isPhiRelatedValue(Value val) {
 bool isRouteOp(Operation *op) {
   // if the op is addi or addf, and the second operand is a constant 0
   if (isa<arith::AddIOp>(op) || isa<arith::AddFOp>(op)) {
+    // the first operand is not constant
+    auto srcOperand = op->getOperand(0);
+    if (!srcOperand.getDefiningOp() ||
+        isa<arith::ConstantOp>(srcOperand.getDefiningOp()))
+      return false;
     auto secondOperand = op->getOperand(1);
     if (auto cstOp = dyn_cast_or_null<arith::ConstantOp>(
             secondOperand.getDefiningOp())) {

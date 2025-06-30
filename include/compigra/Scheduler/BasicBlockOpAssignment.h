@@ -89,6 +89,10 @@ private:
   // The operations and their corresponding spill operations
   std::vector<Value> spilledVals;
 
+  // The operations that are blocked from being pop out,
+  // WRITE-ONLY by createRoutePath function
+  SetVector<unsigned> blockedProdPEs;
+
   void
   initEmbeddingGraphWithLiveIn(std::map<Block *, SetVector<Value>> liveIns,
                                std::map<Block *, SetVector<Value>> liveOuts,

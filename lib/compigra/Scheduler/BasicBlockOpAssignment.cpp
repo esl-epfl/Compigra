@@ -156,11 +156,16 @@ getPreviousLayerOps(Block *block, SetVector<Value> &liveout,
     bool canSchedule = true;
 
     // any users does not belong to the ancestors
-    for (auto user : result.getUsers())
-      if (ancestors.count(user)) {
+    for (auto &use : result.getUses()) {
+      auto user = use.getOwner();
+      bool nonInstUser =
+          isa<cf::BranchOp>(user) ||
+          (isa<cgra::ConditionalBranchOp>(user) && use.getOperandNumber() > 1);
+      if (ancestors.count(user) && !nonInstUser) {
         canSchedule = false;
         break;
       }
+    }
 
     if (canSchedule) {
       visitedOps.push_back(op);
@@ -764,6 +769,7 @@ static std::map<int, PERegUse> getAvailableResourceGraph(
                               (place.regAttr == RegAttr::EX ||
                                place.regAttr == RegAttr::IE);
                      }) != finiGraph.end()) {
+      logMessage(std::to_string(valP.pe) + " for live out\n");
       used[valP.pe] = true;
     }
   }
@@ -1073,15 +1079,15 @@ int BasicBlockOpAssignment::placeOperations(
 
   for (auto [idx, op] : llvm::enumerate(schedulingOps)) {
     std::pair<int, compigra::RegAttr> assignPE;
-    std::string message;
-    llvm::raw_string_ostream rso(message);
-    rso << "Operation: " << *op;
+    // std::string message;
+    // llvm::raw_string_ostream rso(message);
+    // rso << "Operation: " << *op;
     // simulated annealing to get a random placement
     if ((int)idx <= shuffleOpIdx) {
       // if (scheduleResult.count(op) == 0 && shuffleOpIdx > 0)
       //   continue;
       if (space.count(op) == 0) {
-        logMessage(rso.str() + " -> Not scheduled quit");
+        // logMessage(rso.str() + " -> Not scheduled quit");
         continue;
       }
       auto opSpace = space.at(op);
@@ -1091,8 +1097,8 @@ int BasicBlockOpAssignment::placeOperations(
         if (assignPE.first == -1) {
           // remove result from the scheduleResult
           scheduleResult.erase(op);
-          rso << " choose to not assigned";
-          logMessage(rso.str());
+          // rso << " choose to not assigned";
+          // logMessage(rso.str());
           continue;
         }
       } else {
@@ -1102,7 +1108,7 @@ int BasicBlockOpAssignment::placeOperations(
         assignPE = (scheduleResult.at(op).reg == attr.maxReg)
                        ? std::pair{scheduleResult.at(op).pe, RegAttr::EX}
                        : std::pair{scheduleResult.at(op).pe, RegAttr::IE};
-        rso << "not flip : ";
+        // rso << "not flip : ";
       }
     } else {
       // search new placement space
@@ -1110,10 +1116,11 @@ int BasicBlockOpAssignment::placeOperations(
           searchOpPlacementSpace(op, curGraph, finiGraph, tmpResult);
       // randomly choose a placement space
       if (placementSpace.empty()) {
-        rso << " has empty placement space.\n";
-        logMessage(rso.str());
+        // rso << " has empty placement space.\n";
+        // logMessage(rso.str());
         continue;
       }
+
       // insert a non-scheduled decision
       space[op] = placementSpace;
       assignPE = getSample(placementSpace);
@@ -1121,16 +1128,16 @@ int BasicBlockOpAssignment::placeOperations(
       // assignPE = *(placementSpace.begin() + rand() %
       // placementSpace.size()); not assign operations at this time slot
       if (assignPE.first == -1) {
-        rso << " choose to not assigned\n";
-        logMessage(rso.str());
+        // rso << " choose to not assigned\n";
+        // logMessage(rso.str());
         continue;
       }
-      rso << " flip ";
+      // rso << " flip ";
     }
 
-    rso << " Assigned: " << assignPE.first
-        << " RegAttr: " << static_cast<int>(assignPE.second) << "\n";
-    logMessage(rso.str());
+    // rso << " Assigned: " << assignPE.first
+    //     << " RegAttr: " << static_cast<int>(assignPE.second) << "\n";
+    // logMessage(rso.str());
     suc++;
     tmpScheduledOps.insert(op);
     tmpResult[op] = assignPE;
@@ -1184,7 +1191,7 @@ int shuffleSearchSpace(
     if (it2 != scheduleResult.end())
       scheduleResult.erase(it2);
   }
-  logMessage("shuffleOpIdx:" + std::to_string(shuffleOpIdx));
+  // logMessage("shuffleOpIdx:" + std::to_string(shuffleOpIdx));
   return shuffleOpIdx;
 }
 
@@ -1214,14 +1221,19 @@ bool BasicBlockOpAssignment::createRoutePath(
     std::vector<ValuePlacement> finiGraph,
     SmallVector<mlir::Operation *, 4> otherFailureOps, unsigned threshold) {
   // get all the producers of the failOp
-  for (auto opr : failOp->getOperands()) {
-    auto prodPtr = std::find_if(curGraph.begin(), curGraph.end(),
-                                [&](ValuePlacement p) { return p.val == opr; });
-    bool notExist =
+  for (auto &opr : failOp->getOpOperands()) {
+    if (isa<cf::BranchOp>(failOp) ||
+        (isa<cgra::ConditionalBranchOp>(failOp) && opr.getOperandNumber() > 1))
+      continue;
+    auto opValue = opr.get();
+    auto prodPtr =
+        std::find_if(curGraph.begin(), curGraph.end(),
+                     [&](ValuePlacement p) { return p.val == opValue; });
+    bool notInclude =
         std::find_if(producers.begin(), producers.end(), [&](ValuePlacement p) {
           return p.val == prodPtr->val;
         }) == producers.end();
-    if (prodPtr != curGraph.end() && notExist) {
+    if (prodPtr != curGraph.end() && notInclude) {
       producers.push_back(*prodPtr);
       movs.push_back(0);
     }
@@ -1230,6 +1242,7 @@ bool BasicBlockOpAssignment::createRoutePath(
   // sort the producer with their usage by other failure operations
   std::vector<unsigned> weight(producers.size(), 0);
   std::set<unsigned> prodPEs;
+  blockedProdPEs.clear();
   for (auto [ind, prod] : llvm::enumerate(producers)) {
     auto val = prod.val;
     prodPEs.insert(prod.pe);
@@ -1243,7 +1256,6 @@ bool BasicBlockOpAssignment::createRoutePath(
 
   // get the available PEs
   SetVector<unsigned> avaiPEs;
-  SetVector<unsigned> blockedProdPEs;
   for (auto i = 0; i < attr.nRow * attr.nCol; i++) {
     auto occupied = getOccupiedValue(curGraph, finiGraph, i);
     // if the pe is occupied but not by the producer, return false
@@ -1261,38 +1273,14 @@ bool BasicBlockOpAssignment::createRoutePath(
       }
       if (!blockPop) {
         blockedProdPEs.insert(i);
-        continue;
       }
     }
     if (!occupied)
       avaiPEs.insert(i);
   }
-
-  for (auto blockProd : blockedProdPEs) {
-    // try to route the occupied value to other PEs;
-    // if it is not routable, return false to indicate it is impossible to
-    // route for the failOp
-    auto cntPEs = getTorusRoutingPEs(blockProd, attr);
-    // if none of the cntPEs in the avaiPEs return false
-    SetVector<unsigned> cntPESet(cntPEs.begin(), cntPEs.end());
-    auto intersection = getInterSection<unsigned>(cntPESet, avaiPEs);
-    if (intersection.empty())
-      return false;
-
-    // otherwise, route the blocked PE
-    auto blockPlace = getOccupiedValue(curGraph, finiGraph, blockProd);
-    // builder.setInsertionPoint
-    auto freePEOp = createAtomicMovOp(blockPlace->val, false, false);
-    // replace the use of blockPlace->val with freePEOp
-    blockPlace->val.replaceUsesWithIf(
-        freePEOp->getResult(0), [&](OpOperand &use) {
-          auto owner = use.getOwner();
-          return owner->getBlock() == curBlock && owner != freePEOp &&
-                 !scheduledOps.count(owner) &&
-                 !(isa<cf::BranchOp>(owner) ||
-                   (isa<cgra::ConditionalBranchOp>(owner) &&
-                    use.getOperandNumber() > 1));
-        });
+  if (!blockedProdPEs.empty()) {
+    logMessage("Blocked PE :" + std::to_string(blockedProdPEs[0]));
+    return false;
   }
 
   // define map population function of step 1
@@ -1357,6 +1345,7 @@ bool BasicBlockOpAssignment::createRoutePath(
         return true;
     }
   }
+  logMessage("failed to find path");
   return false;
 }
 
@@ -1478,7 +1467,10 @@ void BasicBlockOpAssignment::updateSchedulePriority(
   llvm::raw_string_ostream rso(message);
   for (auto [op, priority] : schedulePriority) {
     rso << "Schedule Priority: " << *op << " [" << priority.first << " "
-        << priority.second << "]\n";
+        << priority.second << "]";
+    if (solution.count(op))
+      rso << " : " << solution.at(op).pe;
+    rso << "\n";
   }
   logMessage(rso.str());
 }
@@ -1557,8 +1549,10 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
   int totalOpNum = getNonCstOpSize(curBlock);
   int maxTry = 0;
   auto graphScheduleBefore = initGraph;
-  while (scheduledOps.size() < totalOpNum && maxTry < 20) {
+  while (scheduledOps.size() < totalOpNum && maxTry < 30) {
     maxTry++;
+    logMessage("----height: " + std::to_string(height) + "----\n");
+
     auto schedulingOps = getScheduleOps(curBlock, height, schedulePriority,
                                         scheduledOps, strategy);
     // log schedulingOps
@@ -1573,7 +1567,6 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
     std::map<Operation *, ScheduleUnit> tmpScheduleResult;
     std::map<Operation *, std::vector<placeunit>> searchSpace;
     auto tmpGraph = graphScheduleBefore;
-    logMessage("----height: " + std::to_string(height) + "----\n");
 
     // Initial placement
     double currentCost =
@@ -1586,37 +1579,7 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
 
     // simulated annealing to create a loop that get random
     // placement, record status, cost and determine the final placement
-    /*
-    double previousCost = bestCost;
-    for (int iter = 0; iter < iterSA; iter++) {
-      // get a random placement
-      tmpGraph = graphScheduleBefore;
-      int shuffleOpIdx =
-      shuffleSearchSpace(searchSpace, tmpScheduleResult, schedulingOps);
-      if (shuffleOpIdx < 0) {
-      break;
-      }
-      logMessage("----SA step: " + std::to_string(iter) + "----\n");
-
-      double currentCost =
-      stepSA(height, schedulingOps, tmpScheduleResult, tmpGraph,
-         searchSpace, blockOut, finiGraph, attr, shuffleOpIdx);
-      // Generate a random number between 0 and 1
-      double accept = static_cast<double>(rand()) / RAND_MAX;
-      if (currentCost < bestCost && accept <= 0.9) {
-      bestCost = currentCost;
-      graphScheduleAfter = tmpGraph;
-      layerScheduleResult = tmpScheduleResult;
-      }
-      if (bestCost == 0 || std::abs(previousCost - bestCost) < 1e-6) {
-      break; // Step out if the state is stable
-      }
-      previousCost = bestCost;
-    }
-    */
-
     int iterSA = 200;
-    // New implementation to evaluate the last three states for stability
     std::vector<double> lastThreeCosts;
     double previousCost = bestCost;
 
@@ -1669,6 +1632,7 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
     if (!graphTransformedOps.empty()) {
       std::string message;
       llvm::raw_string_ostream rso(message);
+      bool transformed = false;
       for (auto op : graphTransformedOps) {
         unsigned producerNum = op->getNumOperands();
         std::vector<ValuePlacement> producers;
@@ -1678,33 +1642,94 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
             createRoutePath(op, producers, movs, graphScheduleBefore, finiGraph,
                             graphTransformedOps);
         if (routable) {
-          unsigned newRouteOpsNum = 0;
           if (!isRouteOp(op)) {
+            unsigned newRouteOpsNum = 0;
             auto newRouteOps = routeOperation(producers, movs, op);
             newRouteOpsNum = newRouteOps.size();
             rso << "Warning: Route for: " << *op << "\n";
+            transformed = true;
+            // if the op is already a route operation, but not scheduled, don't
+            // create new route ops
+            updateSchedulePriority(height, liveIns, liveOuts);
+            for (size_t i = 0; i < producers.size(); ++i) {
+              auto producer = producers[i];
+              auto movNum = movs[i];
+              rso << "    route: " << producer.val << " :" << movNum << "\n";
+            }
+            totalOpNum += newRouteOpsNum;
           }
-          // if the op is already a route operation, but not scheduled, don't
-          // create new route ops
-          updateSchedulePriority(height, liveIns, liveOuts);
-          for (size_t i = 0; i < producers.size(); ++i) {
-            auto producer = producers[i];
-            auto movNum = movs[i];
-            rso << "    route: " << producer.val << " :" << movNum << "\n";
-          }
-          totalOpNum += newRouteOpsNum;
         } else {
+          // check whether pop the blocked PE can solve the problem
           rso << "Warning: Cannot route for: " << *op
               << ", the graph transformation is needed.\n";
           logMessage(rso.str());
-          // TODO[@Y]: split the graph via DFG
-          return failure();
+
+          SetVector<unsigned> avaiPEs;
+          for (auto i = 0; i < attr.nRow * attr.nCol; i++) {
+            auto occupied = getOccupiedValue(graphScheduleBefore, finiGraph, i);
+            if (!occupied)
+              avaiPEs.insert(i);
+          }
+          bool success = true;
+          unsigned newRouteOpsNum = 0;
+          for (auto blockProd : blockedProdPEs) {
+            // try to route the occupied value to other PEs;
+            // if it is not routable, return false to indicate it is
+            // impossible to route for the failOp
+            auto cntPEs = getTorusRoutingPEs(blockProd, attr, false);
+            // if none of the cntPEs in the avaiPEs return false
+            SetVector<unsigned> cntPESet(cntPEs.begin(), cntPEs.end());
+            auto intersection = getInterSection<unsigned>(cntPESet, avaiPEs);
+            if (intersection.empty())
+              success = false;
+
+            // otherwise, route the blocked PE
+            auto blockPlace =
+                getOccupiedValue(graphScheduleBefore, finiGraph, blockProd);
+
+            // not create double route
+            if (blockPlace->val.getDefiningOp() &&
+                isRouteOp(blockPlace->val.getDefiningOp())) {
+              continue;
+            }
+
+            transformed = true;
+            // log the block Place
+            std::string message;
+            llvm::raw_string_ostream rso1(message);
+            rso << "Blocked PE: " << blockPlace->val << " ^^^ "
+                << blockPlace->pe << "\n";
+            logMessage(rso1.str());
+            // builder.setInsertionPoint
+            auto freePEOp = createAtomicMovOp(blockPlace->val, false, false);
+            newRouteOpsNum++;
+            // replace the use of blockPlace->val with freePEOp
+            blockPlace->val.replaceUsesWithIf(
+                freePEOp->getResult(0), [&](OpOperand &use) {
+                  auto owner = use.getOwner();
+                  return owner->getBlock() == curBlock && owner != freePEOp &&
+                         !scheduledOps.count(owner) &&
+                         !(isa<cf::BranchOp>(owner) ||
+                           (isa<cgra::ConditionalBranchOp>(owner) &&
+                            use.getOperandNumber() > 1));
+                });
+          }
+          if (!success) {
+            rso << "Error: Failed to route the blocked PEs, graph "
+                   "transformation is needed.\n";
+            // TODO[@Y]: split the graph via DFG
+            return failure();
+          }
+          updateSchedulePriority(height, liveIns, liveOuts);
+          totalOpNum += newRouteOpsNum;
         }
       }
       logMessage(rso.str());
 
       // re-schedule
-      continue;
+      // TODO[@YY]: official rollback
+      if (transformed)
+        continue;
     }
 
     // prepare scheduling for the next layer
