@@ -71,6 +71,119 @@ static unsigned getNonCstOpSize(Block *block) {
   return scheduledOpSize;
 }
 
+/// Insert a value to a set if it is not a constant. The constant value is not
+/// considered as a live value.
+static void insertNonConst(Value val, SetVector<Value> &vec) {
+  if (dyn_cast_or_null<arith::ConstantOp>(val.getDefiningOp()) ||
+      dyn_cast_or_null<arith::ConstantIntOp>(val.getDefiningOp()) ||
+      dyn_cast_or_null<arith::ConstantFloatOp>(val.getDefiningOp()))
+    return;
+  vec.insert(val);
+}
+
+/// successor blocks. If the liveIn value is a block argument (phi node), add
+/// the corresponding value in the predecessor block.
+static void updateLiveOutBySuccessorLiveIn(Value val, Block *blk,
+                                           SetVector<Value> &liveOut) {
+  if (auto arg = dyn_cast_or_null<BlockArgument>(val)) {
+    Block *argBlk = arg.getOwner();
+
+    auto termOp = blk->getTerminator();
+    if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(termOp)) {
+      if (argBlk == branchOp.getSuccessor()) {
+        unsigned argIndex = arg.getArgNumber();
+        liveOut.insert(branchOp.getOperand(argIndex));
+        return;
+      }
+    } else if (auto branchOp =
+                   dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
+      if (argBlk == branchOp.getSuccessor(0)) {
+        unsigned argIndex = arg.getArgNumber();
+        liveOut.insert(branchOp.getTrueOperand(argIndex));
+        return;
+      } else if (argBlk == branchOp.getSuccessor(1)) {
+        unsigned argIndex = arg.getArgNumber();
+        liveOut.insert(branchOp.getFalseOperand(argIndex));
+        return;
+      }
+    }
+  }
+
+  liveOut.insert(val);
+}
+
+void computeLiveValue(Region &region,
+                      std::map<Block *, SetVector<Value>> &liveIns,
+                      std::map<Block *, SetVector<Value>> &liveOuts) {
+  // compute def and use for each block
+  std::map<Block *, SetVector<Value>> defMap;
+  std::map<Block *, SetVector<Value>> useMap;
+
+  for (auto &block : region) {
+    SetVector<Value> def;
+    SetVector<Value> use;
+    // push all block arguments to use
+    for (auto arg : block.getArguments()) {
+      // the entry block argument is IN/OUT of the function
+      if (!block.isEntryBlock())
+        insertNonConst(arg, use);
+    }
+
+    for (auto &op : block.getOperations()) {
+      for (auto res : op.getResults())
+        insertNonConst(res, def);
+
+      for (auto opr : op.getOperands())
+        // branch argument is not a use
+        insertNonConst(opr, use);
+    }
+    defMap[&block] = def;
+    useMap[&block] = use;
+  }
+
+  // calculate (use - def)
+  std::map<Block *, SetVector<Value>> outBBUse;
+  for (auto &block : region) {
+    SetVector<Value> outUse;
+    for (auto V : useMap[&block]) {
+      if (!defMap[&block].count(V)) {
+        outUse.insert(V);
+      }
+    }
+    outBBUse[&block] = outUse;
+  }
+
+  // clear liveIn and liveOut
+  liveIns.clear();
+  liveOuts.clear();
+
+  // compute liveIn and liveOut for each block
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (auto &block : region) {
+      SetVector<Value> liveIn = outBBUse[&block];
+      SetVector<Value> liveOut = liveOuts[&block];
+
+      // liveIn = outBBUse + (liveOut - def)
+      for (auto val : liveOut)
+        if (!defMap[&block].count(val))
+          insertNonConst(val, liveIn);
+
+      for (auto succ : block.getSuccessors()) {
+        // add to succesor's liveOut
+        for (auto val : liveIns[succ])
+          updateLiveOutBySuccessorLiveIn(val, &block, liveOut);
+      }
+      if (liveIn != liveIns[&block] || liveOut != liveOuts[&block]) {
+        liveIns[&block] = liveIn;
+        liveOuts[&block] = liveOut;
+        changed = true;
+      }
+    }
+  }
+}
+
 static SmallVector<Operation *, 4>
 getNextLayerOps(Block *block, SetVector<Value> &liveIn,
                 std::set<Operation *> &visitedOps) {
@@ -342,7 +455,7 @@ void buildChildTree(Value val, SetVector<Operation *> &childTree, Block *blk) {
 static double getSpatialAffinityCost(
     Value val1, ScheduleUnit unit1, Value val2, ScheduleUnit unit2,
     const std::map<Operation *, std::pair<int, int>> heightMap,
-    GridAttribute grid, Block *blk) {
+    std::vector<ValuePlacement> &finiGraph, GridAttribute grid, Block *blk) {
 
   auto pe1 = unit1.pe;
   auto pe2 = unit2.pe;
@@ -363,6 +476,7 @@ static double getSpatialAffinityCost(
   double affinity = 0;
   double maxRouting = grid.nRow / 2 + grid.nCol / 2;
 
+  double bias = 0;
   for (auto child : children) {
     auto childHeight =
         heightMap.count(child) ? heightMap.at(child).first : maxHeight + 1;
@@ -380,9 +494,25 @@ static double getSpatialAffinityCost(
     int depth = (depth1 + depth2) / 2;
 
     affinity += std::pow(2, -depth);
+
+    // if child is liveout,the affinity must include the spatial distance to the
+    // liveout space
+    auto liveOutIt = std::find_if(
+        finiGraph.begin(), finiGraph.end(), [&](const ValuePlacement &place) {
+          return child->getNumResults() > 0 && place.val == child->getResult(0);
+        });
+    if (liveOutIt != finiGraph.end()) {
+      auto childPE = liveOutIt->pe;
+      // evaluate the pe1 and pe2's distance to the childPE
+      int childDistance1 = getDistance(pe1, childPE, grid.nRow, grid.nCol);
+      int childDistance2 = getDistance(pe2, childPE, grid.nRow, grid.nCol);
+      bias = std::pow(2, -depth) * (childDistance1 + childDistance2) / 2.0 /
+             maxRouting;
+    }
   }
 
-  return affinity * getDistance(pe1, pe2, grid.nRow, grid.nCol) / maxRouting;
+  return affinity * getDistance(pe1, pe2, grid.nRow, grid.nCol) / maxRouting +
+         bias;
 }
 
 // get the torus routing PEs
@@ -433,10 +563,22 @@ bool isOccupied(std::vector<ValuePlacement> curGraph,
 
 ValuePlacement *getOccupiedValue(std::vector<ValuePlacement> curGraph,
                                  std::vector<ValuePlacement> finiGraph,
-                                 unsigned pe) {
+                                 SetVector<mlir::Operation *> scheduledOps,
+                                 Block *curBlk, unsigned pe) {
   for (auto &place : curGraph) {
     bool taken = place.pe == pe && (place.regAttr == RegAttr::EX);
-    if (taken) {
+    // check whether the value is still in use
+    bool inUse = false;
+    for (auto user : place.val.getUsers()) {
+      if (user->getBlock() != curBlk || isa<cf::BranchOp>(user) ||
+          (isa<cgra::ConditionalBranchOp>(user) &&
+           user->getOperand(0) != place.val &&
+           user->getOperand(1) != place.val))
+        continue;
+      if (scheduledOps.count(user) == 0)
+        inUse = true;
+    }
+    if (taken && inUse) {
       return &place;
     }
     auto val = place.val;
@@ -613,6 +755,7 @@ static double getSuccessCost(
 static double getSpatialAffinityTotalCost(
     Block *curBlk, std::map<Operation *, ScheduleUnit> scheduleResult,
     std::vector<ValuePlacement> initGraph,
+    std::vector<ValuePlacement> finiGraph,
     std::map<Operation *, std::pair<int, int>> heightMap, GridAttribute grid,
     SetVector<Value> liveOut, SetVector<Operation *> scheduledOps) {
   double cost = 0;
@@ -626,9 +769,9 @@ static double getSpatialAffinityTotalCost(
           !isLive(place.val, curBlk, liveOut, scheduledOps))
         continue;
 
-      cost += getSpatialAffinityCost(place.val, {0, (int)place.pe, -1},
-                                     op.first->getResult(0), op.second,
-                                     heightMap, grid, op.first->getBlock());
+      cost += getSpatialAffinityCost(
+          place.val, {0, (int)place.pe, -1}, op.first->getResult(0), op.second,
+          heightMap, finiGraph, grid, op.first->getBlock());
     }
     count++;
   }
@@ -869,11 +1012,6 @@ static int getInitialLiveInPlacement(
              std::to_string(static_cast<int>(regAttr)));
 }
 
-/// Initialize the embedding graph, where the key is the [time slot, PE], the
-/// value indicates the value placed in the graph and its register attribute.
-/// It is noticed that graph[int,int] = <nullptr, nullptr> which indicates the
-/// PE is occupied by an operation does not produce any value at the time
-/// slot.
 void BasicBlockOpAssignment::initEmbeddingGraphWithLiveIn(
     std::map<Block *, SetVector<Value>> liveIns,
     std::map<Block *, SetVector<Value>> liveOuts,
@@ -902,6 +1040,28 @@ void BasicBlockOpAssignment::initEmbeddingGraphWithLiveIn(
     }
   }
   // if val not in initGraph, assign the liveIn value with the lowest cost
+}
+
+LogicalResult
+finiEmbeddingGraphWithLiveOut(std::vector<ValuePlacement> &finiGraph,
+                              std::vector<ValuePlacement> &scheduleGraph,
+                              OpBuilder &builder, GridAttribute attr) {
+  for (auto &req : finiGraph) {
+    auto place =
+        std::find_if(scheduleGraph.begin(), scheduleGraph.end(),
+                     [&](ValuePlacement p) { return p.val == req.val; });
+    if (place == scheduleGraph.end())
+      return failure();
+
+    if (req.pe == place->pe)
+      continue;
+
+    auto srcPE = place->pe;
+    auto dstPE = req.pe;
+
+    // find a path from srcPE to dstPE
+    // if req.pe != scheduleGraph.pe
+  }
 }
 
 static void removeElement(SetVector<unsigned> &vec, unsigned pe) {
@@ -1039,7 +1199,28 @@ std::vector<placeunit> BasicBlockOpAssignment::searchOpPlacementSpace(
       auto pe = it->pe;
       SetVector<unsigned> tempSet;
       tempSet.insert(it->pe);
+      // print availablePEs
+
+      std::string message;
+      llvm::raw_string_ostream rso(message);
+      for (auto p : availablePEs) {
+        rso << p << " ";
+      }
+      rso << "\n";
+
       getSubSet<unsigned>(availablePEs, tempSet);
+
+      if (availablePEs.empty()) {
+        rso << "SEARCH SPACE: Operation: " << *scheduleOp << " xx " << it->pe
+            << " xx has no available placement space.\n";
+        logMessage(rso.str());
+        return {};
+      }
+
+      // auto tmpAvailablePEs = availablePEs;
+      // getSubSet<unsigned>(tmpAvailablePEs, tempSet);
+      // if (!tmpAvailablePEs.empty())
+      //   availablePEs = tmpAvailablePEs;
     }
   }
 
@@ -1079,9 +1260,9 @@ int BasicBlockOpAssignment::placeOperations(
 
   for (auto [idx, op] : llvm::enumerate(schedulingOps)) {
     std::pair<int, compigra::RegAttr> assignPE;
-    // std::string message;
-    // llvm::raw_string_ostream rso(message);
-    // rso << "Operation: " << *op;
+    std::string message;
+    llvm::raw_string_ostream rso(message);
+    rso << "Operation: " << *op;
     // simulated annealing to get a random placement
     if ((int)idx <= shuffleOpIdx) {
       // if (scheduleResult.count(op) == 0 && shuffleOpIdx > 0)
@@ -1116,8 +1297,8 @@ int BasicBlockOpAssignment::placeOperations(
           searchOpPlacementSpace(op, curGraph, finiGraph, tmpResult);
       // randomly choose a placement space
       if (placementSpace.empty()) {
-        // rso << " has empty placement space.\n";
-        // logMessage(rso.str());
+        rso << " has empty placement space.\n";
+        logMessage(rso.str());
         continue;
       }
 
@@ -1215,7 +1396,7 @@ static void sortProducersByWeight(std::vector<ValuePlacement> &producers,
   producers = std::move(sortedProducers);
 }
 
-bool BasicBlockOpAssignment::createRoutePath(
+int BasicBlockOpAssignment::createRoutePath(
     Operation *failOp, std::vector<ValuePlacement> &producers,
     std::vector<unsigned> &movs, std::vector<ValuePlacement> curGraph,
     std::vector<ValuePlacement> finiGraph,
@@ -1257,11 +1438,15 @@ bool BasicBlockOpAssignment::createRoutePath(
   // get the available PEs
   SetVector<unsigned> avaiPEs;
   for (auto i = 0; i < attr.nRow * attr.nCol; i++) {
-    auto occupied = getOccupiedValue(curGraph, finiGraph, i);
+    auto occupied =
+        getOccupiedValue(curGraph, finiGraph, scheduledOps, curBlock, i);
     // if the pe is occupied but not by the producer, return false
     if (occupied && prodPEs.count(i) > 0) {
-      llvm::errs() << "Occupied PE: " << occupied->val << " at " << occupied->pe
-                   << "\n";
+      std::string message;
+      llvm::raw_string_ostream rso(message);
+      rso << "Occupied PE: " << occupied->val << " at " << occupied->pe
+          << " by producer\n";
+      logMessage(rso.str());
       //  if the producer PE is occupied by other value, we need to route the
       //  other value
       bool blockPop = false;
@@ -1280,7 +1465,7 @@ bool BasicBlockOpAssignment::createRoutePath(
   }
   if (!blockedProdPEs.empty()) {
     logMessage("Blocked PE :" + std::to_string(blockedProdPEs[0]));
-    return false;
+    return -1;
   }
 
   // define map population function of step 1
@@ -1315,12 +1500,20 @@ bool BasicBlockOpAssignment::createRoutePath(
     // check whether movs[ind] are all 0, if yes, meaning that there are
     // available spots to accomandate the consumers, but is less than the
     // total number of placed operations. Let movs[0]++ for routing
+    // for (size_t i = 1; i < producers.size(); ++i) {
+    //   if (movs[i] > 0)
+    //     return true;
+    // }
+    // movs[0]++;
+
+    // If the producers need to be routed, we can return 0, otherwise, meaning
+    // that the failedOp can access its producers directly, it is restricted by
+    // its consumer access range.
     for (size_t i = 1; i < producers.size(); ++i) {
       if (movs[i] > 0)
-        return true;
+        return 0;
     }
-    movs[0]++;
-    return true;
+    return 1;
   }
 
   int population = 0;
@@ -1342,11 +1535,11 @@ bool BasicBlockOpAssignment::createRoutePath(
       for (size_t i = 1; i < producers.size(); ++i)
         intersection = getInterSection<unsigned>(intersection, popMap[i]);
       if (!intersection.empty())
-        return true;
+        return 0;
     }
   }
   logMessage("failed to find path");
-  return false;
+  return -1;
 }
 
 Operation *BasicBlockOpAssignment::createAtomicMovOp(Value val,
@@ -1469,7 +1662,7 @@ void BasicBlockOpAssignment::updateSchedulePriority(
     rso << "Schedule Priority: " << *op << " [" << priority.first << " "
         << priority.second << "]";
     if (solution.count(op))
-      rso << " : " << solution.at(op).pe;
+      rso << " : " << solution.at(op).time << " " << solution.at(op).pe;
     rso << "\n";
   }
   logMessage(rso.str());
@@ -1514,8 +1707,8 @@ double BasicBlockOpAssignment::stepSA(
   double sucCost =
       getSuccessCost(tmpScheduleResult, schedulePriority, schedulingOps);
   double affinityCost = getSpatialAffinityTotalCost(
-      curBlock, tmpScheduleResult, tmpGraph, schedulePriority, attr, liveOut,
-      scheduledOps);
+      curBlock, tmpScheduleResult, tmpGraph, finiGraph, schedulePriority, attr,
+      liveOut, scheduledOps);
   double accessCost = getAccessCost(
       curBlock, tmpGraph, tmpScheduleResult, scheduledOps, liveOut, finiGraph,
       attr, schedulingOps.size(), schedulePriority, height);
@@ -1549,7 +1742,7 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
   int totalOpNum = getNonCstOpSize(curBlock);
   int maxTry = 0;
   auto graphScheduleBefore = initGraph;
-  while (scheduledOps.size() < totalOpNum && maxTry < 30) {
+  while (scheduledOps.size() < totalOpNum && maxTry < 35) {
     maxTry++;
     logMessage("----height: " + std::to_string(height) + "----\n");
 
@@ -1557,12 +1750,12 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
                                         scheduledOps, strategy);
     // log schedulingOps
     std::string message;
-    llvm::raw_string_ostream rso(message);
-    rso << "Scheduling Operations at height " << height << ": ";
+    llvm::raw_string_ostream totalRso(message);
+    totalRso << "Scheduling Operations at height " << height << ": ";
     for (auto op : schedulingOps) {
-      rso << *op << "\n";
+      totalRso << *op << "\n";
     }
-    logMessage(rso.str());
+    logMessage(totalRso.str());
 
     std::map<Operation *, ScheduleUnit> tmpScheduleResult;
     std::map<Operation *, std::vector<placeunit>> searchSpace;
@@ -1630,10 +1823,9 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
         graphTransformedOps.push_back(op);
     }
     if (!graphTransformedOps.empty()) {
-      std::string message;
-      llvm::raw_string_ostream rso(message);
       bool transformed = false;
       for (auto op : graphTransformedOps) {
+        logMessage("Try to solve the graph transformation");
         unsigned producerNum = op->getNumOperands();
         std::vector<ValuePlacement> producers;
         std::vector<unsigned> movs;
@@ -1641,8 +1833,12 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
         bool routable =
             createRoutePath(op, producers, movs, graphScheduleBefore, finiGraph,
                             graphTransformedOps);
-        if (routable) {
-          if (!isRouteOp(op)) {
+        logMessage("routable: " + std::to_string(routable) + "\n");
+        if (routable >= 0) {
+          std::string message;
+          llvm::raw_string_ostream rso(message);
+          if (routable == 0 && !isRouteOp(op)) {
+            logMessage("Route producers\n");
             unsigned newRouteOpsNum = 0;
             auto newRouteOps = routeOperation(producers, movs, op);
             newRouteOpsNum = newRouteOps.size();
@@ -1657,8 +1853,44 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
               rso << "    route: " << producer.val << " :" << movNum << "\n";
             }
             totalOpNum += newRouteOpsNum;
+            logMessage(rso.str());
+          }
+          // otherwise, route the operation itself
+          if (routable == 1) {
+            logMessage("Route to consumer\n");
+            if (liveout.count(op->getResult(0)) > 0) {
+              auto newLiveOut =
+                  createAtomicMovOp(op->getResult(0), false, false);
+              // replace the use if it is used outside the block
+              op->getResult(0).replaceUsesWithIf(
+                  newLiveOut->getResult(0), [&](OpOperand &use) {
+                    auto owner = use.getOwner();
+                    return owner->getBlock() != curBlock ||
+                           (owner->getBlock() == curBlock &&
+                            (isa<cf::BranchOp>(owner) ||
+                             (isa<cgra::ConditionalBranchOp>(owner) &&
+                              use.getOperandNumber() > 1)));
+                  });
+              // replace the value in finiGraph and liveout
+              for (auto &place : finiGraph) {
+                if (op->getResult(0) == place.val) {
+                  place.val = newLiveOut->getResult(0);
+                  // place.regAttr = RegAttr::EX;
+                  // place.pe = attr.maxReg; // use the maxReg to indicate EX
+                }
+              }
+              liveout.remove(op->getResult(0));
+              liveout.insert(newLiveOut->getResult(0));
+              auto &parentRegion = *(curBlock->getParent());
+              computeLiveValue(parentRegion, liveIns, liveOuts);
+              transformed = true;
+              updateSchedulePriority(height, liveIns, liveOuts);
+              totalOpNum++;
+            }
           }
         } else {
+          std::string message;
+          llvm::raw_string_ostream rso(message);
           // check whether pop the blocked PE can solve the problem
           rso << "Warning: Cannot route for: " << *op
               << ", the graph transformation is needed.\n";
@@ -1666,7 +1898,8 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
 
           SetVector<unsigned> avaiPEs;
           for (auto i = 0; i < attr.nRow * attr.nCol; i++) {
-            auto occupied = getOccupiedValue(graphScheduleBefore, finiGraph, i);
+            auto occupied = getOccupiedValue(graphScheduleBefore, finiGraph,
+                                             scheduledOps, curBlock, i);
             if (!occupied)
               avaiPEs.insert(i);
           }
@@ -1685,7 +1918,8 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
 
             // otherwise, route the blocked PE
             auto blockPlace =
-                getOccupiedValue(graphScheduleBefore, finiGraph, blockProd);
+                getOccupiedValue(graphScheduleBefore, finiGraph, scheduledOps,
+                                 curBlock, blockProd);
 
             // not create double route
             if (blockPlace->val.getDefiningOp() &&
@@ -1724,7 +1958,7 @@ LogicalResult BasicBlockOpAssignment::mappingBBdataflowToCGRA(
           totalOpNum += newRouteOpsNum;
         }
       }
-      logMessage(rso.str());
+      // logMessage(rso.str());
 
       // re-schedule
       // TODO[@YY]: official rollback

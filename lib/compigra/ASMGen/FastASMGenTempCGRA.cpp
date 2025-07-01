@@ -24,47 +24,6 @@
 using namespace mlir;
 using namespace compigra;
 
-/// Insert a value to a set if it is not a constant. The constant value is not
-/// considered as a live value.
-static void insertNonConst(Value val, SetVector<Value> &vec) {
-  if (dyn_cast_or_null<arith::ConstantOp>(val.getDefiningOp()) ||
-      dyn_cast_or_null<arith::ConstantIntOp>(val.getDefiningOp()) ||
-      dyn_cast_or_null<arith::ConstantFloatOp>(val.getDefiningOp()))
-    return;
-  vec.insert(val);
-}
-
-/// successor blocks. If the liveIn value is a block argument (phi node), add
-/// the corresponding value in the predecessor block.
-static void updateLiveOutBySuccessorLiveIn(Value val, Block *blk,
-                                           SetVector<Value> &liveOut) {
-  if (auto arg = dyn_cast_or_null<BlockArgument>(val)) {
-    Block *argBlk = arg.getOwner();
-
-    auto termOp = blk->getTerminator();
-    if (auto branchOp = dyn_cast_or_null<cf::BranchOp>(termOp)) {
-      if (argBlk == branchOp.getSuccessor()) {
-        unsigned argIndex = arg.getArgNumber();
-        liveOut.insert(branchOp.getOperand(argIndex));
-        return;
-      }
-    } else if (auto branchOp =
-                   dyn_cast_or_null<cgra::ConditionalBranchOp>(termOp)) {
-      if (argBlk == branchOp.getSuccessor(0)) {
-        unsigned argIndex = arg.getArgNumber();
-        liveOut.insert(branchOp.getTrueOperand(argIndex));
-        return;
-      } else if (argBlk == branchOp.getSuccessor(1)) {
-        unsigned argIndex = arg.getArgNumber();
-        liveOut.insert(branchOp.getFalseOperand(argIndex));
-        return;
-      }
-    }
-  }
-
-  liveOut.insert(val);
-}
-
 void printBlockLiveValue(Region &region,
                          std::map<Block *, SetVector<Value>> &liveIns,
                          std::map<Block *, SetVector<Value>> &liveOuts) {
@@ -116,77 +75,6 @@ void printLiveGraph(std::map<Block *, std::vector<ValuePlacement>> graph) {
   logMessage(rso.str());
 }
 
-void computeLiveValue(Region &region,
-                      std::map<Block *, SetVector<Value>> &liveIns,
-                      std::map<Block *, SetVector<Value>> &liveOuts) {
-  // compute def and use for each block
-  std::map<Block *, SetVector<Value>> defMap;
-  std::map<Block *, SetVector<Value>> useMap;
-
-  for (auto &block : region) {
-    SetVector<Value> def;
-    SetVector<Value> use;
-    // push all block arguments to use
-    for (auto arg : block.getArguments()) {
-      // the entry block argument is IN/OUT of the function
-      if (!block.isEntryBlock())
-        insertNonConst(arg, use);
-    }
-
-    for (auto &op : block.getOperations()) {
-      for (auto res : op.getResults())
-        insertNonConst(res, def);
-
-      for (auto opr : op.getOperands())
-        // branch argument is not a use
-        insertNonConst(opr, use);
-    }
-    defMap[&block] = def;
-    useMap[&block] = use;
-  }
-
-  // calculate (use - def)
-  std::map<Block *, SetVector<Value>> outBBUse;
-  for (auto &block : region) {
-    SetVector<Value> outUse;
-    for (auto V : useMap[&block]) {
-      if (!defMap[&block].count(V)) {
-        outUse.insert(V);
-      }
-    }
-    outBBUse[&block] = outUse;
-  }
-
-  // clear liveIn and liveOut
-  liveIns.clear();
-  liveOuts.clear();
-
-  // compute liveIn and liveOut for each block
-  bool changed = true;
-  while (changed) {
-    changed = false;
-    for (auto &block : region) {
-      SetVector<Value> liveIn = outBBUse[&block];
-      SetVector<Value> liveOut = liveOuts[&block];
-
-      // liveIn = outBBUse + (liveOut - def)
-      for (auto val : liveOut)
-        if (!defMap[&block].count(val))
-          insertNonConst(val, liveIn);
-
-      for (auto succ : block.getSuccessors()) {
-        // add to succesor's liveOut
-        for (auto val : liveIns[succ])
-          updateLiveOutBySuccessorLiveIn(val, &block, liveOut);
-      }
-      if (liveIn != liveIns[&block] || liveOut != liveOuts[&block]) {
-        liveIns[&block] = liveIn;
-        liveOuts[&block] = liveOut;
-        changed = true;
-      }
-    }
-  }
-}
 void maxIndependentSubGraphs(Block *block, SetVector<Value> liveIn) {}
 
 arith::ConstantOp getZeroConstant(Region &region, OpBuilder &builder,
@@ -634,6 +522,8 @@ struct FastASMGenTemporalCGRAPass
 
       bbInitGraphs[&bb] = initGraph;
       bbFiniGraphs[&bb] = finiGraph;
+      // update the liveIn and liveOut with the initGraph and finiGraph
+      computeLiveValue(region, liveIns, liveOuts);
       updateGlobalValPlacement(&bb, region, liveIns, liveOuts, bbInitGraphs,
                                bbFiniGraphs);
       logMessage("InitGraph: ");
