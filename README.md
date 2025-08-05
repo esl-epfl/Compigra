@@ -19,12 +19,22 @@ We use [gurobi](https://www.gurobi.com/) as our solver for the ILP model. Gurobi
 You can still use the front end optimization passes to generate hardware compatible IR even without gurobi enabled.
 You can apply [gurobi acedemic license](https://www.gurobi.com/academia/academic-program-and-licenses/) and configure it if you work in acedemia.
 
+We are using gurobi version 11.0.2. 
+
 #### 3. Build compigra
 Run the following command to build the project and specify GUROBI_INSTALL_DIR if gurobi is installed in your workstation. 
 ```bash
 $ mkdir build && and cd build
 $ cmake -DGUROBI_INSTALL_DIR=/path/to/gurobi ../
 $ ninja
+```
+
+If you are using other version of gurobi, Please make correspoinding changes in lib/compigra/Scheduler/CMakeLists.txt to specify your gurobi version. It is noted that we **DO NOT** test other version of gurobi. It recommended to use the same version!
+
+```
+    target_link_libraries(MLIRCompigraASMGen PUBLIC 
+        ${GUROBI_INSTALL_DIR}/lib/libgurobi_c++.a 
+        ${GUROBI_INSTALL_DIR}/lib/libgurobi110.so)
 ```
 
 ## Use Compigra
